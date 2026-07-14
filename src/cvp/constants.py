@@ -48,3 +48,14 @@ KNOWN_DIMS = {
     "openclip_l14": 768,
     "mclip": 640,
 }
+
+
+def parse_keyframe_ordinal(name: str) -> int | None:
+    """1-based keyframe ordinal from a filename, or None for non-keyframe files."""
+    m = KEYFRAME_NAME_RE.match(name)
+    return int(m.group(1)) if m else None
+
+
+def is_video_id(s: str) -> bool:
+    """True for organiser-shaped video ids (L21_V001, K08_V030, …)."""
+    return bool(VIDEO_ID_RE.match(s))

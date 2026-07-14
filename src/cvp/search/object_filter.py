@@ -110,7 +110,13 @@ def _load_vocab(path: Path) -> list[tuple[str, str, str]]:
 class ObjectBooster:
     def __init__(self, settings: Settings, vocab_path: Path | None = None):
         self.settings = settings
-        self.store = ObjectStore(settings)
+        # Prefer the compact parquet index when built (one file read instead of
+        # thousands of tiny JSON opens — decisive on Drive/network mounts);
+        # fall back to the per-keyframe ObjectStore transparently.
+        from cvp.data.objects_compact import CompactObjects
+
+        compact = CompactObjects(settings)
+        self.store = compact if compact.available() else ObjectStore(settings)
         vp = vocab_path or (Path(__file__).resolve().parents[3] / "configs" / "object_vocab_vi.yaml")
         self._vocab_entries = _load_vocab(vp)
 

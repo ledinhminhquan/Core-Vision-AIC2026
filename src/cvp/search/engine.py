@@ -33,6 +33,7 @@ from cvp.search.object_filter import ObjectBooster
 from cvp.search.superglobal import superglobal_rerank
 from cvp.search.temporal import TrakeCandidate, trake_search
 from cvp.search.text_signals import TextSignals
+from cvp.search.cross_rerank import cross_rerank
 from cvp.search.vlm_rerank import vlm_rerank
 
 log = logging.getLogger(__name__)
@@ -282,6 +283,8 @@ class SearchEngine:
                 signals["object"] = object_scores[gid]
             results.append(SearchResult(ref=self.catalog.ref(gid), score=float(score), signals=signals))
 
+        if self.settings.search.reranker != "none" and results:
+            results = cross_rerank(results, query_text_for_bm25, self.settings)
         if self.settings.search.vlm_rerank and results:
             results = vlm_rerank(results, query_text_for_bm25, self.settings)
         return results

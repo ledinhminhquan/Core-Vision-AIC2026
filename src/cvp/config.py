@@ -108,6 +108,15 @@ class SearchCfg(BaseModel):
     # Temporal context boost: neighbours of strong frames get a small lift.
     neighbor_boost: float = 0.10
     neighbor_window: int = 2
+    # Optional PAIRWISE cross-encoder rerank of the fused head (Unified-IMMR
+    # 76.4/88 AIC-2025 recipe). Runs BEFORE the listwise VLM rerank; both are
+    # off by default (latency). qwen_reranker = Qwen3-VL-Reranker (Jan 2026).
+    reranker: Literal["none", "blip2_itm", "qwen_reranker"] = "none"
+    rerank_topk: int = 100
+    rerank_weight: float = 0.5           # blend: (1-w)·fused + w·cross (both min-max)
+    rerank_batch_size: int = 8
+    blip2_itm_id: str = "Salesforce/blip2-itm-vit-g"
+    qwen_reranker_id: str = "Qwen/Qwen3-VL-Reranker-2B"
     # Optional listwise VLM re-rank of the head of the ranking (UIT CVPRW'25: +10% H@1).
     vlm_rerank: bool = False
     vlm_rerank_topk: int = 24

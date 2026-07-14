@@ -50,14 +50,18 @@ def main() -> None:
                     help="(re)build only the persisted BM25 text index")
     ap.add_argument("--force-text-index", action="store_true",
                     help="rebuild the text index even when its signature matches")
+    ap.add_argument("--objects-index", action="store_true",
+                    help="fold per-keyframe objects JSONs into one parquet "
+                         "(ObjectBooster auto-prefers it; big win on Drive)")
     args = ap.parse_args()
 
     settings = init(args.settings)
     catalog = KeyframeCatalog(settings)
     catalog.load()
 
-    if not (args.ocr or args.asr or args.captions or args.text_index or args.force_text_index):
-        ap.error("choose at least one of --ocr --asr --captions --text-index")
+    if not (args.ocr or args.asr or args.captions or args.text_index
+            or args.force_text_index or args.objects_index):
+        ap.error("choose at least one of --ocr --asr --captions --text-index --objects-index")
 
     processed = 0
     if args.ocr:
@@ -80,6 +84,12 @@ def main() -> None:
         )
         processed += n
         print(f"Captions: processed {n} videos")
+
+    if args.objects_index:
+        from cvp.data.objects_compact import build_objects_index
+
+        out = build_objects_index(settings, catalog, overwrite=args.overwrite)
+        print(f"Objects index: {out}")
 
     # Text index: refresh whenever this run changed artifacts (processed > 0)
     # or on --force-text-index; otherwise skip when the signature matches.

@@ -73,6 +73,12 @@ search:
     object: 0.25
   neighbor_boost: 0.10   # temporal-context smoothing strength
   neighbor_window: 2
+  reranker: none         # pairwise cross-encoder: none | blip2_itm | qwen_reranker
+  rerank_topk: 100       # candidates the cross-encoder re-scores
+  rerank_weight: 0.5     # blend: (1-w)*fused + w*cross (both min-max normalized)
+  rerank_batch_size: 8
+  blip2_itm_id: Salesforce/blip2-itm-vit-g
+  qwen_reranker_id: Qwen/Qwen3-VL-Reranker-2B
   vlm_rerank: false      # listwise VLM re-rank of the top rows (needs API/GPU)
   vlm_rerank_topk: 24
   vlm_rerank_provider: gemini   # gemini | vintern | none
