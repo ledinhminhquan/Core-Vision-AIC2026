@@ -8,6 +8,8 @@ Names (config ``embedding.model`` / ``embedding.ensemble_members``):
     qwen_embed       Qwen3-VL-Embedding — native-vi MLLM lane (heavy, optional)
     provided_clip32  OpenAI ViT-B/32 — matches organiser clip-features-32
     mclip            M-CLIP multilingual (optional diversity member)
+    jina             jina-clip-v2 — 89-language Matryoshka lane (optional)
+    metaclip2        MetaCLIP 2 worldwide — multilingual SOTA 2026 (optional)
     ensemble         handled by SearchEngine (fusion over members)
 
 Constructor resolution is lazy: ``resolve_constructor`` never imports model
@@ -58,6 +60,18 @@ def _make_mclip(settings: Settings) -> EmbeddingModel:
     return MClipModel(settings)
 
 
+def _make_jina(settings: Settings) -> EmbeddingModel:
+    from cvp.models.jina_clip import JinaClipModel
+
+    return JinaClipModel(settings)
+
+
+def _make_metaclip2(settings: Settings) -> EmbeddingModel:
+    from cvp.models.metaclip2 import MetaClip2Model
+
+    return MetaClip2Model(settings)
+
+
 _CONSTRUCTORS: dict[str, Callable[[Settings], EmbeddingModel]] = {
     "siglip2": _make_siglip2,
     "finetuned": _make_finetuned,
@@ -65,6 +79,8 @@ _CONSTRUCTORS: dict[str, Callable[[Settings], EmbeddingModel]] = {
     "provided_clip32": _make_provided_clip32,
     "qwen_embed": _make_qwen_embed,
     "mclip": _make_mclip,
+    "jina": _make_jina,
+    "metaclip2": _make_metaclip2,
 }
 
 

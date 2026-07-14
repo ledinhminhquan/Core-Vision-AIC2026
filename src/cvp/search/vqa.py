@@ -23,6 +23,17 @@ _VQA_PROMPT = (
     "Trả lời NGẮN GỌN câu hỏi sau (chỉ đáp án, tối đa 100 ký tự, không giải thích):\n{question}"
 )
 
+# Multi-frame strip (round-2026 upgrade): the real 2025 "math in video" QA
+# needed reading SEVERAL consecutive frames — one frame never carries the whole
+# problem statement. One call sees the whole strip, so cross-frame consistency
+# is free.
+_VQA_STRIP_PROMPT = (
+    "Bạn đang xem {n} khung hình LIÊN TIẾP theo thứ tự thời gian từ CÙNG MỘT "
+    "cảnh trong video tin tức Việt Nam. Kết hợp thông tin từ TẤT CẢ các khung "
+    "hình (chữ trên màn hình có thể trải dài qua nhiều khung) và trả lời NGẮN "
+    "GỌN câu hỏi sau (chỉ đáp án, tối đa 100 ký tự, không giải thích):\n{question}"
+)
+
 
 @dataclass
 class VqaAnswer:
@@ -83,7 +94,53 @@ class VqaAssistant:
         answer = model.chat(tokenizer, pixel_values, prompt, gen_cfg)
         return str(answer).strip()
 
+    def _ask_gemini_strip(self, image_paths: list[str], question: str) -> str:
+        from google import genai
+
+        if self._gemini_client is None:
+            api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+            if not api_key:
+                raise RuntimeError("GEMINI_API_KEY not set")
+            self._gemini_client = genai.Client(api_key=api_key)
+        imgs = []
+        for p in image_paths:
+            img = load_rgb(p)
+            if img is not None:
+                img.thumbnail((768, 768))
+                imgs.append(img)
+        if not imgs:
+            raise RuntimeError("no readable frame in the strip")
+        resp = self._gemini_client.models.generate_content(
+            model=self.cfg.gemini_model,
+            contents=[_VQA_STRIP_PROMPT.format(n=len(imgs), question=question), *imgs],
+        )
+        return (resp.text or "").strip()
+
     # ── public ───────────────────────────────────────────────────────────
+
+    def answer_group(self, question: str, image_paths: list[str]) -> str:
+        """ONE answer for a temporal strip of frames from one candidate group.
+
+        Gemini sees the whole strip in a single call (multi-frame evidence —
+        fixes the 2025 "math in video" failure mode where the problem statement
+        spans several consecutive frames). Degrades to the local single-frame
+        model on the strip's middle frame, then to "" (caller falls back).
+        """
+        paths = [p for p in image_paths if p][: max(1, int(self.cfg.frames_per_answer))]
+        if not paths:
+            return ""
+        if self.cfg.provider == "gemini":
+            try:
+                return self._ask_gemini_strip(paths, question)[:MAX_QA_ANSWER_CHARS]
+            except Exception as e:  # noqa: BLE001 — degrade to local model
+                log.warning("Gemini strip-VQA failed (%s) — trying local model", e)
+        if self.cfg.provider in ("gemini", "vintern"):
+            try:
+                middle = paths[len(paths) // 2]
+                return self._ask_local(middle, question)[:MAX_QA_ANSWER_CHARS]
+            except Exception as e:  # noqa: BLE001
+                log.warning("Local VQA failed: %s", e)
+        return ""
 
     def suggest(self, question: str, frames: list[tuple[int, str]]) -> list[VqaAnswer]:
         """frames: [(global_id, image_path)] — returns one suggestion per frame."""

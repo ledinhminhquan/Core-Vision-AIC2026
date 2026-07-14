@@ -38,6 +38,9 @@ embedding:
   mclip_id: M-CLIP/XLM-Roberta-Large-Vit-L-14
   mclip_image_arch: ViT-L-14
   mclip_image_pretrained: openai
+  jina_id: jinaai/jina-clip-v2            # optional 89-language lane (CC-BY-NC)
+  jina_dim: 1024                          # Matryoshka truncation, valid 64-1024
+  metaclip2_id: facebook/metaclip-2-worldwide-huge-quickgelu  # multilingual SOTA 2026
   # Competition setting: ensemble of the Vietnamese-tuned tower + English lane.
   ensemble_members: [siglip2, openclip]
   ensemble_weights: [0.55, 0.45]
@@ -73,6 +76,12 @@ search:
     object: 0.25
   neighbor_boost: 0.10   # temporal-context smoothing strength
   neighbor_window: 2
+  temporal_boost: false  # Vortex before/now/after boost for "… sau khi …" queries
+  temporal_boost_weight: 0.25
+  temporal_boost_window: 12
+  temporal_boost_topk: 200
+  low_confidence_retry: false   # auto-track: reformulate+RRF-merge flat rankings
+  low_confidence_threshold: 0.25
   reranker: none         # pairwise cross-encoder: none | blip2_itm | qwen_reranker
   rerank_topk: 100       # candidates the cross-encoder re-scores
   rerank_weight: 0.5     # blend: (1-w)*fused + w*cross (both min-max normalized)
@@ -88,7 +97,8 @@ search:
 
 query:
   provider: gemini    # none | google | gemini  (degrades automatically)
-  gemini_model: gemini-2.5-flash
+  gemini_model: gemini-3.5-flash    # stable mid-2026; fallbacks below cover retirement
+  gemini_model_fallbacks: [gemini-3-flash-preview, gemini-2.5-flash]
   enhance: true       # rewrite the query as a concrete visual description
   enhance_english: true
   expansions: 2       # extra paraphrases for multi-query max-fusion
@@ -131,9 +141,10 @@ caption:
 
 vqa:
   provider: gemini    # gemini | vintern | none
-  gemini_model: gemini-2.5-flash
+  gemini_model: gemini-3.5-flash
   local_model: 5CD-AI/Vintern-1B-v3_5
   top_frames: 5
+  frames_per_answer: 3      # temporal strip per answer group (1 = single frame)
   answers_per_query: 5      # distinct candidate groups answered in batch mode
   max_calls_per_query: 5
 

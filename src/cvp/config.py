@@ -64,6 +64,10 @@ class EmbeddingCfg(BaseModel):
     mclip_id: str = "M-CLIP/XLM-Roberta-Large-Vit-L-14"
     mclip_image_arch: str = "ViT-L-14"
     mclip_image_pretrained: str = "openai"
+    # Optional native-multilingual diversity lanes (2026 additions).
+    jina_id: str = "jinaai/jina-clip-v2"
+    jina_dim: int = 1024               # Matryoshka truncation, valid 64–1024
+    metaclip2_id: str = "facebook/metaclip-2-worldwide-huge-quickgelu"
     # Ensemble = late score fusion across per-model FAISS indexes.
     ensemble_members: list[str] = Field(default_factory=lambda: ["siglip2", "openclip"])
     ensemble_weights: list[float] = Field(default_factory=lambda: [0.55, 0.45])
@@ -108,6 +112,17 @@ class SearchCfg(BaseModel):
     # Temporal context boost: neighbours of strong frames get a small lift.
     neighbor_boost: float = 0.10
     neighbor_window: int = 2
+    # Vortex-style before/now/after context boost for "… sau khi …" queries
+    # (off by default — measure on the dev pack before enabling).
+    temporal_boost: bool = False
+    temporal_boost_weight: float = 0.25
+    temporal_boost_window: int = 12    # neighbour rows scanned on the context side
+    temporal_boost_topk: int = 200     # candidates re-scored (head of the fused map)
+    # Batch/auto-track: when the ranking looks flat (low confidence), re-search
+    # the cached query expansions and RRF-merge. Costs extra dense searches
+    # only on the flagged queries; no extra API calls (expansions are cached).
+    low_confidence_retry: bool = False
+    low_confidence_threshold: float = 0.25
     # Optional PAIRWISE cross-encoder rerank of the fused head (Unified-IMMR
     # 76.4/88 AIC-2025 recipe). Runs BEFORE the listwise VLM rerank; both are
     # off by default (latency). qwen_reranker = Qwen3-VL-Reranker (Jan 2026).
@@ -131,7 +146,12 @@ class QueryCfg(BaseModel):
     """Vietnamese query understanding: translate + visually re-describe + expand."""
 
     provider: str = "gemini"          # none | google | gemini
-    gemini_model: str = "gemini-2.5-flash"
+    # Stable mid-2026 default; fallbacks cover preview retirement / regional
+    # gaps so a stale id degrades to the next Gemini model, not to Translate.
+    gemini_model: str = "gemini-3.5-flash"
+    gemini_model_fallbacks: list[str] = Field(default_factory=lambda: [
+        "gemini-3-flash-preview", "gemini-2.5-flash",
+    ])
     enhance: bool = True              # rewrite as concrete visual description
     enhance_english: bool = True      # also enhance pure-English queries
     expansions: int = 2              # extra paraphrase queries for multi-query fusion
@@ -203,9 +223,12 @@ class CaptionCfg(BaseModel):
 
 class VqaCfg(BaseModel):
     provider: str = "gemini"          # gemini | vintern | none
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.5-flash"
     local_model: str = "5CD-AI/Vintern-1B-v3_5"
     top_frames: int = 5               # frames sent to the VQA model per answer group
+    # Frames per answer_group strip (ONE Gemini call sees the whole strip).
+    # 1 = old single-frame behaviour; 3 covers text that spans several frames.
+    frames_per_answer: int = 3
     # Batch/auto mode: answer the top-N distinct candidate groups instead of writing
     # one answer on every row (VQA R-Score needs the *right* row to carry the right answer).
     answers_per_query: int = 5

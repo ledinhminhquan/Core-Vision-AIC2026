@@ -140,10 +140,26 @@ class QueryProcessor:
         prompt = _GEMINI_PROMPT.format(n=self.cfg.expansions, query=query)
         # Hard wall-clock cap on top of the client-side HTTP timeout: on expiry
         # this raises and the gemini → google → passthrough chain takes over.
-        resp = _call_with_timeout(
-            lambda: client.models.generate_content(model=self.cfg.gemini_model, contents=prompt),
-            self.cfg.timeout_s,
-        )
+        # Model ids churn (previews get retired mid-season) — try the configured
+        # model first, then each fallback, so a stale id degrades to the next
+        # Gemini model instead of dropping all the way to Google Translate.
+        models = [self.cfg.gemini_model] + [
+            m for m in self.cfg.gemini_model_fallbacks if m != self.cfg.gemini_model
+        ]
+        resp = None
+        last_err: Exception | None = None
+        for model_id in models:
+            try:
+                resp = _call_with_timeout(
+                    lambda m=model_id: client.models.generate_content(model=m, contents=prompt),
+                    self.cfg.timeout_s,
+                )
+                break
+            except Exception as e:  # noqa: BLE001 — fall through to next model id
+                last_err = e
+                log.warning("Gemini model %r failed (%s) — trying next fallback", model_id, e)
+        if resp is None:
+            raise last_err if last_err else RuntimeError("no Gemini model succeeded")
         text = (resp.text or "").strip()
         text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
         data = json.loads(text)

@@ -270,6 +270,7 @@ class SearchEngine:
             boost=self.settings.search.neighbor_boost,
             window=self.settings.search.neighbor_window,
         )
+        fused = self._maybe_temporal_boost(query_text_for_bm25, fused)
 
         ranked = sorted(fused.items(), key=lambda kv: -kv[1])[:display_k]
         results = []
@@ -288,6 +289,51 @@ class SearchEngine:
         if self.settings.search.vlm_rerank and results:
             results = vlm_rerank(results, query_text_for_bm25, self.settings)
         return results
+
+    def _maybe_temporal_boost(self, query_vi: str, fused: dict[int, float]) -> dict[int, float]:
+        """Vortex-style before/now/after context boost (off by default).
+
+        When the query carries a temporal marker ("… sau khi …"), re-score the
+        head of the fused ranking by how well each candidate's one-sided
+        temporal neighbours match the CONTEXT clause in the primary lane.
+        Every failure path returns ``fused`` unchanged.
+        """
+        cfg = self.settings.search
+        if not cfg.temporal_boost or not fused:
+            return fused
+        from cvp.search.temporal_boost import (
+            apply_context_boost,
+            neighbor_rows,
+            split_temporal_query,
+        )
+
+        parts = split_temporal_query(query_vi)
+        if parts is None:
+            return fused
+        try:
+            model, store = self.members[0]
+            texts = [parts.context]
+            if not getattr(model, "multilingual", False):
+                # English-only primary lane: the raw VI clause would embed
+                # poorly — skip rather than boost with garbage.
+                return fused
+            ctx_vec = model.encode_text(texts)[0]
+            head = sorted(fused.items(), key=lambda kv: -kv[1])[: cfg.temporal_boost_topk]
+            spans = self._spans_for([gid for gid, _ in head])
+            ctx_scores: dict[int, float] = {}
+            for gid, _score in head:
+                rows = neighbor_rows(gid, spans[gid], parts.direction,
+                                     cfg.temporal_boost_window)
+                if not rows:
+                    continue
+                vecs = self._vectors_for(store, rows)
+                if vecs.size == 0:
+                    continue
+                ctx_scores[gid] = float((vecs @ ctx_vec).max())
+            return apply_context_boost(fused, ctx_scores, cfg.temporal_boost_weight)
+        except Exception as e:  # noqa: BLE001 — an optional boost must never sink a query
+            log.warning("Temporal-context boost failed (%s) — keeping plain ranking", e)
+            return fused
 
     # ── public API ───────────────────────────────────────────────────────
 

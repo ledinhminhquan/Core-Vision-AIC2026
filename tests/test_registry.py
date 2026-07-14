@@ -14,11 +14,14 @@ from cvp.models import openclip_model as ocm
 from cvp.models import registry
 from cvp.models.qwen_embed import _truncate_and_renorm
 
-ALL_NAMES = ("siglip2", "finetuned", "openclip", "provided_clip32", "qwen_embed", "mclip")
+ALL_NAMES = ("siglip2", "finetuned", "openclip", "provided_clip32", "qwen_embed", "mclip",
+             "jina", "metaclip2")
 
 HEAVY_MODULES = (
     "cvp.models.siglip2",
     "cvp.models.mclip_model",
+    "cvp.models.jina_clip",
+    "cvp.models.metaclip2",
     "cvp.models.qwen_embed",  # already imported by this test file — tracked anyway
     "torch",
     "transformers",

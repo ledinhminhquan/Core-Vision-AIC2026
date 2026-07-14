@@ -58,7 +58,8 @@ _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 __all__ = [
     "QA_FALLBACK_ANSWER", "infer_task", "parse_query_lines", "parse_trake_events",
     "split_qa_line", "group_candidates", "compute_qa_answers", "run_query_file",
-    "run_query_folder",
+    "run_query_folder", "ranking_confidence", "rrf_merge_results",
+    "maybe_retry_low_confidence",
 ]
 
 
@@ -208,6 +209,97 @@ def group_candidates(results: Sequence[SearchResult], gap_s: float = 10.0,
     return groups
 
 
+def ranking_confidence(scores: Sequence[float]) -> float:
+    """How separated the top of a ranking is from its bulk, in [0, 1].
+
+    ``(s1 − median) / (s1 − min)``: → 1 when the top-1 towers over a flat tail,
+    → 0 when the whole list is one indistinguishable plateau (classic sign the
+    query text failed to discriminate). Short or degenerate lists count as
+    LOW confidence — with <10 candidates a retry can only help.
+    """
+    s = [float(x) for x in scores]
+    if len(s) < 10:
+        return 0.0
+    top, mid = s[0], sorted(s)[len(s) // 2]
+    # Gap relative to the score MAGNITUDE (fused scores are ≥0): a plateau of
+    # near-identical values scores ~0 regardless of where its median sits —
+    # a (top−med)/(top−min) form would miss exactly that failure mode.
+    return max(0.0, min(1.0, (top - mid) / (abs(top) + 1e-12)))
+
+
+def rrf_merge_results(rankings: Sequence[Sequence[SearchResult]],
+                      k: int = 60, limit: int | None = None) -> list[SearchResult]:
+    """Reciprocal-rank-fuse several SearchResult lists (first list is primary).
+
+    Duplicate global_ids keep the FIRST list's result object (its signals are
+    the ones the operator/tooling has already seen).
+    """
+    fused: dict[int, float] = {}
+    keep: dict[int, SearchResult] = {}
+    for ranking in rankings:
+        for rank, r in enumerate(ranking):
+            gid = r.ref.global_id if hasattr(r, "ref") else r.global_id
+            fused[gid] = fused.get(gid, 0.0) + 1.0 / (k + rank + 1)
+            keep.setdefault(gid, r)
+    order = sorted(fused, key=lambda g: -fused[g])
+    out = [keep[g] for g in order]
+    return out[:limit] if limit else out
+
+
+def maybe_retry_low_confidence(engine: SearchEngine, retrieval_text: str,
+                               results: list[SearchResult]) -> list[SearchResult]:
+    """Auto-track upgrade: reformulate-and-merge when the ranking looks flat.
+
+    Off by default (``search.low_confidence_retry``). When the confidence of
+    the initial ranking is below the threshold, re-search each cached query
+    EXPANSION (no extra API call — ``QueryProcessor.process`` is disk-cached)
+    and RRF-merge the rankings, primary first. Every failure path returns the
+    original ranking.
+    """
+    settings = getattr(engine, "settings", None)
+    cfg = getattr(settings, "search", None)
+    if cfg is None or not getattr(cfg, "low_confidence_retry", False) or not results:
+        return results
+    try:
+        conf = ranking_confidence([r.score for r in results])
+        if conf >= cfg.low_confidence_threshold:
+            return results
+        processed = engine.query_processor.process(retrieval_text)
+        alt_texts = [t for t in ([processed.enhanced] + list(processed.expansions))
+                     if t and t.strip() and t.strip() != retrieval_text.strip()]
+        if not alt_texts:
+            return results
+        rankings: list[list[SearchResult]] = [results]
+        for alt in alt_texts[:3]:
+            alt_results = engine.search_text(alt)
+            if alt_results:
+                rankings.append(alt_results)
+        if len(rankings) == 1:
+            return results
+        merged = rrf_merge_results(rankings, limit=len(results))
+        log.info("Low-confidence retry (conf=%.2f): merged %d reformulations",
+                 conf, len(rankings) - 1)
+        return merged
+    except Exception as e:  # noqa: BLE001 — retry is an upgrade, never a risk
+        log.warning("Low-confidence retry failed (%s) — keeping original ranking", e)
+        return results
+
+
+def _group_strip(results: Sequence[SearchResult], group: list[int],
+                 max_frames: int) -> list[str]:
+    """Up to ``max_frames`` image paths spanning one candidate group in
+    TEMPORAL order (first / evenly spaced / last by keyframe ordinal) — the
+    strip a multi-frame VQA call reads as consecutive evidence."""
+    ordered = sorted(group, key=lambda i: getattr(results[i].ref, "n", 0))
+    k = max(1, min(int(max_frames), len(ordered)))
+    if k == 1:
+        picks = [group[0]]
+    else:
+        idxs = {round(j * (len(ordered) - 1) / (k - 1)) for j in range(k)}
+        picks = [ordered[i] for i in sorted(idxs)]
+    return [getattr(results[i].ref, "path", "") for i in picks]
+
+
 def compute_qa_answers(results: Sequence[SearchResult], question: str,
                        vqa: VqaAssistant | None, settings: Settings | None = None) -> list[str]:
     """Per-row QA answers: one VQA call per top candidate group.
@@ -235,10 +327,18 @@ def compute_qa_answers(results: Sequence[SearchResult], question: str,
         best = group[0]
         ans = ""
         try:
-            r = results[best]
-            suggestions = vqa.suggest(question, [(r.global_id, r.ref.path)])
-            if suggestions:
-                ans = str(suggestions[0].answer)[:MAX_QA_ANSWER_CHARS]
+            # Multi-frame strip first (one call sees the whole group — fixes
+            # the 2025 "math in video" QA where text spans several frames);
+            # single-frame `suggest` remains the compatibility/stub fallback.
+            if hasattr(vqa, "answer_group"):
+                strip = _group_strip(results, group,
+                                     getattr(cfg, "frames_per_answer", 1))
+                ans = str(vqa.answer_group(question, strip) or "")[:MAX_QA_ANSWER_CHARS]
+            if not ans:
+                r = results[best]
+                suggestions = vqa.suggest(question, [(r.global_id, r.ref.path)])
+                if suggestions:
+                    ans = str(suggestions[0].answer)[:MAX_QA_ANSWER_CHARS]
         except Exception as e:  # noqa: BLE001 — one failed group must not sink the query
             log.warning("VQA failed for group at rank %d: %s", best + 1, e)
         for i in group:
@@ -288,6 +388,7 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
         results = engine.search_avs(retrieval_text)
     else:
         results = engine.search_text(retrieval_text)
+        results = maybe_retry_low_confidence(engine, retrieval_text, results)
 
     if results:
         t = _time_of(results[0])

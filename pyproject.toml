@@ -3,13 +3,16 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "core-vision-ultimate-final"
+name = "cvp"
 version = "1.0.0"
-description = "Vietnamese text-to-keyframe interactive video retrieval for the HCMC AI Challenge (KIS / QA / TRAKE / AVS)"
+description = "Core-Vision Perfect V1 — Vietnamese text-to-keyframe interactive + automatic video retrieval for the HCMC AI Challenge 2026 (KIS / KIS-V / QA / TRAKE / AVS / KIS-C)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Core Vision Team" }]
+
+[project.scripts]
+cvp = "cvp.cli:main"
 
 # Core: everything needed for catalog / submission / fusion / tests (no GPU).
 dependencies = [
@@ -54,7 +57,10 @@ app = ["streamlit>=1.40"]
 llm = ["google-genai>=1.0", "deep-translator>=1.11"]
 # Optional M-CLIP ensemble member.
 mclip = ["multilingual-clip>=1.0.10"]
-dev = ["pytest>=8.0", "ruff>=0.4"]
+# HTTP/JSON retrieval service (machine-callable face for the 2026 automatic track).
+service = ["fastapi>=0.111", "uvicorn>=0.30"]
+# fastapi+httpx let CI exercise the service endpoints (TestClient) without uvicorn.
+dev = ["pytest>=8.0", "ruff>=0.4", "fastapi>=0.111", "httpx>=0.27"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
