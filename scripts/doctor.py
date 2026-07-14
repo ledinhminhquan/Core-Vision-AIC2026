@@ -5,7 +5,7 @@ import json
 
 from _bootstrap import init
 
-from cvf.pipeline.ingest import doctor
+from cvp.pipeline.ingest import doctor
 
 
 def main() -> None:

@@ -18,19 +18,19 @@ import pandas as pd
 import pytest
 
 # The README-documented dev env is torch-less — skip the whole module cleanly
-# (the guard must run BEFORE any cvf.training import, they need torch too).
+# (the guard must run BEFORE any cvp.training import, they need torch too).
 torch = pytest.importorskip("torch")
 F = pytest.importorskip("torch.nn.functional")
 
-from cvf.config import Settings  # noqa: E402
-from cvf.training.datamodule import TextImageEmbedDataset, collate  # noqa: E402
-from cvf.training.lit_trainer import (  # noqa: E402
+from cvp.config import Settings  # noqa: E402
+from cvp.training.datamodule import TextImageEmbedDataset, collate  # noqa: E402
+from cvp.training.lit_trainer import (  # noqa: E402
     LiTTrainer,
     TrainConfig,
     plan_epoch_steps,
     wiseft_interpolate,
 )
-from cvf.training.losses import info_nce_loss, siglip_sigmoid_loss  # noqa: E402
+from cvp.training.losses import info_nce_loss, siglip_sigmoid_loss  # noqa: E402
 
 DIM = 8
 
@@ -159,13 +159,13 @@ def test_anchor_parquet_provides_pairs(tmp_path: Path):
 
 def test_anchor_mix_warns_when_no_english_sources(tmp_path: Path, caplog):
     settings = _make_train_data(tmp_path, with_en=False)
-    with caplog.at_level(logging.WARNING, logger="cvf.training.datamodule"):
+    with caplog.at_level(logging.WARNING, logger="cvp.training.datamodule"):
         TextImageEmbedDataset(settings, "train", 0.0, anchor_mix_ratio=0.5)
     assert any("no-op" in r.message for r in caplog.records)
 
     caplog.clear()  # ratio 0 (and ratio>0 with sources) must stay silent
     settings_en = _make_train_data(tmp_path / "b", with_en=True)
-    with caplog.at_level(logging.WARNING, logger="cvf.training.datamodule"):
+    with caplog.at_level(logging.WARNING, logger="cvp.training.datamodule"):
         TextImageEmbedDataset(settings, "train", 0.0, anchor_mix_ratio=0.0)
         TextImageEmbedDataset(settings_en, "train", 0.0, anchor_mix_ratio=0.5)
     assert not caplog.records
@@ -359,12 +359,12 @@ def test_resume_warns_on_train_size_mismatch(tmp_path: Path, caplog):
     trainer = LiTTrainer(settings, _mini_cfg(tmp_path))
     trainer._train_size = 100
 
-    with caplog.at_level(logging.WARNING, logger="cvf.training.lit_trainer"):
+    with caplog.at_level(logging.WARNING, logger="cvp.training.lit_trainer"):
         trainer._warn_train_size_mismatch({"train_size": 80}, "step-200")
     assert any("RESUME MISMATCH" in r.message for r in caplog.records)
 
     caplog.clear()  # matching size / old checkpoint without the key: silent
-    with caplog.at_level(logging.WARNING, logger="cvf.training.lit_trainer"):
+    with caplog.at_level(logging.WARNING, logger="cvp.training.lit_trainer"):
         trainer._warn_train_size_mismatch({"train_size": 100}, "step-200")
         trainer._warn_train_size_mismatch({"step": 200}, "step-200")
     assert not caplog.records
@@ -379,7 +379,7 @@ def test_wiseft_alpha_sweep_includes_raw_tuned_tower():
 
 
 def test_filter_captions_policy():
-    from cvf.training.public_datasets import _filter_captions
+    from cvp.training.public_datasets import _filter_captions
 
     caps = [
         "  một   người  đàn ông  ",       # whitespace-normalised, kept
@@ -393,7 +393,7 @@ def test_filter_captions_policy():
 
 
 def test_default_public_parquet_path(tmp_path: Path):
-    from cvf.training.public_datasets import default_public_parquet_path
+    from cvp.training.public_datasets import default_public_parquet_path
 
     settings = Settings.model_validate({"paths": {"artifacts_root": str(tmp_path / "art")}})
     p = default_public_parquet_path("ktvic", settings)
@@ -417,7 +417,7 @@ CORPUS_VIDEOS = {"L21_V001": 6, "L21_V002": 5, "K01_V001": 4}  # matches conftes
 
 
 def test_build_training_set_merges_extra_parquets(corpus_with_index: Settings):
-    from cvf.training.build_dataset import build_training_set
+    from cvp.training.build_dataset import build_training_set
 
     _write_captions(corpus_with_index, CORPUS_VIDEOS)
     public_dir = corpus_with_index.paths.art("train_data", "public")
@@ -452,7 +452,7 @@ def test_build_training_set_merges_extra_parquets(corpus_with_index: Settings):
 
 
 def test_build_training_set_rejects_dim_mismatch(corpus_with_index: Settings):
-    from cvf.training.build_dataset import build_training_set
+    from cvp.training.build_dataset import build_training_set
 
     _write_captions(corpus_with_index, CORPUS_VIDEOS)
     public_dir = corpus_with_index.paths.art("train_data", "public")

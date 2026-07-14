@@ -12,9 +12,9 @@ def _eval(settings, name: str) -> dict[str, float]:
     # scripts/23_dump_signals.py).
     import numpy as np
 
-    from cvf.eval.metrics import retrieval_metrics
-    from cvf.models.registry import build_model
-    from cvf.training.datamodule import TextImageEmbedDataset
+    from cvp.eval.metrics import retrieval_metrics
+    from cvp.models.registry import build_model
+    from cvp.training.datamodule import TextImageEmbedDataset
 
     ds = TextImageEmbedDataset(settings, "val", word_dropout=0.0)
     model = build_model(settings, name)

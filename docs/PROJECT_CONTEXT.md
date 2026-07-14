@@ -1,4 +1,4 @@
-# 📖 PROJECT_CONTEXT — Toàn bộ ngữ cảnh dự án Core-Vision_Ultimate_Final
+# 📖 PROJECT_CONTEXT — Toàn bộ ngữ cảnh dự án Core-Vision_Perfect_V1
 
 > **Đây là tài liệu gốc (source of truth) của dự án.** Đọc file này là nắm được toàn bộ:
 > bài toán, ý tưởng cốt lõi, kiến trúc, thuật toán, pipeline, cách chạy, và cơ sở
@@ -28,7 +28,7 @@ bằng truy vấn tiếng Việt. Mô hình theo VBS (Video Browser Showdown) v�
 | **AVS** | Tìm CÀNG NHIỀU đoạn khớp mô tả càng tốt | như KIS, nhiều dòng đa dạng |
 | **KIS-C** *(điểm nhấn 2026, chưa chắc thi)* | Hội thoại: gợi ý tối thiểu ban đầu, tiết lộ thêm sau 60s theo câu hỏi của đội | như KIS |
 
-**Chấm điểm vòng loại (Codabench)** — công thức CHÍNH THỨC (đã cài trong `cvf/eval/official.py`):
+**Chấm điểm vòng loại (Codabench)** — công thức CHÍNH THỨC (đã cài trong `cvp/eval/official.py`):
 - KIS: `R-Score = 1` khi và chỉ khi đúng video VÀ `frame_idx ∈ [s,e]`; sai một trong hai → 0.
 - QA: thêm điều kiện answer khớp (so sánh casefold, GIỮ NGUYÊN dấu tiếng Việt).
 - TRAKE: sai video → 0; đúng video → `(1/N)·Σ 1(frame_j ∈ [s_j,e_j])` (ví dụ BTC: 3/4 = 0.75).
@@ -153,7 +153,7 @@ Search display_k lớn → **MMR**: `λ·điểm − (1−λ)·max cos(ứng vi�
 - **Autopilot H100**: micro-batch dò OOM thực nghiệm giữ effective batch ≈2048, bf16, TF32,
   checkpoint atomic lên Drive, **resume chính xác giữa epoch**, run-pointer
   `active_train_run.json` gắn sha256 config, early-stop val R@5, EMA.
-- Dùng: `CVF_EMBEDDING__MODEL=finetuned` (hoặc ensemble [finetuned, openclip]).
+- Dùng: `CVP_EMBEDDING__MODEL=finetuned` (hoặc ensemble [finetuned, openclip]).
 - **Lưu ý bằng chứng**: mọi đội top AIC/VBS đều thắng bằng ZERO-SHOT ensemble + dịch câu;
   fine-tune chỉ đáng giá như **kênh bổ sung** cho tên riêng/địa danh tiếng Việt —
   đo bằng `scripts/eval_model.py` trước khi bật trong ensemble thi đấu.
@@ -162,18 +162,18 @@ Search display_k lớn → **MMR**: `λ·điểm − (1−λ)·max cos(ứng vi�
 ```
 python scripts/23_dump_signals.py --query-dir queries/dev          # engine chạy 1 lần/câu
 python scripts/21_tune_weights.py --signals-dir artifacts/signal_dumps/dev \
-       --gt queries/dev/gt.json --trials 60                        # tối ưu offline, in env CVF_...
+       --gt queries/dev/gt.json --trials 60                        # tối ưu offline, in env CVP_...
 ```
 Harness thay trọng số trên score map đã cache (không chạy lại engine), chấm bằng scorer
-chính thức → in đúng dòng `CVF_SEARCH__WEIGHTS__*` để dán vào máy thi.
+chính thức → in đúng dòng `CVP_SEARCH__WEIGHTS__*` để dán vào máy thi.
 
 ## 5. Cấu trúc repo
 
 ```
-Core-Vision_Ultimate_Final/
-├── configs/settings.yaml         ← MỌI cấu hình (override: CVF_SECTION__KEY=...)
+Core-Vision_Perfect_V1/
+├── configs/settings.yaml         ← MỌI cấu hình (override: CVP_SECTION__KEY=...)
 ├── configs/object_vocab_vi.yaml  ← 228 danh từ VI → lớp Open Images V4
-├── src/cvf/
+├── src/cvp/
 │   ├── config.py constants.py
 │   ├── utils/ data/ (catalog bất biến · extraction TransNetV2 · metadata)
 │   ├── models/  siglip2 (+finetuned/wiseft graft) · openclip (PE-Core→DFN5B)
@@ -320,7 +320,7 @@ execution smoke, Colab reality). Tất cả đã vá trong commit này (suite 28
 12. **[E-A] Knob mật độ keyframe K-batch** — section config mới `extraction.shot_positions`
     (mặc định [0.15,0.5,0.85]) + `dedup_mad_threshold`: UIT đo dense keyframes +60–90% H@1
     trên bộ khó; giờ tăng mật độ chỉ là 1 dòng env
-    (`CVF_EXTRACTION__SHOT_POSITIONS='[0.1,0.3,0.5,0.7,0.9]'`), không sửa code.
+    (`CVP_EXTRACTION__SHOT_POSITIONS='[0.1,0.3,0.5,0.7,0.9]'`), không sửa code.
 13. **[E-B] `scripts/20_run_queries.py --gt`** — lệnh MỘT PHÁT cho vòng loại: chạy đề → validate
     → zip → chấm offline đúng công thức BTC (in bảng per-query + per-task + MEAN FINAL) —
     tiết kiệm lượt nộp (5/ngày, 20 tổng).

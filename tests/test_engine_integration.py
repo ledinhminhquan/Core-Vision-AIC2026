@@ -10,9 +10,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import cvf.search.engine as engine_mod
-from cvf.config import Settings
-from cvf.search.engine import SearchEngine
+import cvp.search.engine as engine_mod
+from cvp.config import Settings
+from cvp.search.engine import SearchEngine
 
 
 class FakeModel:
@@ -45,8 +45,8 @@ def engine(corpus_with_index: Settings, monkeypatch) -> SearchEngine:
     settings.query.provider = "none"
     settings.search.vlm_rerank = False
 
-    from cvf.data.catalog import KeyframeCatalog
-    from cvf.index.store import IndexStore
+    from cvp.data.catalog import KeyframeCatalog
+    from cvp.index.store import IndexStore
 
     catalog = KeyframeCatalog(settings)
     catalog.load()

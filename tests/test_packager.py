@@ -17,9 +17,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from cvf.config import Settings
-from cvf.submission.dres_client import DresClient, SubmitResult
-from cvf.submission.packager import (
+from cvp.config import Settings
+from cvp.submission.dres_client import DresClient, SubmitResult
+from cvp.submission.packager import (
     ValidationIssue,
     has_errors,
     infer_task,
@@ -262,7 +262,7 @@ def test_package_files_param_excludes_stale_csvs(tmp_path):
 
 
 def test_group_candidates_splits_videos_and_shots():
-    from cvf.pipeline.run_queries import group_candidates
+    from cvp.pipeline.run_queries import group_candidates
 
     results = [
         _Res("L21_V001", 100, 0),      # t = 4.0s
@@ -276,7 +276,7 @@ def test_group_candidates_splits_videos_and_shots():
 
 
 def test_group_candidates_frame_gap_split_without_pts():
-    from cvf.pipeline.run_queries import group_candidates
+    from cvp.pipeline.run_queries import group_candidates
 
     class _NoPts:
         def __init__(self, video_id, frame_idx, global_id):
@@ -289,7 +289,7 @@ def test_group_candidates_frame_gap_split_without_pts():
 
 
 def test_compute_qa_answers_per_group_with_fallback():
-    from cvf.pipeline.run_queries import compute_qa_answers
+    from cvp.pipeline.run_queries import compute_qa_answers
 
     settings = Settings.model_validate(
         {"vqa": {"provider": "vintern", "answers_per_query": 2, "max_calls_per_query": 2}}
@@ -308,7 +308,7 @@ def test_compute_qa_answers_per_group_with_fallback():
 
 
 def test_compute_qa_answers_no_provider_uses_placeholder():
-    from cvf.pipeline.run_queries import QA_FALLBACK_ANSWER, compute_qa_answers
+    from cvp.pipeline.run_queries import QA_FALLBACK_ANSWER, compute_qa_answers
 
     results = [_Res("L21_V001", 100, 0)]
     assert compute_qa_answers(results, "q?", None, None) == [QA_FALLBACK_ANSWER]
@@ -318,7 +318,7 @@ def test_compute_qa_answers_no_provider_uses_placeholder():
 def test_compute_qa_answers_placeholder_when_all_vqa_calls_fail():
     # Empty answers can never block packaging: no provider or all VQA calls
     # failing must yield the placeholder, not "".
-    from cvf.pipeline.run_queries import QA_FALLBACK_ANSWER, compute_qa_answers
+    from cvp.pipeline.run_queries import QA_FALLBACK_ANSWER, compute_qa_answers
 
     assert QA_FALLBACK_ANSWER == "không rõ"
     results = [_Res("L21_V001", 100, 0), _Res("L21_V002", 5000, 1)]
@@ -423,7 +423,7 @@ def test_dres_answers_never_carry_frame_field(monkeypatch, caplog):
     _patch_urlopen(monkeypatch, captured)
     client = DresClient("http://dres.test", session_id="s")
 
-    with caplog.at_level("WARNING", logger="cvf.submission.dres_client"):
+    with caplog.at_level("WARNING", logger="cvp.submission.dres_client"):
         client.submit_kis("L21_V001", frame_idx=4567)          # no time_ms, no fps
         client.submit_qa("L21_V002", 100, "hai")               # no time_ms, no fps
         client.submit_trake("L21_V003", [10, 20])              # no times_ms, no fps
@@ -520,13 +520,13 @@ def _auto_settings(extra: dict | None = None) -> Settings:
 def test_auto_agent_imports_without_engine_stack():
     import importlib
 
-    import cvf.pipeline.auto_agent as mod
+    import cvp.pipeline.auto_agent as mod
 
     importlib.reload(mod)  # module import must stay torch/engine-free
 
 
 def test_auto_agent_routing_and_packaging(tmp_path):
-    from cvf.pipeline.auto_agent import run_auto
+    from cvp.pipeline.auto_agent import run_auto
 
     settings = _auto_settings()
     engine_holder: list[_StubEngine] = []
@@ -562,8 +562,8 @@ def test_auto_agent_routing_and_packaging(tmp_path):
 
 
 def test_auto_agent_qa_without_provider_uses_placeholder(tmp_path):
-    from cvf.pipeline.auto_agent import run_auto
-    from cvf.pipeline.run_queries import QA_FALLBACK_ANSWER
+    from cvp.pipeline.auto_agent import run_auto
+    from cvp.pipeline.run_queries import QA_FALLBACK_ANSWER
 
     report = run_auto(
         _query_pack(tmp_path), tmp_path / "out", _auto_settings(),
@@ -576,7 +576,7 @@ def test_auto_agent_qa_without_provider_uses_placeholder(tmp_path):
 
 
 def test_auto_agent_ignores_stale_csvs_in_out_dir(tmp_path):
-    from cvf.pipeline.auto_agent import run_auto
+    from cvp.pipeline.auto_agent import run_auto
 
     out = tmp_path / "out"
     out.mkdir()
@@ -614,7 +614,7 @@ class _StubClient:
 
 
 def test_auto_agent_submit_top1_respects_gate(tmp_path):
-    from cvf.pipeline.auto_agent import run_auto
+    from cvp.pipeline.auto_agent import run_auto
 
     # Gate closed: auto_submit stays false → nothing is pushed.
     gated = run_auto(
@@ -644,12 +644,12 @@ def test_auto_agent_submit_top1_respects_gate(tmp_path):
 
 
 def test_auto_agent_submit_skipped_on_validation_errors(tmp_path, monkeypatch, caplog):
-    import cvf.pipeline.auto_agent as aa
+    import cvp.pipeline.auto_agent as aa
 
     monkeypatch.setattr(aa, "validate_file", lambda p, strict=True: [
         ValidationIssue(file=p.name, line=0, severity="error", message="forced error")
     ])
-    with caplog.at_level("ERROR", logger="cvf.pipeline.auto_agent"):
+    with caplog.at_level("ERROR", logger="cvp.pipeline.auto_agent"):
         report = aa.run_auto(
             _query_pack(tmp_path), tmp_path / "out",
             _auto_settings({"submission": {"dres_base_url": "http://dres.test",
@@ -663,7 +663,7 @@ def test_auto_agent_submit_skipped_on_validation_errors(tmp_path, monkeypatch, c
 
 
 def test_auto_agent_submit_aborts_when_login_fails(tmp_path, caplog):
-    from cvf.pipeline.auto_agent import run_auto
+    from cvp.pipeline.auto_agent import run_auto
 
     class _FailLoginClient(_StubClient):
         def login(self, *a, **k):
@@ -671,7 +671,7 @@ def test_auto_agent_submit_aborts_when_login_fails(tmp_path, caplog):
             return SubmitResult(False, 401, "bad credentials")
 
     client = _FailLoginClient()
-    with caplog.at_level("ERROR", logger="cvf.pipeline.auto_agent"):
+    with caplog.at_level("ERROR", logger="cvp.pipeline.auto_agent"):
         report = run_auto(
             _query_pack(tmp_path), tmp_path / "out",
             _auto_settings({"submission": {"dres_base_url": "http://dres.test",

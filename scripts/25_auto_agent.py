@@ -13,7 +13,7 @@ from pathlib import Path
 
 from _bootstrap import init
 
-from cvf.pipeline.auto_agent import run_auto
+from cvp.pipeline.auto_agent import run_auto
 
 
 def main() -> None:

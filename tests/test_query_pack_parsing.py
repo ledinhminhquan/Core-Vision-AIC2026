@@ -14,8 +14,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from cvf.config import Settings
-from cvf.pipeline.run_queries import (
+from cvp.config import Settings
+from cvp.pipeline.run_queries import (
     parse_query_lines,
     parse_trake_events,
     run_query_file,

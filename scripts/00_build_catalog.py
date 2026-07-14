@@ -4,7 +4,7 @@ import argparse
 
 from _bootstrap import init
 
-from cvf.data.catalog import KeyframeCatalog
+from cvp.data.catalog import KeyframeCatalog
 
 
 def main() -> None:

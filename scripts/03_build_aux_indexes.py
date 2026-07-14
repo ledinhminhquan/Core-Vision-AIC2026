@@ -2,7 +2,7 @@
 
 All resumable per video — safe to interrupt and re-run. After the aux
 artifacts are written this also persists the BM25 text index
-(``artifacts/text_index/`` — see cvf.index.text_store) so query-time BM25 is
+(``artifacts/text_index/`` — see cvp.index.text_store) so query-time BM25 is
 candidate-restricted instead of rescanning artifacts on every engine start.
 """
 
@@ -10,8 +10,8 @@ import argparse
 
 from _bootstrap import init
 
-from cvf.config import Settings
-from cvf.data.catalog import KeyframeCatalog
+from cvp.config import Settings
+from cvp.data.catalog import KeyframeCatalog
 
 
 def build_text_index(settings: Settings, catalog: KeyframeCatalog, force: bool = False) -> list[str]:
@@ -20,8 +20,8 @@ def build_text_index(settings: Settings, catalog: KeyframeCatalog, force: bool =
     Idempotent: skipped when the stored meta signature already matches the
     catalog, unless ``force``. Returns per-field summaries ([] when skipped).
     """
-    from cvf.index.text_store import TextIndexStore
-    from cvf.search.text_signals import ALL_FIELDS, collect_field_documents
+    from cvp.index.text_store import TextIndexStore
+    from cvp.search.text_signals import ALL_FIELDS, collect_field_documents
 
     signature = catalog.signature()
     if not force and TextIndexStore.signature_matches(settings.paths.artifacts_root, signature):
@@ -61,19 +61,19 @@ def main() -> None:
 
     processed = 0
     if args.ocr:
-        from cvf.auxindex.ocr import ocr_all_keyframes
+        from cvp.auxindex.ocr import ocr_all_keyframes
 
         n = ocr_all_keyframes(settings, catalog, videos=args.videos, overwrite=args.overwrite)
         processed += n
         print(f"OCR: processed {n} videos")
     if args.asr:
-        from cvf.auxindex.asr import asr_all_videos
+        from cvp.auxindex.asr import asr_all_videos
 
         n = asr_all_videos(settings, catalog, videos=args.videos, overwrite=args.overwrite)
         processed += n
         print(f"ASR: processed {n} videos")
     if args.captions:
-        from cvf.auxindex.captioner import caption_all_keyframes
+        from cvp.auxindex.captioner import caption_all_keyframes
 
         n = caption_all_keyframes(
             settings, catalog, videos=args.videos, stride=args.caption_stride, overwrite=args.overwrite

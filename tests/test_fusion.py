@@ -1,7 +1,7 @@
 import numpy as np
 
-from cvf.search import fusion
-from cvf.search.superglobal import superglobal_rerank
+from cvp.search import fusion
+from cvp.search.superglobal import superglobal_rerank
 
 
 def test_minmax():

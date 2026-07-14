@@ -6,7 +6,7 @@ Example:
 
 Prints a per-query table, per-task means and the overall run score (mean + sum).
 Every CSV is also structurally validated against the submission contract
-(``cvf.submission.writer`` rules). Exit codes: 0 = OK, 2 = at least one
+(``cvp.submission.writer`` rules). Exit codes: 0 = OK, 2 = at least one
 submission CSV is malformed (the organiser server would reject it).
 """
 
@@ -16,9 +16,9 @@ from pathlib import Path
 
 import _bootstrap  # noqa: F401  — side-effect: puts src/ on sys.path
 
-from cvf.eval.official import K_VALUES, RunReport, load_ground_truth, score_run, validate_csv
-from cvf.utils.io import atomic_write_json
-from cvf.utils.logging import setup_logging
+from cvp.eval.official import K_VALUES, RunReport, load_ground_truth, score_run, validate_csv
+from cvp.utils.io import atomic_write_json
+from cvp.utils.logging import setup_logging
 
 
 def _print_report(report: RunReport) -> None:
@@ -52,7 +52,7 @@ def _print_report(report: RunReport) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--submission-dir", required=True, help="folder of {query-stem}.csv files")
-    ap.add_argument("--gt", required=True, help="ground-truth JSON (see cvf.eval.official docstring)")
+    ap.add_argument("--gt", required=True, help="ground-truth JSON (see cvp.eval.official docstring)")
     ap.add_argument("--json-out", default=None, help="write the full report as JSON here")
     args = ap.parse_args()
     setup_logging("INFO")

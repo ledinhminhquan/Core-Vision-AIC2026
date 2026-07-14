@@ -3,11 +3,11 @@
 import numpy as np
 import pytest
 
-from cvf.data.catalog import KeyframeCatalog
-from cvf.index.store import IndexStore
-from cvf.search.avs import avs_diversify
-from cvf.search.feedback import rocchio
-from cvf.search.temporal import trake_search
+from cvp.data.catalog import KeyframeCatalog
+from cvp.index.store import IndexStore
+from cvp.search.avs import avs_diversify
+from cvp.search.feedback import rocchio
+from cvp.search.temporal import trake_search
 
 
 def test_index_build_and_search(corpus_with_index):
@@ -28,7 +28,7 @@ def test_stale_index_fails_loud(corpus_with_index, tmp_path):
     # simulate corpus change: tamper with the stored signature
     meta = store.meta()
     meta["catalog_signature"] = "deadbeef"
-    from cvf.utils.io import atomic_write_json
+    from cvp.utils.io import atomic_write_json
 
     atomic_write_json(store.meta_path, meta)
     store._index = None
@@ -58,7 +58,7 @@ def test_trake_on_synthetic(corpus_with_index):
 
 
 def test_avs_diversify_caps_per_video(corpus_with_index):
-    from cvf.search.engine import SearchResult
+    from cvp.search.engine import SearchResult
 
     catalog = KeyframeCatalog(corpus_with_index)
     results = [

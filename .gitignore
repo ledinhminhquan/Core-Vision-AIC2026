@@ -1,5 +1,5 @@
 # Data & artifacts — NEVER push competition data or built indexes
-# (anchored to the repo root — a bare "data/" would also ignore src/cvf/data/!)
+# (anchored to the repo root — a bare "data/" would also ignore src/cvp/data/!)
 # "/data/*" not "/data/": excluding the DIRECTORY itself would make the
 # .gitkeep re-include below ineffective (git cannot re-include a file whose
 # parent directory is excluded), so the folder skeleton would never commit.

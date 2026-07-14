@@ -3,7 +3,7 @@
 For each query file the engine runs once and the pre-fusion signal maps
 (visual / ocr / asr / caption / metadata / object) are written as one JSON per
 query. Query files are normalised EXACTLY like the batch runner
-(``cvf.pipeline.run_queries``): organiser TRAKE files (header + "E1:…") dump
+(``cvp.pipeline.run_queries``): organiser TRAKE files (header + "E1:…") dump
 against the cleaned event texts, single-line QA files against the description
 part only. Output shape is what scripts/21_tune_weights.py expects:
 
@@ -21,7 +21,7 @@ from pathlib import Path
 
 from _bootstrap import init
 
-from cvf.utils.io import atomic_write_json
+from cvp.utils.io import atomic_write_json
 
 
 def main() -> None:
@@ -41,8 +41,8 @@ def main() -> None:
     )
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    from cvf.pipeline.run_queries import infer_task, parse_query_lines, parse_trake_events
-    from cvf.search.engine import SearchEngine  # heavy import after arg parsing
+    from cvp.pipeline.run_queries import infer_task, parse_query_lines, parse_trake_events
+    from cvp.search.engine import SearchEngine  # heavy import after arg parsing
 
     engine = SearchEngine(settings)
     files = sorted(query_dir.glob("*.txt"))

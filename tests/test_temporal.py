@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from cvf.config import Settings
-from cvf.search.temporal import dante_best_sequences, dp_best_sequences, trake_search
+from cvp.config import Settings
+from cvp.search.temporal import dante_best_sequences, dp_best_sequences, trake_search
 
 
 def _settings(**temporal) -> Settings:
@@ -160,12 +160,12 @@ def test_dante_diverse_last_frames():
 
 
 def test_trake_algo_selected_via_env_override(corpus_with_index, monkeypatch):
-    from cvf.config import load_settings
-    from cvf.data.catalog import KeyframeCatalog
-    from cvf.index.store import IndexStore
-    import cvf.search.temporal as temporal_mod
+    from cvp.config import load_settings
+    from cvp.data.catalog import KeyframeCatalog
+    from cvp.index.store import IndexStore
+    import cvp.search.temporal as temporal_mod
 
-    monkeypatch.setenv("CVF_TEMPORAL__ALGO", "beam")
+    monkeypatch.setenv("CVP_TEMPORAL__ALGO", "beam")
     env_settings = load_settings()
     assert env_settings.temporal.algo == "beam"
 
@@ -196,8 +196,8 @@ def test_trake_ensemble_finds_sequence_only_visible_in_combination(corpus_with_i
     """Member A sees only event 1, member B only event 2 in L21_V001; each member
     alone prefers its own decoy video — the weighted combination must find the
     planted L21_V001 chain (n=1 → n=4)."""
-    from cvf.data.catalog import KeyframeCatalog
-    from cvf.index.store import IndexStore
+    from cvp.data.catalog import KeyframeCatalog
+    from cvp.index.store import IndexStore
 
     catalog = KeyframeCatalog(corpus_with_index)
     q_a = np.stack([_basis(0), _basis(1)])  # member A's event encodings
@@ -250,8 +250,8 @@ def test_trake_ensemble_finds_sequence_only_visible_in_combination(corpus_with_i
 
 
 def test_trake_ensemble_single_member_equals_classic_path(corpus_with_index):
-    from cvf.data.catalog import KeyframeCatalog
-    from cvf.index.store import IndexStore
+    from cvp.data.catalog import KeyframeCatalog
+    from cvp.index.store import IndexStore
 
     catalog = KeyframeCatalog(corpus_with_index)
     store = IndexStore(corpus_with_index, "fake")

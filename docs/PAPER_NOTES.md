@@ -34,11 +34,11 @@
 | # | Ablation | Metric | Script |
 |---|---|---|---|
 | A1 | siglip2 đơn vs +PE-Core ensemble vs +finetuned | Mean R@k Final | `20_run_queries` + `40_eval_official` |
-| A2 | SuperGlobal off / 1-variant / multi-variant | Final, R@1 | env `CVF_SEARCH__RERANK` |
+| A2 | SuperGlobal off / 1-variant / multi-variant | Final, R@1 | env `CVP_SEARCH__RERANK` |
 | A3 | fusion: visual-only / +BM25 / +object / tuned weights / RRF | Final | `21_tune_weights` báo cáo sẵn deltas |
-| A4 | TRAKE: beam vs dante vs dante-ensemble | TRAKE R-Score | `CVF_TEMPORAL__ALGO` |
+| A4 | TRAKE: beam vs dante vs dante-ensemble | TRAKE R-Score | `CVP_TEMPORAL__ALGO` |
 | A5 | zero-shot vs LoRA-LiT vs +WiSE-FT (+anchor/hardneg on/off) | val R@1/5/10 + Final | nb02 tự in bảng |
-| A6 | VLM rerank on/off (Gemini vs Vintern) | R@1, latency | `CVF_SEARCH__VLM_RERANK` |
+| A6 | VLM rerank on/off (Gemini vs Vintern) | R@1, latency | `CVP_SEARCH__VLM_RERANK` |
 | A7 | AVS greedy vs MMR (λ sweep) | #video phủ đúng | `search_avs` |
 | A8 | QA: 1 answer chung vs per-group answers | QA R-Score | so 2 chế độ run_queries |
 

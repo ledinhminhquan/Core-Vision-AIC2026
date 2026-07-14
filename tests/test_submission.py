@@ -1,6 +1,6 @@
 import pytest
 
-from cvf.submission.writer import sanitize_answer, write_kis, write_qa, write_trake
+from cvp.submission.writer import sanitize_answer, write_kis, write_qa, write_trake
 
 
 def test_kis_dedup_and_cap(tmp_path):
@@ -21,19 +21,19 @@ def test_kis_rejects_bad_video_id(tmp_path):
 def test_writers_skip_invalid_rows_with_warning(tmp_path, caplog):
     # one bad candidate must not abort the whole 100-row export (FIX: unified
     # skip-with-warning across write_kis / write_qa / write_trake)
-    with caplog.at_level("WARNING", logger="cvf.submission.writer"):
+    with caplog.at_level("WARNING", logger="cvp.submission.writer"):
         p = write_kis(tmp_path / "kis.csv", [("badid", 1), ("L21_V001", -5), ("L21_V002", 7)])
     assert p.read_text(encoding="utf-8").strip() == "L21_V002,7"
     assert sum("KIS row skipped" in r.message for r in caplog.records) == 2
 
     caplog.clear()
-    with caplog.at_level("WARNING", logger="cvf.submission.writer"):
+    with caplog.at_level("WARNING", logger="cvp.submission.writer"):
         p2 = write_qa(tmp_path / "qa.csv", [("badid", 1, "hai"), ("L21_V001", 5, "ba")])
     assert p2.read_text(encoding="utf-8").strip() == "L21_V001,5,ba"
     assert any("QA row skipped" in r.message for r in caplog.records)
 
     caplog.clear()
-    with caplog.at_level("WARNING", logger="cvf.submission.writer"):
+    with caplog.at_level("WARNING", logger="cvp.submission.writer"):
         p3 = write_trake(tmp_path / "t.csv", [("badid", [1, 2]), ("K01_V001", [-1, 2]),
                                               ("K01_V002", [5, 6])])
     assert p3.read_text(encoding="utf-8").strip() == "K01_V002,5,6"
@@ -75,10 +75,10 @@ def test_sanitize_answer_nfc_normalization():
 def test_sanitize_answer_truncates_overlong_to_organiser_cap(caplog):
     # Fix L3 (review 2026-07-08): a hand-typed UI answer >100 chars must be
     # truncated (with a warning), never written into a rejectable CSV.
-    from cvf.constants import MAX_QA_ANSWER_CHARS
+    from cvp.constants import MAX_QA_ANSWER_CHARS
 
     long_answer = "một " * 40  # 160 chars
-    with caplog.at_level("WARNING", logger="cvf.submission.writer"):
+    with caplog.at_level("WARNING", logger="cvp.submission.writer"):
         out = sanitize_answer(long_answer)
     assert len(out) <= MAX_QA_ANSWER_CHARS
     assert any("truncated" in r.message for r in caplog.records)
@@ -95,7 +95,7 @@ def test_sanitize_answer_truncation_happens_before_csv_quoting():
     import csv
     import io
 
-    from cvf.constants import MAX_QA_ANSWER_CHARS
+    from cvp.constants import MAX_QA_ANSWER_CHARS
 
     long_with_comma = ("a," * 80)  # 160 chars, full of commas
     out = sanitize_answer(long_with_comma)

@@ -16,8 +16,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from cvf.data.catalog import KeyframeCatalog
-from cvf.search.object_filter import ObjectBooster, ObjectConstraint
+from cvp.data.catalog import KeyframeCatalog
+from cvp.search.object_filter import ObjectBooster, ObjectConstraint
 
 REPO = Path(__file__).resolve().parents[1]
 VOCAB_PATH = REPO / "configs" / "object_vocab_vi.yaml"
@@ -248,7 +248,7 @@ def test_local_scorer_formulas():
 
 def test_local_scorer_multi_window_ranges():
     # Enhancement E5 (review 2026-07-08): the harness accepts the same
-    # multi-window "ranges" GT spelling as cvf.eval.official.
+    # multi-window "ranges" GT spelling as cvp.eval.official.
     mod = _load_harness()
     gt = {"task": "kis", "video_id": "L01_V001", "ranges": [[100, 110], [500, 510]]}
     assert mod._local_score("kis", [("L01_V001", 505)], gt) == 1.0
@@ -265,7 +265,7 @@ def test_resolve_scorer_always_returns_callable():
     mod = _load_harness()
     fn, name = mod.resolve_scorer()
     assert callable(fn)
-    assert "cvf.eval" in name
+    assert "cvp.eval" in name
     # Works whichever backend was resolved (official present or not).
     gt = {"task": "kis", "video_id": "L01_V001", "frame_start": 100, "frame_end": 200}
     assert fn("kis", [("L01_V001", 150)], gt) == pytest.approx(1.0)
@@ -273,7 +273,7 @@ def test_resolve_scorer_always_returns_callable():
 
 
 def test_harness_scores_canonical_gt_formats_without_crashing():
-    # Regression: QA GT in the canonical cvf.eval.official format
+    # Regression: QA GT in the canonical cvp.eval.official format
     # ({"range": [s, e], "answers": [...]}) used to KeyError('frame_start') in
     # _local_score. QA is scored as KIS, TRAKE via the single-frame proxy.
     mod = _load_harness()
@@ -330,7 +330,7 @@ def test_random_recovers_planted_ranking(planted):
 
 
 def test_tune_accepts_custom_scorer(planted):
-    # Local fallback scorer — proves the harness has no cvf.eval.official dependency.
+    # Local fallback scorer — proves the harness has no cvp.eval.official dependency.
     sig_dir, _, _, gt = planted
     mod = _load_harness()
     signals = mod.load_signals(sig_dir)

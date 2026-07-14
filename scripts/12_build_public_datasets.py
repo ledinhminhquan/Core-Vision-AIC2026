@@ -13,7 +13,7 @@ import argparse
 
 from _bootstrap import init
 
-from cvf.training.public_datasets import PUBLIC_DATASETS, build_all_public_parquets
+from cvp.training.public_datasets import PUBLIC_DATASETS, build_all_public_parquets
 
 
 def main() -> None:

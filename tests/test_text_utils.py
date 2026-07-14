@@ -1,4 +1,4 @@
-from cvf.utils.text import fold_diacritics, normalize_text, tokenize_vi
+from cvp.utils.text import fold_diacritics, normalize_text, tokenize_vi
 
 
 def test_fold_diacritics():

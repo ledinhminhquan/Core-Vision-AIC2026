@@ -66,7 +66,7 @@ CELL_PARAMS = r'''
 # ║  1 · PARAMS — the ONLY cell you may need to edit                 ║
 # ╚══════════════════════════════════════════════════════════════════╝
 DRIVE_PROJECT_DIR = "AIC2025"        # MyDrive/<this>/{data, artifacts}
-REPO_URL  = "https://github.com/ledinhminhquan/Core-Vision_Ultimate_Final.git"
+REPO_URL  = "https://github.com/ledinhminhquan/Core-Vision_Perfect_V1.git"
 REPO_REF  = "main"
 
 # Which dense encoders to build indexes for (order = ensemble order).
@@ -159,13 +159,13 @@ CELL_REPO_DEPS = r'''
 #   * KHÔNG BAO GIỜ đụng torch/torchvision/torchaudio của Colab;
 #   * chỉ cài đúng những gói thiếu/sai version (--prefer-binary);
 #   * sau khi cài: `pip check` + micro-fix (tối đa 2 vòng, không crash),
-#     rồi purge sys.modules TRƯỚC khi import cvf.
+#     rồi purge sys.modules TRƯỚC khi import cvp.
 FORCE_REINSTALL_DEPS = False
 
 import re, subprocess, sys
 from pathlib import Path
 
-REPO_DIR = Path("/content/Core-Vision_Ultimate_Final")
+REPO_DIR = Path("/content/Core-Vision_Perfect_V1")
 
 def _run(cmd, **kw):
     print("$", " ".join(map(str, cmd)))
@@ -191,7 +191,7 @@ if REPO_DIR.exists():
 else:
     rc = _run(["git", "clone", "--branch", REPO_REF, clone_url, REPO_DIR])
     if rc != 0:  # private repo / no network → fall back to a Drive copy
-        drive_copy = Path("/content/drive/MyDrive") / DRIVE_PROJECT_DIR / "Core-Vision_Ultimate_Final"
+        drive_copy = Path("/content/drive/MyDrive") / DRIVE_PROJECT_DIR / "Core-Vision_Perfect_V1"
         assert drive_copy.exists(), (
             "Clone failed and no Drive copy found. Either make the GitHub repo "
             f"reachable or upload the repo folder to {drive_copy}"
@@ -286,11 +286,11 @@ if did_install:
         rc, out = _pip_check()
     print("pip check: OK" if rc == 0 else f"⚠ pip check còn cảnh báo (không chặn):\n{out}")
 
-# Purge stale sys.modules of upgraded packages BEFORE importing cvf (v12).
+# Purge stale sys.modules of upgraded packages BEFORE importing cvp (v12).
 if did_install:
     _ALIAS = {"pillow": "pil", "pyyaml": "yaml", "opencv_python_headless": "cv2",
               "open_clip_torch": "open_clip", "scikit_learn": "sklearn"}
-    _roots = {r.name.lower().replace("-", "_") for r in reqs} | {"cvf", "faiss"}
+    _roots = {r.name.lower().replace("-", "_") for r in reqs} | {"cvp", "faiss"}
     _roots |= {_ALIAS[n] for n in _roots & set(_ALIAS)}
     _purged = [m for m in list(sys.modules)
                if m.split(".", 1)[0].lower().replace("-", "_") in _roots]
@@ -301,19 +301,19 @@ if did_install:
 
 if str(REPO_DIR / "src") not in sys.path:
     sys.path.insert(0, str(REPO_DIR / "src"))
-import cvf
-print("cvf", cvf.__version__, "ready")
+import cvp
+print("cvp", cvp.__version__, "ready")
 '''
 
 CELL_ENV_GPU = r'''
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║  4 · Point cvf at the data + GPU setup (TF32 / SDPA / bf16)      ║
+# ║  4 · Point cvp at the data + GPU setup (TF32 / SDPA / bf16)      ║
 # ╚══════════════════════════════════════════════════════════════════╝
 import os, torch
 
-os.environ["CVF_PATHS__DATA_ROOT"]      = str(DATA_DIR)
-os.environ["CVF_PATHS__ARTIFACTS_ROOT"] = str(ARTIFACTS)
-os.environ["CVF_SETTINGS"] = str(REPO_DIR / "configs" / "settings.yaml")
+os.environ["CVP_PATHS__DATA_ROOT"]      = str(DATA_DIR)
+os.environ["CVP_PATHS__ARTIFACTS_ROOT"] = str(ARTIFACTS)
+os.environ["CVP_SETTINGS"] = str(REPO_DIR / "configs" / "settings.yaml")
 
 print("torch", torch.__version__, "| CUDA build", torch.version.cuda)
 print("GPU available:", torch.cuda.is_available())
@@ -348,8 +348,8 @@ try:
 except ImportError:
     pass
 
-from cvf.config import load_settings
-from cvf.utils.logging import setup_logging
+from cvp.config import load_settings
+from cvp.utils.logging import setup_logging
 settings = load_settings()
 setup_logging("INFO")
 print("data_root      =", settings.paths.data_root)
@@ -458,8 +458,8 @@ if COPY_KEYFRAMES_LOCAL and (DATA_DIR / "keyframes").exists():
     if (DATA_DIR / "videos").exists() and not (LOCAL_DATA / "videos").exists():
         (LOCAL_DATA / "videos").symlink_to(DATA_DIR / "videos")
     import os
-    os.environ["CVF_PATHS__DATA_ROOT"] = str(LOCAL_DATA)
-    from cvf.config import load_settings
+    os.environ["CVP_PATHS__DATA_ROOT"] = str(LOCAL_DATA)
+    from cvp.config import load_settings
     settings = load_settings()
     print("data_root now:", settings.paths.data_root)
 else:
@@ -486,8 +486,8 @@ def _log_stage(name: str):
             f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} END   {name} "
                     f"({time.time() - t0:.0f}s)\n")
 
-from cvf.data.catalog import KeyframeCatalog
-from cvf.data.extraction import extract_missing
+from cvp.data.catalog import KeyframeCatalog
+from cvp.data.extraction import extract_missing
 
 # TransNetV2 for K-batch shot detection (best detector per the winning teams).
 # --no-deps: torch/numpy/opencv already exist — Colab torch must not be touched.
@@ -584,9 +584,9 @@ NB1_EMBED = r'''
 # trong một folder embeddings sẽ hỏng index. Chạy lại với FORCE_EMBED=True
 # để re-embed sạch, hoặc khôi phục mạng để nạp đúng checkpoint cũ.
 import gc, torch
-from cvf.index.embedder import embed_all_keyframes, ingest_provided_features
-from cvf.index.store import IndexStore
-from cvf.models.registry import build_model
+from cvp.index.embedder import embed_all_keyframes, ingest_provided_features
+from cvp.index.store import IndexStore
+from cvp.models.registry import build_model
 
 for name in EMBED_MODELS:
     print(f"\n════ {name} ════")
@@ -617,19 +617,19 @@ def _did_work(n) -> bool:
     return n is None or n > 0   # None (older API) → assume something changed
 
 if RUN_OCR:
-    from cvf.auxindex.ocr import ocr_all_keyframes
+    from cvp.auxindex.ocr import ocr_all_keyframes
     with _log_stage("ocr"):
         n = ocr_all_keyframes(settings, catalog, overwrite=FORCE_AUX)
     AUX_CHANGED = AUX_CHANGED or _did_work(n)
     print(f"OCR: processed {n} videos")
 if RUN_ASR:
-    from cvf.auxindex.asr import asr_all_videos
+    from cvp.auxindex.asr import asr_all_videos
     with _log_stage("asr"):
         n = asr_all_videos(settings, catalog, overwrite=FORCE_AUX)
     AUX_CHANGED = AUX_CHANGED or _did_work(n)
     print(f"ASR: processed {n} videos")
 if RUN_CAPTIONS:
-    from cvf.auxindex.captioner import caption_all_keyframes
+    from cvp.auxindex.captioner import caption_all_keyframes
     with _log_stage("captions"):
         n = caption_all_keyframes(settings, catalog, stride=CAPTION_STRIDE, overwrite=FORCE_AUX)
     AUX_CHANGED = AUX_CHANGED or _did_work(n)
@@ -662,7 +662,7 @@ else:
 NB1_DOCTOR = r'''
 # ── 11 · Health report ──
 import json
-from cvf.pipeline.ingest import doctor
+from cvp.pipeline.ingest import doctor
 print(json.dumps(doctor(settings), indent=2, ensure_ascii=False))
 print("\n✅ Artifacts build complete. Next: notebooks/02_train_vi_encoder_H100.ipynb")
 '''
@@ -795,7 +795,7 @@ NB2_PUBLIC_DATA = r'''
 # instantly. Network optional — failures only print a warning.
 if USE_PUBLIC_DATA:
     try:
-        from cvf.training.public_datasets import build_all_public_parquets
+        from cvp.training.public_datasets import build_all_public_parquets
         paths = build_all_public_parquets(settings=settings)
         for p in paths:
             print("extra parquet:", p)
@@ -808,7 +808,7 @@ else:
 NB2_DATASET = r'''
 # ── 8 · Build the caption↔embedding training set (skips if fresh) ──
 from pathlib import Path
-from cvf.training.build_dataset import build_training_set
+from cvp.training.build_dataset import build_training_set
 
 train_dir = settings.paths.art("train_data")
 public_dir = settings.paths.art("train_data", "public")
@@ -835,7 +835,7 @@ import dataclasses, hashlib, json, os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from cvf.training.lit_trainer import TrainConfig
+from cvp.training.lit_trainer import TrainConfig
 
 cfg = TrainConfig(
     base_id=settings.finetuned.base_id,
@@ -934,7 +934,7 @@ print(f"\nrun identity {CFG_HASH} | pointer → running")
 
 NB2_TRAIN = r'''
 # ── 10 · TRAIN (autopilot: after any disconnect just Runtime → Run all) ──
-from cvf.training.lit_trainer import LiTTrainer
+from cvp.training.lit_trainer import LiTTrainer
 
 trainer = LiTTrainer(settings, cfg)
 try:
@@ -968,10 +968,10 @@ NB2_EVAL = r'''
 import gc, os
 import numpy as np, torch
 from pathlib import Path
-from cvf.config import load_settings
-from cvf.eval.metrics import retrieval_metrics
-from cvf.models.registry import build_model
-from cvf.training.datamodule import TextImageEmbedDataset
+from cvp.config import load_settings
+from cvp.eval.metrics import retrieval_metrics
+from cvp.models.registry import build_model
+from cvp.training.datamodule import TextImageEmbedDataset
 
 ds = TextImageEmbedDataset(settings, "val", word_dropout=0.0)
 img = ds.embeds / np.maximum(np.linalg.norm(ds.embeds, axis=1, keepdims=True), 1e-9)
@@ -988,7 +988,7 @@ for name, ckpt in CANDIDATES.items():
         continue
     try:
         if ckpt is not None:
-            os.environ["CVF_FINETUNED__CHECKPOINT"] = str(ckpt)
+            os.environ["CVP_FINETUNED__CHECKPOINT"] = str(ckpt)
             model = build_model(load_settings(), "finetuned")
         else:
             model = build_model(settings, name)
@@ -997,7 +997,7 @@ for name, ckpt in CANDIDATES.items():
     except Exception as e:
         print(f"[{name}] skipped: {e}")
     finally:
-        os.environ.pop("CVF_FINETUNED__CHECKPOINT", None)
+        os.environ.pop("CVP_FINETUNED__CHECKPOINT", None)
         gc.collect(); torch.cuda.empty_cache()
 
 if "siglip2" in rows and len(rows) > 1:
@@ -1039,13 +1039,13 @@ else:
 print(f"""
 ✅ Training done. To switch the engine to the tuned Vietnamese tower, set
 BEFORE launching the app / scripts:
-   CVF_EMBEDDING__MODEL=finetuned
-   CVF_FINETUNED__CHECKPOINT={_export}
+   CVP_EMBEDDING__MODEL=finetuned
+   CVP_FINETUNED__CHECKPOINT={_export}
    # (or point it at {_export / 'wiseft_best'} for the WiSE-FT winner)
 To make it an ensemble member instead ([finetuned, openclip] — needs the
 openclip lane from notebook 01):
-   CVF_EMBEDDING__MODEL=ensemble
-   CVF_EMBEDDING__ENSEMBLE_MEMBERS='["finetuned", "openclip"]'
+   CVP_EMBEDDING__MODEL=ensemble
+   CVP_EMBEDDING__ENSEMBLE_MEMBERS='["finetuned", "openclip"]'
 """)
 '''
 
@@ -1070,11 +1070,11 @@ NB3_ENGINE = r'''
 # ── 5 · Load the search engine ──
 # Pick the model for this session: "siglip2" | "finetuned" | "ensemble"
 import os, time
-os.environ["CVF_EMBEDDING__MODEL"] = "siglip2"     # ← change to test others
-os.environ["CVF_QUERY__PROVIDER"]  = "none"        # offline test (no Gemini needed)
+os.environ["CVP_EMBEDDING__MODEL"] = "siglip2"     # ← change to test others
+os.environ["CVP_QUERY__PROVIDER"]  = "none"        # offline test (no Gemini needed)
 
-from cvf.search.engine import SearchEngine
-from cvf.config import load_settings
+from cvp.search.engine import SearchEngine
+from cvp.config import load_settings
 settings = load_settings()
 t0 = time.time()
 engine = SearchEngine(settings)
@@ -1130,7 +1130,7 @@ print(f"\nAVS: {len(avs)} rows across {len({r.video_id for r in avs})} distinct 
 
 NB3_SUBMISSION = r'''
 # ── 8 · Submission CSV round-trip (exact Codabench format) ──
-from cvf.submission.writer import write_kis, write_trake
+from cvp.submission.writer import write_kis, write_trake
 
 results = engine.search_text(QUERIES[0])
 p = write_kis(settings.paths.art("submissions", "demo-kis.csv"),
@@ -1148,7 +1148,7 @@ NB3_PACKAGE = r'''
 # The organiser contract is re-checked on the finished CSVs (a wrong row
 # silently costs a submission slot); errors BLOCK the zip.
 import json
-from cvf.submission.packager import has_errors, package_codabench, validate_submission_dir
+from cvp.submission.packager import has_errors, package_codabench, validate_submission_dir
 
 sub_dir = settings.paths.art("submissions")
 issues = validate_submission_dir(sub_dir, strict=True)
@@ -1171,7 +1171,7 @@ NB3_SCORE_GT = r'''
 # Codabench-style scores (R@k / Final) of the CSVs written above.
 GT_PATH = PROJECT / "queries" / "gt.json"
 if GT_PATH.exists():
-    from cvf.eval.official import score_run
+    from cvp.eval.official import score_run
     report = score_run(settings.paths.art("submissions"), GT_PATH)
     print(f"{'query':28} {'task':6} {'final':>7} {'best_rank':>9}")
     for stem, qs in sorted(report.per_query.items()):
@@ -1186,7 +1186,7 @@ else:
     print("""{
   "demo-kis": {"task": "kis", "video_id": "L21_V001", "range": [500, 510]}
 }""")
-    print("Hỗ trợ range / center+epsilon / moments / answers — xem cvf/eval/official.py")
+    print("Hỗ trợ range / center+epsilon / moments / answers — xem cvp/eval/official.py")
 '''
 
 NB3_AUTO_AGENT = r'''
@@ -1195,7 +1195,7 @@ NB3_AUTO_AGENT = r'''
 # infer task per filename → search → CSVs → validate → Codabench zip.
 RUN_AUTO_AGENT = False
 if RUN_AUTO_AGENT:
-    from cvf.pipeline.auto_agent import run_auto
+    from cvp.pipeline.auto_agent import run_auto
     qdir = PROJECT / "queries" / "example"
     qdir.mkdir(parents=True, exist_ok=True)
     if not any(qdir.glob("*.txt")):     # seed one sample query for the dry-run

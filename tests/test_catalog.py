@@ -1,6 +1,6 @@
 import pandas as pd
 
-from cvf.data.catalog import KeyframeCatalog
+from cvp.data.catalog import KeyframeCatalog
 
 
 def test_build_and_invariants(corpus):

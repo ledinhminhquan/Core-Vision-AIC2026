@@ -9,10 +9,10 @@ import argparse
 
 from _bootstrap import init
 
-from cvf.data.catalog import KeyframeCatalog
-from cvf.index.embedder import embed_all_keyframes, ingest_provided_features
-from cvf.index.store import IndexStore
-from cvf.models.registry import build_model, index_key_for
+from cvp.data.catalog import KeyframeCatalog
+from cvp.index.embedder import embed_all_keyframes, ingest_provided_features
+from cvp.index.store import IndexStore
+from cvp.models.registry import build_model, index_key_for
 
 
 def main() -> None:

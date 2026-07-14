@@ -34,7 +34,7 @@ pytest                                   # 292 pass + 1 skip without torch; full
 
 # with the AIC dataset in ./data (see docs/DRIVE_SETUP.md):
 pip install -e ".[ml]"                        # query text encoder needs torch+open_clip
-export CVF_EMBEDDING__MODEL=provided_clip32   # reuse organiser features — no image GPU work
+export CVP_EMBEDDING__MODEL=provided_clip32   # reuse organiser features — no image GPU work
 python scripts/00_build_catalog.py
 python scripts/02_embed_and_index.py
 streamlit run app/streamlit_app.py
@@ -59,14 +59,14 @@ Query packs are parsed in ALL observed organiser layouts (2026-07-08 + 2026-07-1
 updates, verified on the real AIC-2025 finals packs): TRAKE files with a context
 line + `E1:`…`Ek:` events, single-line QA with the question embedded ("… Hỏi …?"),
 MULTI-paragraph KIS/AVS (all paragraphs joined for retrieval) and multi-line QA
-(question = last interrogative line) — see `cvf.pipeline.run_queries.parse_query_lines`.
+(question = last interrogative line) — see `cvp.pipeline.run_queries.parse_query_lines`.
 
 ## Repository map
 
 | Path | What |
 |---|---|
-| `configs/settings.yaml` | every knob; override via `CVF_SECTION__KEY` env vars |
-| `src/cvf/` | the library — data, models, index, search, submission, training, eval |
+| `configs/settings.yaml` | every knob; override via `CVP_SECTION__KEY` env vars |
+| `src/cvp/` | the library — data, models, index, search, submission, training, eval |
 | `scripts/` | numbered pipeline steps + tuning harness + auto-agent + official scorer |
 | `app/streamlit_app.py` | competition UI (5 task tabs, baskets, 5-min clock, CSV export) |
 | `notebooks/` | Colab: 01 build · 02 train (H100 autopilot) · 03 test/package |

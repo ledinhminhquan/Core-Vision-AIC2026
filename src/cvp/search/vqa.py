@@ -1,0 +1,107 @@
+"""VQA assistant for the QA task: propose an answer from the top frames.
+
+The operator stays in charge — this fills a *suggested* answer next to each
+candidate frame; a human confirms or edits before export (VLM answers are not
+trusted blindly). Providers: Gemini (best; needs GEMINI_API_KEY) or a local
+Vintern-1B (offline fallback, Vietnamese-tuned).
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from dataclasses import dataclass
+
+from cvp.config import Settings
+from cvp.constants import MAX_QA_ANSWER_CHARS
+from cvp.utils.images import load_rgb
+
+log = logging.getLogger(__name__)
+
+_VQA_PROMPT = (
+    "Bạn đang xem một khung hình từ video tin tức Việt Nam. "
+    "Trả lời NGẮN GỌN câu hỏi sau (chỉ đáp án, tối đa 100 ký tự, không giải thích):\n{question}"
+)
+
+
+@dataclass
+class VqaAnswer:
+    global_id: int
+    answer: str
+    provider: str
+
+
+class VqaAssistant:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self.cfg = settings.vqa
+        self._gemini_client = None
+        self._local = None
+
+    # ── providers ────────────────────────────────────────────────────────
+
+    def _ask_gemini(self, image_path: str, question: str) -> str:
+        from google import genai
+
+        if self._gemini_client is None:
+            api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+            if not api_key:
+                raise RuntimeError("GEMINI_API_KEY not set")
+            self._gemini_client = genai.Client(api_key=api_key)
+        img = load_rgb(image_path)
+        if img is None:
+            raise RuntimeError(f"Unreadable image: {image_path}")
+        resp = self._gemini_client.models.generate_content(
+            model=self.cfg.gemini_model,
+            contents=[_VQA_PROMPT.format(question=question), img],
+        )
+        return (resp.text or "").strip()
+
+    def _ask_local(self, image_path: str, question: str) -> str:
+        """Vintern-1B (InternVL family) — loaded lazily, cached."""
+        import torch
+        from transformers import AutoModel, AutoTokenizer
+
+        if self._local is None:
+            model_id = self.cfg.local_model
+            log.info("Loading local VQA model %s", model_id)
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            dtype = torch.bfloat16 if device == "cuda" else torch.float32
+            model = AutoModel.from_pretrained(
+                model_id, torch_dtype=dtype, trust_remote_code=True
+            ).to(device).eval()
+            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, use_fast=False)
+            self._local = (model, tokenizer, device, dtype)
+        model, tokenizer, device, dtype = self._local
+
+        from cvp.auxindex.vintern_preprocess import load_image_tiles
+
+        pixel_values = load_image_tiles(image_path, max_num=self.settings.caption.max_tiles)
+        pixel_values = pixel_values.to(device=device, dtype=dtype)
+        prompt = "<image>\n" + _VQA_PROMPT.format(question=question)
+        gen_cfg = dict(max_new_tokens=64, do_sample=False, num_beams=2)
+        answer = model.chat(tokenizer, pixel_values, prompt, gen_cfg)
+        return str(answer).strip()
+
+    # ── public ───────────────────────────────────────────────────────────
+
+    def suggest(self, question: str, frames: list[tuple[int, str]]) -> list[VqaAnswer]:
+        """frames: [(global_id, image_path)] — returns one suggestion per frame."""
+        out: list[VqaAnswer] = []
+        for gid, path in frames[: self.cfg.top_frames]:
+            answer, provider = "", "none"
+            if self.cfg.provider == "gemini":
+                try:
+                    answer, provider = self._ask_gemini(path, question), "gemini"
+                except Exception as e:  # noqa: BLE001 — degrade to local model
+                    log.warning("Gemini VQA failed (%s) — trying local model", e)
+            if not answer and self.cfg.provider in ("gemini", "vintern"):
+                try:
+                    answer, provider = self._ask_local(path, question), "vintern"
+                except Exception as e:  # noqa: BLE001
+                    log.warning("Local VQA failed: %s", e)
+            if answer:
+                out.append(VqaAnswer(
+                    global_id=gid, answer=answer[:MAX_QA_ANSWER_CHARS], provider=provider,
+                ))
+        return out

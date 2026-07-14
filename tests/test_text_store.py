@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from cvf.data.catalog import KeyframeCatalog
-from cvf.index.text_store import TextIndexStore
-from cvf.search.text_signals import ALL_FIELDS, TextSignals, collect_field_documents
-from cvf.utils.io import atomic_write_json
+from cvp.data.catalog import KeyframeCatalog
+from cvp.index.text_store import TextIndexStore
+from cvp.search.text_signals import ALL_FIELDS, TextSignals, collect_field_documents
+from cvp.utils.io import atomic_write_json
 
 QUERIES = [
     "bản tin 60 giây buổi sáng",
@@ -189,7 +189,7 @@ def test_persisted_path_touches_only_candidates(corpus_txt, monkeypatch):
     ts = TextSignals(corpus, catalog)
 
     # persisted path must never re-collect documents from artifact JSONs
-    import cvf.search.text_signals as tsig
+    import cvp.search.text_signals as tsig
 
     def _boom(*_a, **_k):
         raise AssertionError("corpus scan attempted on the persisted path")
@@ -230,7 +230,7 @@ def test_empty_built_field_skipped_without_rescan(corpus, monkeypatch):
     ts = TextSignals(corpus, catalog)
     assert ts._persisted_enabled() is True
 
-    import cvf.search.text_signals as tsig
+    import cvp.search.text_signals as tsig
     monkeypatch.setattr(
         tsig, "collect_field_documents",
         lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("rescan attempted")),

@@ -17,9 +17,9 @@ Signals dir (``--signals-dir``): one or more ``*.json`` files, merged. Each is::
 
 Row keys are ``"<video_id>,<frame_idx>"`` (submission row identity). Scores are
 RAW engine outputs — the harness min-max normalizes per query per signal, the
-same convention as ``cvf.search.fusion.weighted_sum``.
+same convention as ``cvp.search.fusion.weighted_sum``.
 
-Ground truth (``--gt``) — a subset of what ``cvf.eval.official`` accepts::
+Ground truth (``--gt``) — a subset of what ``cvp.eval.official`` accepts::
 
     {
       "<query_id>": {"task": "kis", "video_id": "L21_V001",
@@ -35,9 +35,9 @@ window may be spelled ``frame_start``/``frame_end``, ``range: [s, e]`` or
 ``center``+``epsilon``. QA ``answer``/``answers`` are ignored here — see
 below.)
 
-KIS rows are scored with ``cvf.eval.official.score_rows`` when that module is
+KIS rows are scored with ``cvp.eval.official.score_rows`` when that module is
 available (workstream B3), else with the identical qualifier formulas in
-``cvf.eval.metrics``. QA is re-ranked as KIS (fusion weights cannot change the
+``cvp.eval.metrics``. QA is re-ranked as KIS (fusion weights cannot change the
 answer column) and TRAKE through a single-frame proxy (frame inside any event
 window) because the cached maps rank keyframes, not frame tuples.
 
@@ -98,7 +98,7 @@ def load_signals(signals_dir: Path) -> dict[str, dict[str, dict[str, float]]]:
 
 
 def _minmax(scores: dict[str, float]) -> dict[str, float]:
-    """Min-max to [0,1]; constant maps → 1.0 (same convention as cvf.search.fusion)."""
+    """Min-max to [0,1]; constant maps → 1.0 (same convention as cvp.search.fusion)."""
     if not scores:
         return {}
     lo, hi = min(scores.values()), max(scores.values())
@@ -154,7 +154,7 @@ def _gt_window(gt: dict) -> tuple[int, int]:
 
 def _gt_windows(gt: dict) -> list[tuple[int, int]]:
     """ALL acceptable KIS/QA windows — supports the multi-window ``ranges``
-    spelling of ``cvf.eval.official`` (a row hits when its frame lands in ANY
+    spelling of ``cvp.eval.official`` (a row hits when its frame lands in ANY
     window); falls back to the single :func:`_gt_window`."""
     raw = gt.get("ranges")
     if isinstance(raw, (list, tuple)):
@@ -188,8 +188,8 @@ def _gt_events(gt: dict) -> list[tuple[int, int]]:
 
 
 def _local_score(task: str, rows: Rows, gt: dict) -> float:
-    """Official qualifier formulas via cvf.eval.metrics (KIS/QA + TRAKE proxy)."""
-    from cvf.eval.metrics import qualifier_score
+    """Official qualifier formulas via cvp.eval.metrics (KIS/QA + TRAKE proxy)."""
+    from cvp.eval.metrics import qualifier_score
 
     task = str(task).lower()
     if task in ("kis", "qa"):
@@ -208,19 +208,19 @@ def _local_score(task: str, rows: Rows, gt: dict) -> float:
 
 
 def resolve_scorer() -> tuple[Scorer, str]:
-    """Prefer cvf.eval.official for KIS; fall back to cvf.eval.metrics.
+    """Prefer cvp.eval.official for KIS; fall back to cvp.eval.metrics.
 
     QA/TRAKE always go through :func:`_local_score`: cached single-frame maps
     carry neither answers nor per-event frame tuples, so only the KIS part of
     the official scorer is replayable.
     """
     try:
-        from cvf.eval import official
+        from cvp.eval import official
     except ImportError:
-        return _local_score, "cvf.eval.metrics (cvf.eval.official not available)"
+        return _local_score, "cvp.eval.metrics (cvp.eval.official not available)"
     fn = getattr(official, "score_rows", None)
     if not callable(fn):
-        return _local_score, "cvf.eval.metrics (official.score_rows not found)"
+        return _local_score, "cvp.eval.metrics (official.score_rows not found)"
 
     def scorer(task: str, rows: Rows, gt: dict) -> float:
         if str(task).lower() != "kis":
@@ -228,7 +228,7 @@ def resolve_scorer() -> tuple[Scorer, str]:
         str_rows = [[video, str(frame)] for video, frame in rows]
         return float(fn("kis", str_rows, gt).final)
 
-    return scorer, "cvf.eval.official.score_rows (kis) + cvf.eval.metrics proxy (qa/trake)"
+    return scorer, "cvp.eval.official.score_rows (kis) + cvp.eval.metrics proxy (qa/trake)"
 
 
 def evaluate_weights(
@@ -364,7 +364,7 @@ def main() -> None:
     if init is None:  # pragma: no cover
         raise RuntimeError("Run this script from the repo (scripts/21_tune_weights.py)")
     settings = init(args.settings)
-    from cvf.utils.io import atomic_write_json, read_json
+    from cvp.utils.io import atomic_write_json, read_json
 
     signals = load_signals(Path(args.signals_dir))
     gt = {str(k): v for k, v in read_json(Path(args.gt)).items()}
@@ -391,7 +391,7 @@ def main() -> None:
     print("Best weights: " + json.dumps(report["best"]["weights"], ensure_ascii=False))
     print("Apply via configs/settings.yaml search.weights, or env overrides:")
     for signal, w in report["best"]["weights"].items():
-        print(f"  CVF_SEARCH__WEIGHTS__{signal.upper()}={w}")
+        print(f"  CVP_SEARCH__WEIGHTS__{signal.upper()}={w}")
     print(f"Report -> {out}")
 
 

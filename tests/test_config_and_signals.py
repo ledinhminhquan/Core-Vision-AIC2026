@@ -1,16 +1,16 @@
 
-from cvf.config import load_settings
-from cvf.data.catalog import KeyframeCatalog
-from cvf.search.object_filter import ObjectBooster
-from cvf.search.text_signals import TextSignals
-from cvf.utils.io import atomic_write_json
+from cvp.config import load_settings
+from cvp.data.catalog import KeyframeCatalog
+from cvp.search.object_filter import ObjectBooster
+from cvp.search.text_signals import TextSignals
+from cvp.utils.io import atomic_write_json
 
 
 def test_env_override(monkeypatch, tmp_path):
-    monkeypatch.setenv("CVF_SEARCH__TOPK", "42")
-    monkeypatch.setenv("CVF_SEARCH__WEIGHTS__OCR", "0.9")
-    monkeypatch.setenv("CVF_PATHS__DATA_ROOT", str(tmp_path))
-    monkeypatch.setenv("CVF_SETTINGS", str(tmp_path / "nonexistent.yaml"))
+    monkeypatch.setenv("CVP_SEARCH__TOPK", "42")
+    monkeypatch.setenv("CVP_SEARCH__WEIGHTS__OCR", "0.9")
+    monkeypatch.setenv("CVP_PATHS__DATA_ROOT", str(tmp_path))
+    monkeypatch.setenv("CVP_SETTINGS", str(tmp_path / "nonexistent.yaml"))
     s = load_settings()
     assert s.search.topk == 42
     assert abs(s.search.weights.ocr - 0.9) < 1e-9
@@ -59,8 +59,8 @@ def test_text_signals_ocr_and_metadata(corpus):
 
 def test_text_signals_persisted_index_path(corpus):
     """Same scenario as above, but scored from the persisted text_index."""
-    from cvf.index.text_store import TextIndexStore
-    from cvf.search.text_signals import ALL_FIELDS, collect_field_documents
+    from cvp.index.text_store import TextIndexStore
+    from cvp.search.text_signals import ALL_FIELDS, collect_field_documents
 
     catalog = KeyframeCatalog(corpus)
     catalog.build()

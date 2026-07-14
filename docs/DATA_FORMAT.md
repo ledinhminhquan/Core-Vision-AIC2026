@@ -25,7 +25,7 @@ n,pts_time,fps,frame_idx
 - `n` — keyframe ordinal (file name, feature row `n-1`).
 - `frame_idx` — frame number in the ORIGINAL video. **This is what you submit.**
 - `pts_time` = `frame_idx / fps` seconds. fps varies per video — never hardcode.
-- Self-extracted videos (K-batch): `cvf.data.extraction` generates this CSV
+- Self-extracted videos (K-batch): `cvp.data.extraction` generates this CSV
   together with the keyframes, so the bridge always exists.
 
 ## 2. Submission CSVs (Codabench qualifiers; DRES finals analogous)
@@ -40,15 +40,15 @@ L21_V001,12450                  L28_V001,8765,xã Cam Hải Đông        K08_V0
 L25_V003,8800                   L25_V003,6200,xã Cam Hải Đông        K10_V002,5600,6200,7100,8050
 ```
 
-Writers in `cvf/submission/writer.py` enforce all of this (validation included:
+Writers in `cvp/submission/writer.py` enforce all of this (validation included:
 video-id regex, non-negative frames, TRAKE strictly increasing, QA answer quoting).
 
 ## 3. Qualifier scoring (what to optimize)
 
 Per query: R-Score per row (task formulas below), then
 `Final = (1/5) · Σ_{k∈{1,5,20,50,100}} max R-Score among the first k rows` —
-implemented EXACTLY (organiser formulas, pure stdlib) in `cvf/eval/official.py`;
-the quick approximation lives in `cvf/eval/metrics.py::qualifier_score`.
+implemented EXACTLY (organiser formulas, pure stdlib) in `cvp/eval/official.py`;
+the quick approximation lives in `cvp/eval/metrics.py::qualifier_score`.
 
 - KIS: 1 iff correct video AND `frame_idx ∈ [s,e]`.
 - QA: additionally the answer must match (casefolded, diacritics preserved).
@@ -70,7 +70,7 @@ video). Task aliases now also include `kis-v`/`video-kis` (scored as KIS).
 
 ### Organiser query-file layouts (both parsed since 2026-07-08)
 
-Verified on the real AIC-2025 finals packs — `cvf.pipeline.run_queries`
+Verified on the real AIC-2025 finals packs — `cvp.pipeline.run_queries`
 normalises BOTH automatically (`parse_trake_events` / `split_qa_line`):
 
 ```

@@ -9,17 +9,17 @@ import sys
 import numpy as np
 import pytest
 
-from cvf.config import Settings
-from cvf.models import openclip_model as ocm
-from cvf.models import registry
-from cvf.models.qwen_embed import _truncate_and_renorm
+from cvp.config import Settings
+from cvp.models import openclip_model as ocm
+from cvp.models import registry
+from cvp.models.qwen_embed import _truncate_and_renorm
 
 ALL_NAMES = ("siglip2", "finetuned", "openclip", "provided_clip32", "qwen_embed", "mclip")
 
 HEAVY_MODULES = (
-    "cvf.models.siglip2",
-    "cvf.models.mclip_model",
-    "cvf.models.qwen_embed",  # already imported by this test file — tracked anyway
+    "cvp.models.siglip2",
+    "cvp.models.mclip_model",
+    "cvp.models.qwen_embed",  # already imported by this test file — tracked anyway
     "torch",
     "transformers",
     "open_clip",

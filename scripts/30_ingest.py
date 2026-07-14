@@ -7,7 +7,7 @@ import argparse
 
 from _bootstrap import init
 
-from cvf.pipeline.ingest import run_ingest
+from cvp.pipeline.ingest import run_ingest
 
 
 def main() -> None:

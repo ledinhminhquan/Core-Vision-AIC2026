@@ -1,6 +1,6 @@
 import numpy as np
 
-from cvf.eval.metrics import (
+from cvp.eval.metrics import (
     KisGroundTruth,
     qualifier_score,
     retrieval_metrics,

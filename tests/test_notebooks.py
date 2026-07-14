@@ -7,7 +7,7 @@ then assert structure + the load-bearing markers:
   * valid nbformat-4 JSON with the expected number of code cells,
   * regenerating is idempotent (same bytes on a second run),
   * PYTORCH_CUDA_ALLOC_CONF is set in the PARAMS cell BEFORE any torch import,
-  * no cell imports cvf before the repo+deps cell,
+  * no cell imports cvp before the repo+deps cell,
   * per-notebook feature markers (BM25 text index + provided_clip32 auto-add
     in nb01; run pointer + WiSE-FT + OOM probe in nb02; Codabench packaging +
     official scoring + auto-track dry-run in nb03).
@@ -33,12 +33,12 @@ EXPECTED_CODE_CELLS = {NB1: 11, NB2: 13, NB3: 12}
 
 # import-detection: `import torch`, `import gc, torch`, `from torch... import`
 TORCH_IMPORT_RE = re.compile(r"^\s*(?:import\s+[^#\n]*\btorch\b|from\s+torch\b)", re.MULTILINE)
-CVF_IMPORT_RE = re.compile(r"^\s*(?:import\s+[^#\n]*\bcvf\b|from\s+cvf\b)", re.MULTILINE)
+CVP_IMPORT_RE = re.compile(r"^\s*(?:import\s+[^#\n]*\bcvp\b|from\s+cvp\b)", re.MULTILINE)
 
 
 def _load_builder():
     spec = importlib.util.spec_from_file_location(
-        "cvf_notebooks_builder_for_tests", NOTEBOOKS_DIR / "_build_notebooks.py")
+        "cvp_notebooks_builder_for_tests", NOTEBOOKS_DIR / "_build_notebooks.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -130,12 +130,12 @@ def test_alloc_conf_set_in_params_cell_before_any_torch_import(builder, name):
 
 
 @pytest.mark.parametrize("name", ALL_NBS)
-def test_no_cvf_import_before_repo_deps_cell(builder, name):
+def test_no_cvp_import_before_repo_deps_cell(builder, name):
     sources = _code_sources(name)
     deps_idx = next(i for i, src in enumerate(sources) if "requirements-colab.txt" in src)
     for i, src in enumerate(sources[:deps_idx]):
-        assert not CVF_IMPORT_RE.search(src), (
-            f"{name}: cell {i} imports cvf before the repo+deps cell installed it")
+        assert not CVP_IMPORT_RE.search(src), (
+            f"{name}: cell {i} imports cvp before the repo+deps cell installed it")
 
 
 # ── per-notebook feature markers ────────────────────────────────────────────
@@ -169,7 +169,7 @@ NB_MARKERS = {
         "build_all_public_parquets",    # KTVIC / UIT-ViIC channels
         "anchor_mix_ratio=ANCHOR_MIX_RATIO",  # new TrainConfig knobs wired
         "wiseft_alphas=WISEFT_ALPHAS",
-        "CVF_FINETUNED__CHECKPOINT",    # wiseft_best eval via env override
+        "CVP_FINETUNED__CHECKPOINT",    # wiseft_best eval via env override
         "deliverables",                 # deliverables mirror (copytree)
         "dirs_exist_ok=True",
         "ENSEMBLE_MEMBERS",             # exact env lines to use the model

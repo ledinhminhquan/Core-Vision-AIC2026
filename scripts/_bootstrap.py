@@ -1,4 +1,4 @@
-"""Shared script bootstrap: make `cvf` importable + set up logging.
+"""Shared script bootstrap: make `cvp` importable + set up logging.
 
 Also forces UTF-8 on stdout/stderr (round-3 fix M-R3-2): script docstrings and
 progress prints contain characters like "→" that do not exist in cp1252, so on
@@ -25,8 +25,8 @@ _SRC = _REPO / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from cvf.config import Settings, load_settings  # noqa: E402
-from cvf.utils.logging import setup_logging  # noqa: E402
+from cvp.config import Settings, load_settings  # noqa: E402
+from cvp.utils.logging import setup_logging  # noqa: E402
 
 
 def init(settings_path: str | None = None) -> Settings:

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from cvf.eval.official import (
+from cvp.eval.official import (
     K_VALUES,
     QueryScore,
     RunReport,
@@ -330,7 +330,7 @@ def test_score_submission_dir_missing_dir_raises(tmp_path):
 def test_score_submission_dir_empty_dir_warns(tmp_path, caplog):
     sub = tmp_path / "subs"
     sub.mkdir()
-    with caplog.at_level("WARNING", logger="cvf.eval.official"):
+    with caplog.at_level("WARNING", logger="cvp.eval.official"):
         report = score_submission_dir(sub, {"query-p1-1-kis": GT_KIS})
     assert report["macro"]["final"] == pytest.approx(0.0)
     assert report["num_gt"] == 1
@@ -427,7 +427,7 @@ def test_score_csv_int_r_at_keys(tmp_path):
 # ================================================================ new: GT loading / unify
 def test_load_ground_truth_unifies_both_formats(tmp_path):
     gt_json = {
-        # canonical cvf format: range / moments / answers; task inferred from stem
+        # canonical cvp format: range / moments / answers; task inferred from stem
         "query-p1-1-kis": {"video_id": "L01_V001", "range": [500, 510]},
         "query-p1-2-qa": {"task": "qa", "video_id": "L05_V005",
                           "center": 850, "epsilon": 50, "answers": ["màu xanh"]},
@@ -496,7 +496,7 @@ def test_load_ground_truth_kis_qa_without_window_raises(tmp_path):
 
 # ================================================================ new: task inference
 def test_infer_task_priority_matches_run_queries():
-    from cvf.pipeline.run_queries import infer_task as pipeline_infer_task
+    from cvp.pipeline.run_queries import infer_task as pipeline_infer_task
 
     for name in ("query-p1-9-trake.csv", "kis-then-trake.csv", "query-avs-1.csv",
                  "query-2-qa.csv", "query-3-kis.csv", "mystery.csv"):

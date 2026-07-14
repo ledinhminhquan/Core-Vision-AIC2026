@@ -14,7 +14,7 @@ from PIL import Image
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from cvf.config import Settings  # noqa: E402
+from cvp.config import Settings  # noqa: E402
 
 DIM = 16
 VIDEOS = {"L21_V001": 6, "L21_V002": 5, "K01_V001": 4}
@@ -86,8 +86,8 @@ def corpus(tmp_path: Path) -> Settings:
 @pytest.fixture()
 def corpus_with_index(corpus: Settings) -> Settings:
     """corpus + built catalog, fake embeddings and FAISS index for 'fake' model."""
-    from cvf.data.catalog import KeyframeCatalog
-    from cvf.index.store import IndexStore
+    from cvp.data.catalog import KeyframeCatalog
+    from cvp.index.store import IndexStore
 
     catalog = KeyframeCatalog(corpus)
     df = catalog.build()

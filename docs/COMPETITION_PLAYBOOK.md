@@ -3,7 +3,7 @@
 ## 0. Trước ngày thi (checklist)
 
 - [ ] Artifacts sync về laptop, app chạy `< 1s/query` (test bằng nb 03 trước).
-- [ ] `CVF_EMBEDDING__MODEL=ensemble` với `[finetuned, openclip]` (đã train) —
+- [ ] `CVP_EMBEDDING__MODEL=ensemble` với `[finetuned, openclip]` (đã train) —
       nếu máy yếu: `finetuned` đơn.
 - [ ] GEMINI_API_KEY nạp sẵn + **đã test offline fallback** (rút mạng thử 1 query).
 - [ ] Cache truy vấn ấm (chạy 20–30 query luyện tập).
@@ -66,7 +66,7 @@ trợ lý đề xuất — đó là những chi tiết nên chờ/đoán từ g�
 - Nộp bằng zip từ `scripts/20_run_queries.py --zip` — packager đã validate từng dòng
   (regex video id, ≤100 dòng, TRAKE tăng dần, QA ≤100 ký tự); zip lỗi là KHÔNG tạo.
 - Có bộ đề dev + đáp án (đề practice 2025 = 89 câu): tune trọng số trước đợt nộp
-  (`scripts/23` + `scripts/21`), dán các dòng `CVF_SEARCH__WEIGHTS__*` nó in ra.
+  (`scripts/23` + `scripts/21`), dán các dòng `CVP_SEARCH__WEIGHTS__*` nó in ra.
 - 🆕 2026-07-08: batch runner đọc được **đề nguyên bản của BTC** (TRAKE có dòng ngữ
   cảnh + tiền tố `E1:`; QA một dòng có "Hỏi …?") — KHÔNG cần sửa tay file đề nữa;
   GT tự soạn giờ nhận cả `"ranges": [[s1,e1],[s2,e2]]` (nhiều cửa sổ chấp nhận được).
@@ -84,7 +84,7 @@ trợ lý đề xuất — đó là những chi tiết nên chờ/đoán từ g�
 - **Đồng hồ 5 phút** hiện trong tab KIS-C — nộp sớm điểm cao, dưới 60s màu đỏ.
   (🆕 2026-07-08: đồng hồ tự nhảy theo thời gian thật từng giây —
   `st.fragment(run_every)` — không cần bấm gì để nó cập nhật nữa.)
-- **VLM rerank** (`CVF_SEARCH__VLM_RERANK=true`): bật khi mạng ổn — top-24 được Gemini
+- **VLM rerank** (`CVP_SEARCH__VLM_RERANK=true`): bật khi mạng ổn — top-24 được Gemini
   chấm lại, +~10% H@1 theo UIT; lỗi API tự về thứ tự cũ nên bật không rủi ro.
 - Checkpoint drift: nếu app cảnh báo "index was built by X but loaded Y" → máy này
   tải fallback khác checkpoint đã build index. Đừng thi trên máy đó — rebuild hoặc đổi máy.
@@ -97,5 +97,5 @@ trợ lý đề xuất — đó là những chi tiết nên chờ/đoán từ g�
 | Gemini limit | Fallback tự động Google Translate — không cần làm gì |
 | App crash | `streamlit run` lại (~30s load); index/catalog bất biến nên không mất gì |
 | Query bí | Đổi chiến thuật: tìm bằng OCR text / object đếm được / metadata chương trình |
-| Chậm | Giảm `Results shown`; tắt rerank: `CVF_SEARCH__RERANK=false` (khởi động lại) |
+| Chậm | Giảm `Results shown`; tắt rerank: `CVP_SEARCH__RERANK=false` (khởi động lại) |
 | Truy vấn đầu tiên chậm | Thiếu text_index bền vững → chạy `scripts/03_build_aux_indexes.py --text-index` |

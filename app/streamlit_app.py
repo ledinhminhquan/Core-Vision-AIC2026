@@ -1,7 +1,7 @@
 """Core Vision Ultimate Final — competition UI.
 
 Run:  streamlit run app/streamlit_app.py
-Env:  CVF_PATHS__DATA_ROOT=... CVF_EMBEDDING__MODEL=siglip2|ensemble|finetuned
+Env:  CVP_PATHS__DATA_ROOT=... CVP_EMBEDDING__MODEL=siglip2|ensemble|finetuned
       GEMINI_API_KEY=... (optional — query enhancement, VQA, KIS-C assistant)
 
 Tabs = tasks: KIS · QA · TRAKE · AVS · KIS-C (chat). Every tab shares the same
@@ -20,8 +20,8 @@ import streamlit as st
 _REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO / "src"))
 
-from cvf.config import load_settings  # noqa: E402
-from cvf.utils.logging import setup_logging  # noqa: E402
+from cvp.config import load_settings  # noqa: E402
+from cvp.utils.logging import setup_logging  # noqa: E402
 
 st.set_page_config(page_title="Core Vision Ultimate Final", layout="wide", page_icon="🎯")
 
@@ -31,7 +31,7 @@ st.set_page_config(page_title="Core Vision Ultimate Final", layout="wide", page_
 
 @st.cache_resource(show_spinner="Loading search engine (models + index)...")
 def get_engine():
-    from cvf.search.engine import SearchEngine
+    from cvp.search.engine import SearchEngine
 
     settings = load_settings()
     setup_logging(settings.logging.level)
@@ -40,21 +40,21 @@ def get_engine():
 
 @st.cache_resource
 def get_media_store():
-    from cvf.data.metadata import MediaInfoStore
+    from cvp.data.metadata import MediaInfoStore
 
     return MediaInfoStore(load_settings())
 
 
 @st.cache_resource
 def get_vqa():
-    from cvf.search.vqa import VqaAssistant
+    from cvp.search.vqa import VqaAssistant
 
     return VqaAssistant(load_settings())
 
 
 @st.cache_resource
 def get_assistant():
-    from cvf.models.agent import ConversationalAssistant
+    from cvp.models.agent import ConversationalAssistant
 
     return ConversationalAssistant(load_settings())
 
@@ -211,7 +211,7 @@ def _current_results_for(task: str) -> list:
 
 
 def _export(task: str, engine) -> None:
-    from cvf.submission.writer import write_kis, write_qa, write_trake
+    from cvp.submission.writer import write_kis, write_qa, write_trake
 
     settings = engine.settings
     out_dir = settings.paths.art("submissions")
@@ -401,7 +401,7 @@ def main() -> None:
         if do_add and new_hint.strip():
             import time as _time
 
-            from cvf.models.agent import DialogueState
+            from cvp.models.agent import DialogueState
 
             if not st.session_state.get("kisc_started_at"):
                 st.session_state.kisc_started_at = _time.monotonic()

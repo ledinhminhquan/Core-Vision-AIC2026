@@ -69,8 +69,8 @@ muốn dùng: `pip install --no-deps transnetv2-pytorch` (torch đã có từ `[
 ## 5. Chạy UI thi đấu trên laptop
 
 ```bash
-git clone https://github.com/ledinhminhquan/Core-Vision_Ultimate_Final.git
-cd Core-Vision_Ultimate_Final
+git clone https://github.com/ledinhminhquan/Core-Vision_Perfect_V1.git
+cd Core-Vision_Perfect_V1
 pip install -e ".[search,app,llm,ml]"        # ml chỉ cần nếu encode local
 ```
 
@@ -81,21 +81,21 @@ thì không set env)*:
 
 ```powershell
 # PowerShell (khuyên dùng trên Windows)
-$env:CVF_PATHS__DATA_ROOT = "D:\AIC\data"
-$env:CVF_PATHS__ARTIFACTS_ROOT = "D:\AIC\artifacts"
+$env:CVP_PATHS__DATA_ROOT = "D:\AIC\data"
+$env:CVP_PATHS__ARTIFACTS_ROOT = "D:\AIC\artifacts"
 $env:GEMINI_API_KEY = "..."        # tùy chọn
 streamlit run app/streamlit_app.py
 ```
 
 ```bash
 # bash / Git Bash / macOS-Linux
-export CVF_PATHS__DATA_ROOT="/d/AIC/data"
-export CVF_PATHS__ARTIFACTS_ROOT="/d/AIC/artifacts"
+export CVP_PATHS__DATA_ROOT="/d/AIC/data"
+export CVP_PATHS__ARTIFACTS_ROOT="/d/AIC/artifacts"
 export GEMINI_API_KEY="..."        # tùy chọn
 streamlit run app/streamlit_app.py
 ```
 
-Laptop yếu? Đặt `CVF_EMBEDDING__MODEL=provided_clip32` (dùng features ViT-B/32 có sẵn —
+Laptop yếu? Đặt `CVP_EMBEDDING__MODEL=provided_clip32` (dùng features ViT-B/32 có sẵn —
 không phải embed lại ảnh; vẫn cần `[ml]` extra vì query text encoder chạy torch trên CPU).
 Notebook 01 **tự thêm** `provided_clip32` vào EMBED_MODELS khi thấy `data/clip-features-32/`.
 Còn `siglip2` chạy CPU cũng được (chậm hơn ~1–2s/query).

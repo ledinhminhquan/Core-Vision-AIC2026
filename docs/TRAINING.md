@@ -61,16 +61,16 @@ dead session leaves a usable model; the WiSE-FT winner lands in
 ## Using the result
 
 ```bash
-CVF_EMBEDDING__MODEL=finetuned                      # single-model mode
+CVP_EMBEDDING__MODEL=finetuned                      # single-model mode
 # WiSE-FT winner instead of the raw best:
-CVF_FINETUNED__CHECKPOINT=./artifacts/checkpoints/vi_siglip2_best/wiseft_best
+CVP_FINETUNED__CHECKPOINT=./artifacts/checkpoints/vi_siglip2_best/wiseft_best
 # or best: ensemble the tuned tower with the English lane —
 # in configs/settings.yaml: ensemble_members: [finetuned, openclip]
-CVF_EMBEDDING__MODEL=ensemble
+CVP_EMBEDDING__MODEL=ensemble
 ```
 `finetuned` **shares the siglip2 embeddings and FAISS index automatically**
 (the LiT image tower is frozen, so the spaces are identical — see
-`index_key_for` in `cvf/models/registry.py`). No re-embedding, no copying:
+`index_key_for` in `cvp/models/registry.py`). No re-embedding, no copying:
 train, set the env var, done.
 
 ## Evaluating

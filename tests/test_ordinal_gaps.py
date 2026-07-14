@@ -7,8 +7,8 @@ NOT ``n - 1``. These tests pin that convention end-to-end.
 
 import numpy as np
 
-from cvf.data.catalog import KeyframeCatalog
-from cvf.index.store import IndexStore
+from cvp.data.catalog import KeyframeCatalog
+from cvp.index.store import IndexStore
 
 
 def _make_gap(corpus):

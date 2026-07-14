@@ -4,7 +4,7 @@ import argparse
 
 from _bootstrap import init
 
-from cvf.training.build_dataset import build_training_set
+from cvp.training.build_dataset import build_training_set
 
 
 def main() -> None:

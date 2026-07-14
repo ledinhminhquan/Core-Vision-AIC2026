@@ -11,7 +11,7 @@ from pathlib import Path
 
 from _bootstrap import init
 
-from cvf.pipeline.run_queries import run_query_folder
+from cvp.pipeline.run_queries import run_query_folder
 
 
 def main() -> None:
@@ -34,7 +34,7 @@ def main() -> None:
     print(f"Wrote {len(written)} submission CSVs → {out_dir}")
 
     if args.zip:
-        from cvf.submission.packager import has_errors, package_codabench
+        from cvp.submission.packager import has_errors, package_codabench
 
         zip_path = out_dir / f"{settings.submission.package_name}.zip"
         # Package ONLY this run's CSVs — stale files in out_dir must not ride along.
@@ -49,7 +49,7 @@ def main() -> None:
             print(f"Packaged: {zip_path} (+ MANIFEST.json)")
 
     if args.gt:
-        from cvf.eval.official import score_run
+        from cvp.eval.official import score_run
 
         report = score_run(out_dir, Path(args.gt))
         print(f"\nOffline official score vs {args.gt}:")

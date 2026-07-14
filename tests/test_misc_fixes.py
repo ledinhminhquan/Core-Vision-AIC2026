@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from cvf.config import Settings
-from cvf.data.metadata import ObjectStore
-from cvf.models.query_processor import _call_with_timeout
-from cvf.utils.io import _tmp_path, atomic_write_json, write_jsonl
+from cvp.config import Settings
+from cvp.data.metadata import ObjectStore
+from cvp.models.query_processor import _call_with_timeout
+from cvp.utils.io import _tmp_path, atomic_write_json, write_jsonl
 
 
 # ── utils/io: unique tmp names + concurrent writers ──────────────────────────
@@ -108,7 +108,7 @@ def test_call_with_timeout_returns_and_raises():
 def test_query_cache_key_covers_model_and_english_enhance():
     """Fix L4 (review 2026-07-08): switching gemini_model or enhance_english
     mid-competition must MISS the cache, not replay stale enhancements."""
-    from cvf.models.query_processor import QueryProcessor
+    from cvp.models.query_processor import QueryProcessor
 
     def _proc(**overrides) -> QueryProcessor:
         s = Settings.model_validate({"query": {"provider": "gemini", **overrides}})
@@ -128,7 +128,7 @@ def test_qwen_messages_instruction_only_for_queries():
     """Fix L2 (review 2026-07-08): documents (images) are embedded WITHOUT the
     instruction system turn, matching the official Qwen3VLEmbedder convention;
     text queries keep it. Uses __new__ — no torch/weights needed."""
-    from cvf.models.qwen_embed import QwenEmbedModel
+    from cvp.models.qwen_embed import QwenEmbedModel
 
     m = object.__new__(QwenEmbedModel)
     m.instruction = "Represent this keyframe / query for retrieval."
@@ -165,8 +165,8 @@ def test_stray_keys_in_old_settings_yaml_are_ignored():
 def test_vietocr_no_longer_documented_as_an_engine():
     import inspect
 
-    import cvf.auxindex.ocr as ocr_mod
-    import cvf.config as config_mod
+    import cvp.auxindex.ocr as ocr_mod
+    import cvp.config as config_mod
 
     assert "vietocr" not in (ocr_mod.__doc__ or "").lower()
     assert "vietocr" not in inspect.getsource(config_mod).lower()

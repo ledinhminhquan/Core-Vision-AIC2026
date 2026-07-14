@@ -8,9 +8,9 @@ from dataclasses import dataclass, field
 import numpy as np
 import pytest
 
-from cvf.search.avs import avs_diversify
-from cvf.search.superglobal import superglobal_rerank
-from cvf.search.vlm_rerank import _parse_scores
+from cvp.search.avs import avs_diversify
+from cvp.search.superglobal import superglobal_rerank
+from cvp.search.vlm_rerank import _parse_scores
 
 
 def _norm(v: np.ndarray) -> np.ndarray:
@@ -142,10 +142,10 @@ def test_avs_mmr_never_exceeds_limit():
 
 
 def test_embedder_model_tag_marker_blocks_checkpoint_mixing(tmp_path):
-    from cvf.config import Settings
-    from cvf.index.embedder import _check_model_tag
-    from cvf.index.store import IndexStore
-    from cvf.utils.io import read_json
+    from cvp.config import Settings
+    from cvp.index.embedder import _check_model_tag
+    from cvp.index.store import IndexStore
+    from cvp.utils.io import read_json
 
     settings = Settings.model_validate({
         "paths": {"data_root": str(tmp_path / "d"), "artifacts_root": str(tmp_path / "a")},
@@ -183,8 +183,8 @@ def test_parse_scores_strict_json_and_fenced():
 
 
 def test_vlm_rerank_reorders_head_only(monkeypatch):
-    from cvf.config import Settings
-    from cvf.search import vlm_rerank as vr
+    from cvp.config import Settings
+    from cvp.search import vlm_rerank as vr
 
     settings = Settings()
     settings.search.vlm_rerank_provider = "gemini"
@@ -204,8 +204,8 @@ def test_vlm_rerank_reorders_head_only(monkeypatch):
 
 
 def test_vlm_rerank_failure_keeps_order(monkeypatch):
-    from cvf.config import Settings
-    from cvf.search import vlm_rerank as vr
+    from cvp.config import Settings
+    from cvp.search import vlm_rerank as vr
 
     settings = Settings()
     settings.search.vlm_rerank_provider = "gemini"

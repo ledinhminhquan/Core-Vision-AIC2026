@@ -58,7 +58,7 @@ def test_eval_model_has_no_module_level_heavy_imports():
         if isinstance(node, (ast.Import, ast.ImportFrom))
     }
     heavy = {m for m in top_level if m and (
-        m.startswith("cvf.training") or m.startswith("cvf.models") or m in ("numpy", "torch"))}
+        m.startswith("cvp.training") or m.startswith("cvp.models") or m in ("numpy", "torch"))}
     assert not heavy, f"module-level heavy imports break torch-less --help: {heavy}"
 
 
@@ -154,8 +154,8 @@ def test_app_sidebar_counters_render_after_tab_handlers():
 
 
 def test_extraction_density_knob_wired():
-    from cvf.config import Settings
-    from cvf.data.extraction import _pick_frames
+    from cvp.config import Settings
+    from cvp.data.extraction import _pick_frames
 
     s = Settings()
     assert s.extraction.shot_positions == [0.15, 0.50, 0.85]
@@ -176,7 +176,7 @@ def test_run_queries_script_has_gt_flag():
 def test_qa_split_ignores_lowercase_conversational_hoi():
     # Round-4: lowercase "hỏi" is an ordinary verb — a marker-less description
     # containing "hỏi đường" must NOT be truncated at it.
-    from cvf.pipeline.run_queries import parse_query_lines, split_qa_line
+    from cvp.pipeline.run_queries import parse_query_lines, split_qa_line
 
     line = "Người phụ nữ mặc áo xanh dừng lại hỏi đường cảnh sát giao thông ở ngã tư nào?"
     desc, question = split_qa_line(line)
@@ -204,7 +204,7 @@ def test_nb01_transnet_install_includes_future_and_verifies_import():
 def test_extraction_config_rejects_empty_or_out_of_range_positions():
     import pytest as _pytest
 
-    from cvf.config import ExtractionCfg
+    from cvp.config import ExtractionCfg
 
     with _pytest.raises(ValueError, match="must not be empty"):
         ExtractionCfg(shot_positions=[])
@@ -215,5 +215,5 @@ def test_extraction_config_rejects_empty_or_out_of_range_positions():
 
 def test_drive_setup_env_block_uses_powershell_form():
     src = (REPO / "docs" / "DRIVE_SETUP.md").read_text(encoding="utf-8")
-    assert '$env:CVF_PATHS__DATA_ROOT' in src
-    assert 'set CVF_PATHS__DATA_ROOT=D:' not in src   # broken cmd form removed
+    assert '$env:CVP_PATHS__DATA_ROOT' in src
+    assert 'set CVP_PATHS__DATA_ROOT=D:' not in src   # broken cmd form removed

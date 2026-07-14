@@ -5,7 +5,7 @@ import argparse
 
 from _bootstrap import init
 
-from cvf.data.extraction import extract_missing
+from cvp.data.extraction import extract_missing
 
 
 def main() -> None:
