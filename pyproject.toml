@@ -11,9 +11,6 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Core Vision Team" }]
 
-[project.scripts]
-cvp = "cvp.cli:main"
-
 # Core: everything needed for catalog / submission / fusion / tests (no GPU).
 dependencies = [
     "pydantic>=2.6",
@@ -25,6 +22,11 @@ dependencies = [
     "pillow>=10.2",
     "rank-bm25>=0.2.2",
 ]
+
+# NOTE: [project.scripts] must come AFTER the plain `dependencies` key — a
+# table header would otherwise swallow it (CI-caught setuptools error).
+[project.scripts]
+cvp = "cvp.cli:main"
 
 [project.optional-dependencies]
 # Dense search (CPU laptop / demo).
