@@ -64,7 +64,9 @@ Trong notebook, secrets được đọc bằng `google.colab.userdata` — cell 
 `transnetv2-pytorch` (param `INSTALL_TRANSNETV2 = True`, cài `--no-deps` nên
 KHÔNG BAO GIỜ đụng torch của Colab) để cắt keyframe bằng shot detector mà các
 đội top dùng; cài lỗi/thiếu mạng → tự fallback PySceneDetect như cũ. Máy local
-muốn dùng: `pip install --no-deps transnetv2-pytorch` (torch đã có từ `[ml]`).
+muốn dùng: `pip install --no-deps transnetv2-pytorch ffmpeg-python future`
+(torch đã có từ `[ml]`; `ffmpeg-python` + `future` là dep bắt buộc lúc runtime —
+thiếu chúng thì extraction âm thầm rơi về PySceneDetect, fix vòng 5 L-R5-1).
 
 ## 5. Chạy UI thi đấu trên laptop
 

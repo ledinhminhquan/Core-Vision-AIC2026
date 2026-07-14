@@ -217,3 +217,13 @@ def test_drive_setup_env_block_uses_powershell_form():
     src = (REPO / "docs" / "DRIVE_SETUP.md").read_text(encoding="utf-8")
     assert '$env:CVP_PATHS__DATA_ROOT' in src
     assert 'set CVP_PATHS__DATA_ROOT=D:' not in src   # broken cmd form removed
+    # C-R5-1: the bash block must survive edits too (round-4 added BOTH forms).
+    assert 'export CVP_PATHS__DATA_ROOT' in src
+
+
+def test_drive_setup_local_transnet_install_lists_runtime_deps():
+    # L-R5-1: the LOCAL install command must include ffmpeg-python + future,
+    # matching the notebook cell — otherwise local K-batch extraction silently
+    # falls back to PySceneDetect.
+    src = (REPO / "docs" / "DRIVE_SETUP.md").read_text(encoding="utf-8")
+    assert 'pip install --no-deps transnetv2-pytorch ffmpeg-python future' in src

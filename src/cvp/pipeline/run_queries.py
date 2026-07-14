@@ -46,6 +46,14 @@ _EVENT_RE = re.compile(r"^\s*[Ee](\d{1,2})\s*[:.)\-]\s*")
 # ("dừng lại hỏi đường cảnh sát…") — a case-insensitive match truncated the
 # retrieval text at such verbs whenever no real marker followed.
 _QA_SPLIT_RE = re.compile(r"(?<!\w)(Hỏi|HỎI|Câu hỏi|Câu Hỏi|CÂU HỎI)\b\s*[:,]?\s*")
+# Imperative question openers of real organiser QA files (round-5 fix M-R5-1):
+# finals ``query-p2-3-qa.txt`` ends "Hảy cho biết…" — no "?" and the organiser's
+# own typo ``Hảy`` for ``Hãy`` — so the last line must also count as a question
+# when it starts like a command. Kept CAPITAL-initial for the same reason as
+# ``_QA_SPLIT_RE`` (sentence starts only, never mid-sentence verbs).
+_IMPERATIVE_Q_RE = re.compile(r"^\s*(Hãy|Hảy|Cho biết|Đếm|Kể tên)\b")
+# Sentence boundary used by the marker-less single-line QA split (L-R5-2).
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
 __all__ = [
     "QA_FALLBACK_ANSWER", "infer_task", "parse_query_lines", "parse_trake_events",
@@ -100,7 +108,9 @@ def split_qa_line(line: str) -> tuple[str, str]:
     the VQA model. The LAST standalone CAPITAL-initial "Hỏi"/"Câu hỏi" wins:
     lowercase "hỏi" is an ordinary verb ("học hỏi", "hỏi đường") and never
     splits (round-4 fix — the verb used to truncate marker-less descriptions).
-    When no marker is found the whole line serves as both (previous behaviour).
+    Marker-less lines fall back to a sentence-boundary split when the LAST
+    sentence looks like the question (ends "?" or opens Hãy/Hảy/Cho biết/…,
+    round-5 fix L-R5-2); otherwise the whole line serves as both.
     """
     matches = list(_QA_SPLIT_RE.finditer(line))
     if matches:
@@ -109,6 +119,17 @@ def split_qa_line(line: str) -> tuple[str, str]:
         question = line[m.start():].strip()
         if description and question:
             return description, question
+    # Marker-less form (round-5 fix L-R5-2): 4/8 real single-line QA files end
+    # in a bare question sentence ("… là gì?", "… hãy cho biết …?"). Split at
+    # the LAST sentence boundary when the final sentence looks interrogative
+    # (ends with "?" or opens like a command); otherwise keep passthrough.
+    sentences = _SENTENCE_SPLIT_RE.split(line.strip())
+    if len(sentences) >= 2:
+        tail = sentences[-1].strip()
+        if tail.endswith("?") or _IMPERATIVE_Q_RE.match(tail):
+            description = " ".join(s.strip() for s in sentences[:-1]).strip()
+            if description and tail:
+                return description, tail
     return line, line
 
 
@@ -135,7 +156,7 @@ def parse_query_lines(task: str, lines: list[str]) -> tuple[str, str | None]:
         description, question = split_qa_line(lines[0])
         return description, question
     tail = lines[-1]
-    if "?" in tail or _QA_SPLIT_RE.search(tail):
+    if "?" in tail or _QA_SPLIT_RE.search(tail) or _IMPERATIVE_Q_RE.match(tail):
         return " ".join(lines[:-1]), tail
     # No interrogative last line — fall back to the marker split on the
     # whole text (some packs wrap a single logical line).

@@ -493,9 +493,10 @@ from cvp.data.extraction import extract_missing
 # --no-deps: torch/numpy/opencv already exist — Colab torch must not be touched.
 # ffmpeg-python is REQUIRED by predict_video() (round-3 fix M-R3-1) and itself
 # hard-imports `past.builtins` from the `future` distribution at import time
-# (round-4 fix: `future` is a REAL runtime dep, not a py2 leftover — all three
-# are pure-Python with no further deps, so --no-deps stays torch-safe; the
-# ffmpeg BINARY ships with Colab).
+# (round-4 fix: `future` is a REAL runtime dep, not a py2 leftover). All three
+# packages DO declare dependencies, but every one of them is either already on
+# Colab or installed by this very call — so --no-deps stays torch-safe (round-5
+# wording fix C-R5-2; the ffmpeg BINARY ships with Colab).
 # Missing/failed install is fine: extraction falls back to PySceneDetect.
 if INSTALL_TRANSNETV2:
     def _transnet_ready() -> bool:

@@ -203,6 +203,57 @@ def test_qa_multiline_without_interrogative_tail_falls_back_to_marker_split():
     assert "Hỏi xã" not in description and "từ thiện" in description
 
 
+def test_qa_multiline_imperative_last_line_is_question():
+    # M-R5-1: the REAL finals file query-p2-3-qa.txt ends "Hảy cho biết…" —
+    # organiser's own typo (Hảy for Hãy), NO question mark. The last line must
+    # still be recognised as the question instead of falling to passthrough.
+    lines = [
+        "Đoạn clip về một gian trưng bày văn hóa - du lịch. Ở giữa là bản đồ Việt Nam.",
+        "Phía trên là quốc kỳ Việt Nam treo chính giữa.",
+        "Hảy cho biết đây là khu du lịch quốc gia tại địa điểm nào của Việt Nam "
+        "(thông tin có ngay dưới bản đồ, được ghi bằng chữ màu xanh lá cây)",
+    ]
+    description, question = parse_query_lines("qa", lines)
+    assert question == lines[-1]
+    assert "quốc kỳ" in description and "Hảy cho biết" not in description
+
+
+def test_qa_single_line_markerless_question_sentence_split():
+    # L-R5-2: 4/8 real single-line QA files have no "Hỏi" marker and just end
+    # in a question sentence — split at the last sentence boundary.
+    line = ("Đoạn video về một lễ hội đua thuyền trên sông. "
+            "Chiếc thuyền về nhất mang màu gì?")
+    description, question = split_qa_line(line)
+    assert question == "Chiếc thuyền về nhất mang màu gì?"
+    assert description == "Đoạn video về một lễ hội đua thuyền trên sông."
+
+
+def test_qa_single_line_markerless_imperative_last_sentence_split():
+    line = ("Đoạn video giới thiệu một bảo tàng ở trung tâm thành phố. "
+            "Hãy cho biết tên bảo tàng này")
+    description, question = split_qa_line(line)
+    assert question == "Hãy cho biết tên bảo tàng này"
+    assert "bảo tàng ở trung tâm" in description
+
+
+def test_qa_single_line_single_sentence_stays_passthrough():
+    # A one-sentence marker-less line has no description to keep — passthrough.
+    line = "Chiếc xe buýt trong đoạn video mang số hiệu nào?"
+    assert split_qa_line(line) == (line, line)
+
+
+def test_qa_multiline_lowercase_hoi_tail_stays_passthrough():
+    # L-R5-3: lowercase "hỏi …" without "?" is NOT treated as a question line
+    # (deliberate round-4 trade-off: lowercase hỏi is an ordinary verb). The
+    # full text then serves as both description and question — pinned here.
+    lines = [
+        "Đoạn video về một phiên chợ nổi trên sông.",
+        "người bán dừng lại hỏi giá một loại trái cây",
+    ]
+    description, question = parse_query_lines("qa", lines)
+    assert description == question == " ".join(lines)
+
+
 def test_kis_multi_paragraph_joins_all_lines():
     # Shape of the REAL finals file query-p1-11-kis.txt: the discriminative
     # detail (shadow portrait) lives ENTIRELY in paragraph 2.

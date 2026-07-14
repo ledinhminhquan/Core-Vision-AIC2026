@@ -1,0 +1,16 @@
+# Round-5 fix C-R5-4: normalise line endings (repo used to mix CRLF/LF).
+# LF in the object store + LF working-tree checkout on every platform; the
+# notebook builder may emit CRLF on Windows — the clean filter makes that a
+# non-event for git status/diff.
+* text=auto eol=lf
+
+# Binary assets — never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.zip binary
+*.npy binary
+*.parquet binary
+*.pt binary
+*.safetensors binary
