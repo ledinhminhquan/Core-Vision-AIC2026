@@ -2,9 +2,72 @@
 
 > **Đây là tài liệu gốc (source of truth) của dự án.** Đọc file này là nắm được toàn bộ:
 > bài toán, ý tưởng cốt lõi, kiến trúc, thuật toán, pipeline, cách chạy, và cơ sở
-> bằng chứng đằng sau từng quyết định thiết kế. Phiên bản **Final** kế thừa
-> Core-Vision_Ultimate và sửa toàn bộ 15 điểm yếu đã xác định + bổ sung năng lực
-> cho thể thức thi 2026.
+> bằng chứng đằng sau từng quyết định thiết kế.
+>
+> **Phả hệ:** Core Vision (3 tuần) → Core-Vision_Ultimate → Core-Vision_Ultimate_Final
+> (5 vòng review đối kháng, 316 test, 0 finding bất ổn) → **Core-Vision_Perfect_V1**
+> (bản này, 14/07/2026): kế thừa nguyên vẹn phần lõi đã kiểm chứng (package `cvf`→`cvp`,
+> env `CVF_`→`CVP_`), **đóng nốt cả 8 tinh chỉnh vòng 5 còn mở**, và bổ sung các nâng
+> cấp 2026 — xem mục 0 ngay dưới.
+
+## 0. Perfect V1 — có gì mới so với Ultimate_Final (14/07/2026)
+
+**Vá (8/8 finding vòng 5 đã đóng):** câu-hỏi-mệnh-lệnh của đề QA thật (`Hảy cho biết…`
+không có `?` — typo nguyên bản của BTC) giờ được tách đúng (M-R5-1 + L-R5-2/3, kèm
+tách theo ranh giới câu cho QA không marker); lệnh cài TransNetV2 local đủ deps
+(L-R5-1); test găm block bash trong DRIVE_SETUP (C-R5-1); comment builder hết nói quá
+(C-R5-2); `.gitattributes` chuẩn hoá EOL toàn repo (C-R5-4).
+
+**Kế thừa từ các repo tiền nhiệm (các delta chưa từng vào flagship):**
+1. **Cross-encoder rerank theo cặp** (`search/cross_rerank.py`) — công thức vô địch
+   Unified-IMMR 76.4/88: `search.reranker: blip2_itm` (BLIP-2 ITM) **hoặc
+   `qwen_reranker`** = Qwen3-VL-Reranker-2B (01/2026 — cross-encoder đa phương thức
+   MỞ đầu tiên). Chạy TRƯỚC VLM listwise rerank; chỉ xáo đầu bảng; mọi lỗi → giữ nguyên.
+2. **Objects parquet** (`data/objects_compact.py` + `scripts/03 --objects-index`) —
+   gộp ~178k JSON per-keyframe thành MỘT file zstd; `ObjectBooster` tự ưu tiên khi có
+   (IO trên Drive nhanh hơn hàng trăm lần).
+3. **Tái dựng map-keyframes** (`scripts/05_rebuild_map_keyframes.py` + `data/keyframe_align.py`)
+   — dhash + DP đơn điệu + tinh chỉnh cửa sổ. **BẢO HIỂM SỐNG CÒN:** bộ data đang tải
+   về KHÔNG có map-keyframes; thiếu nó là không nộp được `frame_idx` thật.
+4. **HTTP service** (`cvp serve`, `service/app.py`): /health · /search/{text,qa,trake,avs}
+   · /nearest · /keyframe — bộ mặt máy-gọi-máy cho **thể thức tự động 2026**; test bằng
+   stub engine thuần CPU. + CLI `cvp` (serve/search/version).
+5. **2 lane đa ngữ tùy chọn mới:** `jina` (jina-clip-v2, 89 ngôn ngữ, Matryoshka 64–1024)
+   và `metaclip2` (MetaCLIP 2 worldwide — SOTA đa ngữ giữa 2026, XM3600 64.3%).
+
+**Nâng cấp 2026 mới toanh:**
+6. **VQA đa khung hình** (`vqa.frames_per_answer=3`): MỖI nhóm ứng viên gửi MỘT dải
+   frame liên tiếp trong MỘT call Gemini — fix đúng dạng đề "giải toán trong video"
+   2025 mà single-frame chịu chết.
+7. **Temporal-context boost** (`search.temporal_boost`, tắt mặc định) — công thức
+   before/now/after của Vortex cho truy vấn "… sau khi …": láng giềng một phía của
+   ứng viên được chấm với vế ngữ cảnh, max cộng vào điểm. Tách vế bằng regex tiếng Việt
+   (không tốn call LLM), thuần offline.
+8. **Retry khi ranking "phẳng"** (`search.low_confidence_retry`, tắt mặc định) — đường
+   batch/auto: điểm tin cậy = (top1 − median)/|top1|; thấp hơn ngưỡng thì re-search các
+   expansion ĐÃ CACHE (không tốn call API) và RRF-merge.
+9. **Chuỗi fallback Gemini** `gemini-3.5-flash → gemini-3-flash-preview → 2.5-flash`
+   (model id chết giữa mùa → tự rơi xuống model kế, không rơi thẳng về Google Translate).
+10. **Ops:** `scripts/26_run_ablations.py` (trận A1–A10 một lệnh, chấm bằng scorer
+    chính thức) · `scripts/50_bench_latency.py` (gate p50≤200ms/p95≤500ms) · toggle
+    **📺 group-by-video** kiểu VISIONE trong app (BTC dạy đúng pattern này ở buổi 2).
+
+**Facts 2026 đã xác minh (tập huấn buổi 1–3 + FAQ + portal, 14/07/2026):**
+- **2 hình thức thi:** interactive (dùng trợ lý ảo trong tool là **TÙY CHỌN**) +
+  **automatic** (thử nghiệm, "thi giữa các Trợ lý ảo" — CHƯA có spec/protocol/API;
+  giảng viên khẳng định chắc chắn KHÔNG phải "nộp file tự động rồi chấm").
+- **Bán kết: nộp ĐÚNG 1 FILE** trong khung thời gian cho trước.
+- **Dataset + đề bài + baseline + metric: phát hành CHẬM NHẤT 25/07/2026** (FAQ);
+  sơ tuyển cần nộp kèm **BÁO CÁO giải pháp** (→ `report/` LaTeX kit).
+- Vòng loại: truy vấn **CHỈ text**; chung kết thêm clip **chỉ được XEM** (cấm quay
+  chụp/screen-capture — được phép mô tả lại/vẽ/sinh ảnh để nhập vào hệ); **audio có
+  thể bị TẮT**; 2025: KIS 5 phút với 5 hint nhỏ giọt mỗi 1 phút, VKIS 4 phút/clip 20s.
+- **AVS KHÔNG chắc thi năm nay** (giảng viên buổi 2 nhớ là không có; thể lệ đổi hằng
+  năm → giữ nguyên module sau cờ). KIS-C là "phong cách hệ thống" chưa phải dạng đề.
+- FAQ row 9: **không giới hạn model/thuật toán/công cụ**; cả tự động lẫn tương tác đều
+  hợp lệ. Theo dõi spec qua: Q&A sheet của BTC, facebook.com/AICHCMC, Codabench
+  (organizer `vnaic`, trang 2025 = id 10187; trang 2026 dự kiến xuất hiện đầu-giữa T8).
+- Zip Codabench **PHẢI chứa folder tên `submission`** (đã là mặc định của packager).
 
 ---
 
@@ -85,7 +148,7 @@ media-info + objects (Open Images)      ─┘            ──► kết quả 
     b-roll), vẫn giữ cap/video + khoảng cách thời gian.
 12. **Frame hỏng (vector 0) bị loại khỏi pool SuperGlobal** — không pha loãng refinement.
 13. **Test tầng tích hợp**: SearchEngine end-to-end với fake model (6 tests), official
-    scorer 60+ tests, packager 34 tests... tổng cộng **316 tests** + GitHub Actions CI.
+    scorer 60+ tests, packager 34 tests... tổng cộng **400 tests** (Perfect V1: 316 kế thừa + 84 mới cho cross-rerank/objects-parquet/keyframe-align/service/VQA-đa-khung/temporal-boost/confidence-retry) + GitHub Actions CI.
 14. **KIS-C nhận tóm tắt kết quả hiện tại** → câu hỏi làm rõ có tính phân biệt;
     thêm **đồng hồ 5 phút** progressive-KIS trong app.
 15. **Truy vấn tiếng Anh cũng được enhance** (trước đây bị bỏ qua hoàn toàn).
@@ -100,7 +163,7 @@ media-info + objects (Open Images)      ─┘            ──► kết quả 
 | Lane features BTC | OpenAI CLIP ViT-B/32 512-d | tức thì, không cần GPU |
 | Fine-tuned | LoRA-LiT text tower trên siglip2 (+ WiSE-FT) | dùng chung FAISS index với siglip2 |
 | Rerank chéo | BLIP-2 ITM / **VLM listwise** (Gemini hoặc Vintern, `search.vlm_rerank`) | UIT CVPRW'25: +10% H@1 |
-| VQA | Gemini 2.5 Flash → Vintern-1B-v3.5 (offline) | trả lời theo nhóm ứng viên |
+| VQA | Gemini 3.5 Flash (fallback 3-flash-preview → 2.5-flash) → Vintern-1B-v3.5 (offline) | trả lời theo NHÓM ứng viên, mỗi nhóm MỘT dải nhiều frame (`vqa.frames_per_answer`) |
 | Caption/OCR/ASR | Vintern-1B-v3.5 · EasyOCR vi+en · PhoWhisper | các kênh BM25 |
 
 **Chống lệch checkpoint:** lane `openclip` có thể resolve ra checkpoint khác nhau giữa các máy
@@ -177,31 +240,39 @@ Core-Vision_Perfect_V1/
 │   ├── config.py constants.py
 │   ├── utils/ data/ (catalog bất biến · extraction TransNetV2 · metadata)
 │   ├── models/  siglip2 (+finetuned/wiseft graft) · openclip (PE-Core→DFN5B)
-│   │            · qwen_embed · mclip · query_processor (Gemini) · agent (KIS-C)
+│   │            · qwen_embed · mclip · jina · metaclip2 · query_processor (Gemini)
+│   │            · agent (KIS-C)
 │   ├── index/   embedder (resumable) · store (FAISS + signature + model_tag)
 │   │            · text_store (BM25 persisted)
 │   ├── search/  engine · fusion (weighted_sum/rrf) · superglobal (đa biến thể)
-│   │            · temporal (DANTE/beam, ensemble) · avs (MMR) · feedback (ensemble)
-│   │            · text_signals (O(K)) · object_filter · vqa · vlm_rerank
+│   │            · temporal (DANTE/beam, ensemble) · temporal_boost (Vortex)
+│   │            · avs (MMR) · feedback (ensemble) · text_signals (O(K))
+│   │            · object_filter · cross_rerank (BLIP-2 ITM/Qwen) · vqa · vlm_rerank
 │   ├── submission/ writer · packager (Codabench zip) · dres_client
 │   ├── training/ build_dataset · datamodule (anchor+hardneg) · losses (sigmoid/infonce)
 │   │            · lit_trainer (exact resume + WiSE-FT) · public_datasets
 │   ├── eval/    metrics · official (công thức BTC, pure stdlib)
-│   └── pipeline/ ingest · run_queries (QA theo nhóm) · auto_agent (thể thức tự động)
-├── scripts/  00 catalog · 01 extract · 02 embed+index · 03 aux(+text-index)
-│             · 11 train-data · 12 public-datasets · 20 run-queries(--zip)
-│             · 21 tune-weights · 23 dump-signals · 25 auto-agent · 30 ingest
-│             · 40 eval-official · doctor · eval_model
+│   ├── service/  app (FastAPI: search/qa/trake/avs/nearest/keyframe) · schemas
+│   ├── cli.py   console `cvp` (serve / search / version)
+│   └── pipeline/ ingest · run_queries (QA theo nhóm + confidence-retry) · auto_agent
+├── scripts/  00 catalog · 01 extract · 02 embed+index · 03 aux(+text/objects-index)
+│             · 05 rebuild-map-keyframes(!) · 11 train-data · 12 public-datasets
+│             · 20 run-queries(--zip --gt) · 21 tune-weights · 23 dump-signals
+│             · 25 auto-agent · 26 ablations A1-A10 · 30 ingest · 40 eval-official
+│             · 50 bench-latency · doctor · eval_model
 ├── app/streamlit_app.py          ← 5 tab + đồng hồ 5' + basket + export + feedback
 ├── notebooks/_build_notebooks.py ← nguồn sinh 3 notebook (đừng sửa tay .ipynb)
-├── docs/    file này · DATA_FORMAT · DRIVE_SETUP · TRAINING · PLAYBOOK · PAPER_NOTES
-├── tests/   316 tests CPU thuần (không cần GPU/mạng/data thật)
+├── docs/    file này · ARCHITECTURE · EVALUATION · DATASET_INGESTION · COLAB_GUIDE
+│            · PROJECT_PLAN · DATA_FORMAT · DRIVE_SETUP · TRAINING · PLAYBOOK · PAPER_NOTES
+├── report/  LaTeX kit báo cáo giải pháp (BẮT BUỘC nộp kèm vòng sơ tuyển)
+├── HUONG_DAN.md  hướng dẫn A-Z tiếng Việt (Drive → Colab → thi đấu)
+├── tests/   400 tests CPU thuần (không cần GPU/mạng/data thật)
 └── .github/workflows/ci.yml
 ```
 
 ## 6. Quy trình A→Z
 
-1. **Local**: `pip install -e ".[search,dev]"` → `pytest` (292 pass + 1 skip — module training cần torch; đủ 316 pass khi cài thêm torch-cpu như CI làm).
+1. **Local**: `pip install -e ".[search,dev]"` → `pytest` (bộ đầy đủ **400 pass** khi có torch-cpu như CI; không torch thì các test training/model bị skip — đo lại con số torch-less sau khi cài).
 2. **Drive**: upload theo `docs/DRIVE_SETUP.md`.
 3. **Colab nb 01** (GPU bất kỳ): catalog → extract K-batch → embed các lane → FAISS
    → OCR/ASR/captions → **text index**. Mọi bước resumable, FORCE_* để làm lại.
@@ -229,7 +300,7 @@ Core-Vision_Perfect_V1/
 
 ## 8. Trạng thái & việc còn lại
 
-- ✅ Source + 316 tests + CI + 3 notebooks + docs + app.
+- ✅ Source + 400 tests + CI + 3 notebooks + docs (11 file) + app + service + report/ LaTeX kit.
 - ⏳ Cần dữ liệu 2026 (BTC chưa phát hành — "sẽ gửi cho các đội khi sẵn sàng"):
   build artifacts (nb01), train (nb02), đo chất lượng thật (nb03 + tune weights).
 - 📌 Theo dõi buổi tập huấn kế (spec nộp bài + công cụ BTC 2026), endpoint DRES chung kết,

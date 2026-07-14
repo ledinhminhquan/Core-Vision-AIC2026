@@ -1,4 +1,4 @@
-"""Ablation battery A1–A8 (docs/PAPER_NOTES.md) — one command, one table.
+"""Ablation battery A1–A10 (docs/PAPER_NOTES.md) — one command, one table.
 
 Runs the query pack once per configuration flip, scores each run with the
 OFFICIAL scorer, and prints/saves a results table the paper can quote. Each

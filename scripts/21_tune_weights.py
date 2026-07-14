@@ -36,7 +36,7 @@ window may be spelled ``frame_start``/``frame_end``, ``range: [s, e]`` or
 below.)
 
 KIS rows are scored with ``cvp.eval.official.score_rows`` when that module is
-available (workstream B3), else with the identical qualifier formulas in
+available, else with the identical qualifier formulas in
 ``cvp.eval.metrics``. QA is re-ranked as KIS (fusion weights cannot change the
 answer column) and TRAKE through a single-frame proxy (frame inside any event
 window) because the cached maps rank keyframes, not frame tuples.

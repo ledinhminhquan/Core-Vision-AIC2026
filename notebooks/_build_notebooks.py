@@ -522,6 +522,12 @@ with _log_stage("catalog"):
     df = catalog.build(force=FORCE_CATALOG or n_extracted > 0)
 print(f"catalog: {len(df):,} keyframes / {df.video_id.nunique()} videos "
       f"({int(df.has_map.sum()):,} frames with map-keyframes)")
+_no_map = int((~df.has_map).sum())
+if _no_map:
+    print(f"⚠ {_no_map:,} keyframes KHÔNG có map-keyframes → frame_idx đang là "
+          "ƯỚC LƯỢNG, nộp bài sẽ SAI. Upload gói map-keyframes của BTC, hoặc "
+          "tái dựng từ video gốc: python scripts/05_rebuild_map_keyframes.py "
+          "(cần videos/*.mp4), rồi chạy lại ô này với FORCE_CATALOG=True.")
 
 # K-batch sync-back: khi COPY_KEYFRAMES_LOCAL=True, extract_missing ghi
 # keyframes + map-keyframes mới vào data_root LOCAL (/content/data) — local

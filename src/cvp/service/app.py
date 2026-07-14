@@ -54,6 +54,7 @@ def create_app(engine=None, settings: Settings | None = None):
 
     from cvp.service.schemas import (
         AvsQuery,
+        ImageQuery,
         QaQuery,
         ResultItem,
         SearchResponse,
@@ -123,6 +124,26 @@ def create_app(engine=None, settings: Settings | None = None):
             query=q.query, count=len(results),
             results=[_to_item(e, r, ResultItem, answer=a)
                      for r, a in zip(results, answers)])
+
+    @app.post("/search/image", response_model=SearchResponse)
+    def search_image(q: ImageQuery):
+        """KIS-V path: the shown clip may only be WATCHED — feed a re-created
+        image (sketch→generated, screenshot of your own drawing, …) instead."""
+        import base64
+        import binascii
+        import io
+
+        from PIL import Image, UnidentifiedImageError
+
+        e = _engine()
+        payload = q.image_b64.split(",", 1)[-1]  # tolerate data: URLs
+        try:
+            img = Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGB")
+        except (binascii.Error, UnidentifiedImageError, OSError, ValueError):
+            raise HTTPException(422, "image_b64 is not a decodable image") from None
+        results = e.search_image(img, display_k=q.display_k)
+        return SearchResponse(query="(image)", count=len(results),
+                              results=[_to_item(e, r, ResultItem) for r in results])
 
     @app.post("/search/trake", response_model=TrakeResponse)
     def search_trake(q: TrakeQuery):

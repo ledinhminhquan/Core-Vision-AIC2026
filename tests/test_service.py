@@ -59,6 +59,10 @@ class _StubEngine:
             raise KeyError(global_id)
         return [_result(int(global_id), 1.0)]
 
+    def search_image(self, image, display_k=None):
+        self.last_image_size = image.size
+        return [_result(7, 0.99)]
+
 
 class _Catalog:
     def __len__(self):
@@ -125,6 +129,26 @@ def test_search_trake_schema(client):
 def test_search_avs_schema_and_limit_validation(client):
     assert client.post("/search/avs", json={"query": "q"}).json()["count"] == 2
     assert client.post("/search/avs", json={"query": "q", "limit": 500}).status_code == 422
+
+
+def test_search_image_accepts_b64_and_data_url(client):
+    import base64
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (4, 4), (200, 30, 30)).save(buf, format="PNG")
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    for payload in (b64, f"data:image/png;base64,{b64}"):
+        r = client.post("/search/image", json={"image_b64": payload})
+        assert r.status_code == 200
+        assert r.json()["results"][0]["global_id"] == 7
+
+
+def test_search_image_rejects_garbage(client):
+    assert client.post("/search/image",
+                       json={"image_b64": "not-base64!!"}).status_code == 422
 
 
 def test_nearest_ok_and_404(client):

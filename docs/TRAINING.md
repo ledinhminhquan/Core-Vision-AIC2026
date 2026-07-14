@@ -1,5 +1,16 @@
 # 🧠 TRAINING — Vietnamese encoder fine-tune (LoRA-LiT), design & how-to
 
+> **⚠️ 2026 stance: PRETRAINED-FIRST.** At the 2026 organiser training sessions
+> the instructor explicitly advised **pretrained-only** — for this competition,
+> fine-tuning is generally *not worth its cost* in compute and risk. Our stance
+> (consistent with the evidence note below and PROJECT_CONTEXT §4.5): training
+> is a **SUPPLEMENTARY lane, never the default**. The competition ensemble stays
+> zero-shot (`ensemble_members: [siglip2, openclip]`) until
+> `scripts/eval_model.py` shows the tuned tower beating the baseline on the val
+> split AND no regression on English queries in the app — only then flip to
+> `[finetuned, openclip]`. Everything below exists so that IF the gate passes,
+> the lane is ready; skipping this document entirely is a legitimate plan.
+
 ## Why train at all?
 
 SigLIP-2 reads Vietnamese but was trained ~90% on English — on Vietnamese

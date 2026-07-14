@@ -29,6 +29,26 @@
 6. **Thể thức tự động 2026**: kiến trúc auto-agent (task-route → retrieve → group-VQA →
    validate → submit) — mô tả hệ thống, đóng góp kỹ nghệ.
 
+**🆕 Đóng góp bổ sung Perfect-V1 (07/2026):**
+
+7. **Tầng rerank cross-encoder pairwise** (`search.reranker`): BLIP-2 ITM
+   (blueprint Unified-IMMR 76.4/88) HOẶC **Qwen3-VL-Reranker-2B** (model 01/2026)
+   — theo khảo sát của ta là **lần dùng đầu tiên trong thi đấu AIC/VBS**; blend
+   `(1−w)·fused + w·cross` sau min-max, đo bằng A9.
+8. **Multi-frame VQA strips** (`vqa.frames_per_answer`): mỗi nhóm ứng viên gửi
+   DẢI frame (top ± láng giềng) trong 1 call — fix lớp câu QA "diễn tiến/giải
+   toán trong video" mà single-frame VQA 2025 trả lời sai.
+9. **Temporal-context boost deterministic** (`search.temporal_boost`): tách
+   target/context bằng regex marker tiếng Việt ("sau khi"/"trước khi", không gọi
+   LLM), cộng max-cos láng giềng đúng hướng thời gian (công thức Vortex) — đo A10.
+10. **Confidence-gated reformulation retry** (`search.low_confidence_retry`):
+    track tự động tự phát hiện ranking phẳng (độ tách top-1 vs median dưới
+    threshold) → re-search các expansion đã cache + RRF-merge; mọi đường lỗi
+    trả về ranking gốc (fail-open).
+11. **Kiến trúc hai-track dùng chung engine**: một `SearchEngine` phục vụ cả app
+    tương tác lẫn HTTP service (`cvp serve`: /health, /search/{text,qa,trake,avs},
+    /nearest, /keyframe) — nền tảng máy-gọi-được cho thể thức assistant-vs-assistant.
+
 ## 3. Ablation bắt buộc phải chạy (khi có data + GT)
 
 | # | Ablation | Metric | Script |
@@ -41,8 +61,15 @@
 | A6 | VLM rerank on/off (Gemini vs Vintern) | R@1, latency | `CVP_SEARCH__VLM_RERANK` |
 | A7 | AVS greedy vs MMR (λ sweep) | #video phủ đúng | `search_avs` |
 | A8 | QA: 1 answer chung vs per-group answers | QA R-Score | so 2 chế độ run_queries |
+| A9 | cross-rerank: none vs blip2_itm vs qwen_reranker | Final, R@1, latency | `CVP_SEARCH__RERANKER` |
+| A10 | temporal_boost off/on + low_confidence_retry on | Final (nhóm câu "sau khi/trước khi") | `CVP_SEARCH__TEMPORAL_BOOST`, `CVP_SEARCH__LOW_CONFIDENCE_RETRY` |
 
 Mỗi ablation chỉ là biến env/config — không sửa code. Ghi kết quả vào bảng này luôn.
+
+🆕 **Một lệnh chạy cả battery** (trừ A5 — bảng riêng trong nb02; A3 full sweep —
+`scripts/21`): `python scripts/26_run_ablations.py --query-dir queries/dev
+--gt queries/dev/gt.json [--only A9 A10]` — mỗi variant chạy pack qua engine,
+chấm bằng scorer chính thức, in + lưu `artifacts/ablations/ablation_results.json`.
 
 ## 4. Số liệu hệ thống cần thu để viết phần Experiments
 
@@ -59,8 +86,14 @@ Mỗi ablation chỉ là biến env/config — không sửa code. Ghi kết qu�
   EEIoT (2512.06334); tổng quan AIC 2024 (Springer 978-981-96-4291-5_1).
 - **VBS/LSC**: VISIONE 5.0, vibro, PraK V4 (MMM'26), NII-UIT (MMM'25), kết quả VBS 2024/2025
   (arXiv:2502.15683, 2509.12000). UIT CVPRW'25 (LLM-assist, ablation H@1).
+  🆕 VBS 2026: **SnapMind** (MMM'26 — agent LLM-planner điều phối truy xuất, đối
+  chứng trực tiếp cho thể thức tự động của ta) · **NII-UIT VBS2026** (MMM'26 —
+  VQA bằng Answer Span Prediction + Candidate Answer Suggestion, đối chứng cho
+  per-group VQA + multi-frame strips).
 - **Kỹ thuật**: SuperGlobal (ICCV'23), SigLIP/SigLIP2, Perception Encoder (2504.13181),
-  Qwen3-VL-Embedding (2601.04720), LiT (CVPR'22), WiSE-FT (2109.01903), mCLIP distill
+  **Qwen3-VL-Embedding/Reranker (2601.04720)** — lane embed + tầng cross-rerank của ta,
+  **MetaCLIP 2 (2507.22062)** — lane worldwide-huge tùy chọn, jina-clip-v2 (lane 89 ngôn
+  ngữ tùy chọn), LiT (CVPR'22), WiSE-FT (2109.01903), mCLIP distill
   (2004.09813), ViCLIP-OT (2602.22678 — SOTA vi retrieval, đối chứng), Bruch et al. fusion
   (TOIS'23), TransNetV2, PhoWhisper, Vintern (2408.12480).
 
@@ -68,8 +101,9 @@ Mỗi ablation chỉ là biến env/config — không sửa code. Ghi kết qu�
 
 1. Intro — bài toán AIC/VBS, gap: hệ tiếng Việt tương tác + tự động.
 2. Related work (½ trang, bảng so sánh đội 2025).
-3. System — hình pipeline (mục 2 PROJECT_CONTEXT), 6 đóng góp đánh số.
+3. System — hình pipeline (mục 2 PROJECT_CONTEXT), 6+5 đóng góp đánh số.
 4. Vietnamese adaptation — LiT+WiSE-FT recipe + data tự sinh.
-5. Experiments — A1–A8 + leaderboard + latency.
+5. Experiments — A1–A10 (`scripts/26_run_ablations.py`) + leaderboard + latency
+   (`scripts/50_bench_latency.py`).
 6. Lessons & failure cases (progressive-KIS timing, OCR khó, gatekeeping questions).
 7. Conclusion + reproducibility statement (repo + notebooks công khai sau thi).

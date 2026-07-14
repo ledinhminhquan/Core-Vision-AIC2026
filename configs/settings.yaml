@@ -54,7 +54,7 @@ finetuned:
   checkpoint: ./artifacts/checkpoints/vi_siglip2_best   # from the H100 notebook
 
 index:
-  type: flatip        # flatip (exact, ≤1M vectors) | ivf (faster CPU) | hnsw
+  type: flatip        # flatip (exact, ~1-2M vectors OK) | ivf (faster CPU) | hnsw
   ivf_nlist: 4096
   ivf_nprobe: 32
   hnsw_m: 32

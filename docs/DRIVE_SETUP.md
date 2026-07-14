@@ -4,6 +4,10 @@ Làm đúng file này là chỉ việc mở notebook và **Run all**.
 
 ## 1. Cấu trúc thư mục trên Drive
 
+> 💡 Tên folder mặc định là `AIC2025` vì khớp bộ dữ liệu 2025 bạn đang có trên
+> Drive. Khi BTC phát dataset 2026 (≤25/07/2026), bạn có thể dùng folder mới
+> (vd `AIC2026`) và chỉ cần đổi `DRIVE_PROJECT_DIR` ở cell 1 của notebook.
+
 Tạo trong **MyDrive** (tên `AIC2025` là mặc định của notebook — đổi được bằng
 param `DRIVE_PROJECT_DIR`):
 
@@ -118,13 +122,37 @@ python scripts/40_eval_official.py --submission-dir artifacts/submissions --gt q
 
 Nhớ thể lệ sơ tuyển 2026: tối đa **5 lượt nộp/ngày, 20 lượt tổng** — chấm offline trước khi nộp!
 
+## 5c. THIẾU map-keyframes? (tình trạng hiện tại của bộ data đã tải)
+
+Gói dữ liệu AIC25 đang có trên Drive của bạn **KHÔNG kèm map-keyframes zip** —
+mà `frame_idx` để nộp bài lấy từ đúng các CSV đó. Hai lối thoát, theo thứ tự ưu tiên:
+
+1. **Chờ/tìm gói map-keyframes chính thức của BTC** (chính xác tuyệt đối) — khi có,
+   ném zip vào `data/` như mọi gói khác rồi chạy lại `scripts/30_ingest.py`.
+2. **Tự tái dựng từ video gốc** (xấp xỉ, đủ tốt khi đáp án là ĐOẠN frame):
+
+```bash
+# cần videos/*.mp4 của các video tương ứng (Videos_L*.zip đã có trên Drive)
+python scripts/05_rebuild_map_keyframes.py            # resumable, bỏ qua csv đã có
+# dhash từng keyframe ↔ quét video strided ↔ khớp DP đơn điệu ↔ tinh chỉnh ±stride
+```
+
+⚠️ Kết quả tái dựng là XẤP XỈ — khi BTC phát bản chính thức, xoá các csv tự dựng và
+thay bằng bản BTC rồi `scripts/30_ingest.py` lại.
+
+**Objects chậm trên Drive?** Gộp 178k JSON thành MỘT parquet (ObjectBooster tự ưu tiên):
+
+```bash
+python scripts/03_build_aux_indexes.py --objects-index
+```
+
 ## 6. Lỗi thường gặp
 
 | Triệu chứng | Nguyên nhân → cách sửa |
 |---|---|
 | `Keyframes folder not found` | sai `DRIVE_PROJECT_DIR` hoặc chưa giải nén — kiểm tra `data/keyframes/` |
 | `index is STALE` | thêm data sau khi build index → chạy lại nb 01 (hoặc `scripts/30_ingest.py`) |
-| `No map-keyframes for …` (L-batch) | thiếu map-keyframes zip → frame_idx sẽ SAI khi nộp. Upload đủ! |
+| `No map-keyframes for …` (L-batch) | thiếu map-keyframes zip → frame_idx sẽ SAI khi nộp. Upload đủ, hoặc tái dựng bằng `scripts/05` (mục 5c)! |
 | Embedding chậm khủng khiếp | đọc JPG qua Drive FUSE → bật `COPY_KEYFRAMES_LOCAL=True` (mặc định) |
 | OOM khi train | notebook tự chọn micro-batch; nếu vẫn OOM giảm `MICRO_BATCH` một nấc |
 | Gemini lỗi/limit | hệ thống tự fallback Google Translate → raw query; không chặn thi đấu |

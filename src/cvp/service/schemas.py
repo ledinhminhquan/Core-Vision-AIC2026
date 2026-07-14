@@ -21,6 +21,14 @@ class QaQuery(BaseModel):
         default=True, description="Run VQA per candidate group (needs a provider)")
 
 
+class ImageQuery(BaseModel):
+    """Query-by-image — the finals KIS-V path (clip may only be WATCHED, so the
+    team re-describes/sketches/generates an image and feeds it here)."""
+
+    image_b64: str = Field(..., description="Base64 image bytes (raw or data: URL)")
+    display_k: int | None = None
+
+
 class TrakeQuery(BaseModel):
     events: list[str] = Field(..., description="Ordered event descriptions E1..Ek")
     max_results: int = 100

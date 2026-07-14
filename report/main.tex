@@ -1,0 +1,332 @@
+% ======================================================================
+% Core Vision Perfect V1 — Báo cáo giải pháp sơ tuyển AIC 2026
+% Biên dịch: pdflatex -> bibtex main -> pdflatex -> pdflatex  (xem report/README.md)
+% Template: ai_conquer2026.cls (AIVN). KHÔNG sửa cls/sty — mọi tùy biến đặt ở đây.
+% ======================================================================
+\documentclass{ai_conquer2026}
+
+\addbibresource{references.bib}
+
+% ---- Logo đội (tùy chọn) --------------------------------------------
+% cls mặc định tìm Figures/logo.pdf. Ta override an toàn: nếu chưa có
+% figures/logo.pdf thì bỏ khối logo để tài liệu vẫn biên dịch sạch.
+\pretitle{%
+  \begin{flushleft}
+    \IfFileExists{figures/logo.pdf}{\includegraphics[height=2.0cm]{figures/logo.pdf}\par}{}%
+  \end{flushleft}
+  \begin{center}\LARGE\bfseries
+}
+\posttitle{\end{center}}
+
+\title{Core Vision Perfect V1 --- Trợ lý truy xuất khoảnh khắc video tiếng Việt cho AIC 2026}
+\author{%
+  % TODO(đội): tên đội + danh sách thành viên + đơn vị, theo yêu cầu của BTC.
+  Đội \texttt{TODO} \\ \normalsize TODO Thành viên 1 · TODO Thành viên 2 · TODO Thành viên 3
+}
+\date{Vòng sơ tuyển --- Hội thi Thử thách Trí tuệ Nhân tạo TP.HCM 2026 \\ \normalsize \today}
+
+\begin{document}
+\selectlanguage{vietnamese}
+\maketitle
+
+\begin{minisummaryboxaivn}
+\textbf{Tóm tắt.} Core Vision Perfect V1 là hệ thống trợ lý truy xuất khoảnh khắc
+video quy mô lớn (hàng trăm đến $\sim$1000+ giờ) bằng truy vấn tiếng Việt, phục vụ
+cả hai hình thức thi 2026: \emph{tương tác} (người + trợ lý) và \emph{tự động}
+(trợ lý đấu trợ lý). Lõi hệ thống là ensemble hai lane embedding
+(SigLIP-2 đa ngữ + PE-Core tiếng Anh)~\cite{tschannen2025siglip2,bolya2025pe},
+hợp nhất với BM25 bốn kênh (OCR/ASR/caption/metadata), tinh chỉnh SuperGlobal~\cite{shao2023superglobal},
+rerank cross-encoder tùy chọn (BLIP-2 ITM~\cite{li2023blip2} / Qwen3-VL-Reranker),
+quy hoạch động DANTE cho TRAKE, MMR~\cite{carbonell1998mmr} cho AVS, và VQA đa khung hình
+cho Q\&A. Toàn bộ pipeline offline có thể resume, online trả lời
+dưới 1 giây/truy vấn; 400 test CPU + CI đảm bảo tính đúng của công thức chấm
+và định dạng nộp bài. % TODO: cập nhật kết quả sơ tuyển khi có.
+\end{minisummaryboxaivn}
+
+\tableofcontents
+\newpage
+
+% ======================================================================
+\section{Giới thiệu và bài toán}
+% ======================================================================
+
+Hội thi Thử thách Trí tuệ Nhân tạo TP.HCM 2026 (AIC 2026) đặt một bài toán duy nhất:
+xây dựng \emph{trợ lý ảo thông minh} truy xuất thông tin trên kho dữ liệu đa phương tiện
+lớn --- tin tức truyền hình và, theo định hướng chủ đề 2026, có thể bổ sung video
+sousveillance/egocentric --- với quy mô có thể vượt 1000 giờ. Điểm mới quan trọng nhất
+của năm 2026 là hai \emph{hình thức thi}: (i) \textbf{tương tác} --- thể thức truyền thống,
+con người thao tác trên công cụ của đội, trong đó việc dùng agent tự động bên trong công cụ
+là \emph{tùy chọn}; và (ii) \textbf{tự động} (thí điểm) --- trợ lý đấu trợ lý, không người
+can thiệp; BTC \emph{chưa công bố} đặc tả kỹ thuật của hình thức này, nhưng chắc chắn
+không đơn thuần là ``tự động nộp file''. Hệ thống của chúng tôi vì vậy được thiết kế
+\emph{một lõi hai vỏ}: cùng một engine truy xuất phục vụ ứng dụng tương tác (Streamlit)
+lẫn dịch vụ HTTP/JSON máy-gọi-máy (mục~\ref{sec:autoagent}) sẵn sàng thích ứng khi spec
+hình thức tự động được công bố.
+
+Về thời gian: BTC phát hành dữ liệu, đề bài, baseline và độ đo \emph{chậm nhất 25/07/2026};
+sơ tuyển diễn ra tháng 8/2026 trên Codabench (kết quả 30/8); chung kết on-site 12--26/9/2026;
+trao giải tháng 10/2026. Vòng sơ tuyển yêu cầu nộp kèm \emph{báo cáo giải pháp} --- chính là
+tài liệu này. Các dạng đề: KIS (mô tả văn bản $\rightarrow$ đúng một khoảnh khắc),
+KIS-V (xem clip ngắn chiếu trên màn hình --- chỉ được \emph{xem}, cấm quay chụp, âm thanh
+có thể bị tắt), và Q\&A là chắc chắn; TRAKE (chuỗi sự kiện có thứ tự trong một video)
+có tiền lệ 2025; AVS \emph{chưa chắc} xuất hiện nên được giữ sau cờ cấu hình; KIS-C
+(hội thoại tiết lộ dần) hiện là \emph{phong cách hệ thống} được khuyến khích, chưa phải
+dạng đề chính thức. FAQ của BTC xác nhận \emph{không giới hạn} mô hình, thuật toán
+hay công cụ.
+
+Định dạng nộp sơ tuyển (theo đặc tả 2025, cổng thi xác nhận 2026 giữ nguyên định dạng):
+mỗi truy vấn một file CSV UTF-8 \emph{không header}, tối đa 100 dòng, phân tách bằng dấu phẩy;
+KIS: \texttt{video\_name,frame\_id}; Q\&A: \texttt{video\_name,frame\_id,answer} (answer
+$\le$100 ký tự, tiếng Việt hoặc tiếng Anh, bọc nháy kép nếu chứa dấu phẩy); TRAKE:
+\texttt{video\_name,f1,\ldots,fN}. Gói nộp là file zip \emph{bắt buộc} chứa thư mục tên
+\texttt{submission}. Điểm mỗi truy vấn là trung bình của $\max$ R-Score trong top-$k$ với
+$k\in\{1,5,20,50,100\}$ --- kết quả đúng càng đứng đầu bảng xếp hạng điểm càng cao. Mỗi đội
+có tối đa 20 lượt nộp, không quá 5 lượt/ngày (năm 2025 còn giới hạn khung giờ nộp buổi sáng
+9:00--11:59; chúng tôi vận hành theo kịch bản chặt hơn để an toàn). Ở chung kết, truy vấn là
+văn bản hoặc clip chỉ-được-xem, chấm theo server kiểu DRES~\cite{rossetto2021dres}
+(bản hiện hành 2.0.4): nộp đúng càng sớm điểm càng cao, nộp sai bị trừ điểm; năm 2025 KIS có
+5 phút với 5 gợi ý nhỏ giọt mỗi phút, KIS-V có 4 phút với clip 20 giây.
+
+% ======================================================================
+\section{Kiến trúc hệ thống}
+% ======================================================================
+
+Chúng tôi quy bài toán về \emph{truy xuất ảnh mức keyframe}: BTC đảm bảo mọi đoạn đáp án
+chứa ít nhất một keyframe, nên tìm đúng keyframe là ăn trọn điểm. Kiến trúc tách làm hai
+pha. \textbf{Pha offline} (build một lần, mọi bước resumable): video qua TransNetV2 (fallback
+PySceneDetect) thành keyframes; keyframes được mã hóa song song bởi các lane embedding
+(mục~\ref{sec:lanes}) vào FAISS; đồng thời trích OCR (EasyOCR vi+en), ASR (PhoWhisper),
+caption tiếng Việt (Vintern-1B) và metadata thành chỉ mục BM25 \emph{persisted}; nhãn object
+(Open Images) được nén thành parquet compact. \textbf{Pha online} (mỗi truy vấn dưới 1 giây):
+truy vấn tiếng Việt được Gemini dịch + mô tả thị giác + sinh biến thể (degrade tự động
+Gemini $\rightarrow$ Google Translate $\rightarrow$ raw khi mất mạng); các lane encode mọi
+biến thể, lấy top-$K$ FAISS, max-fuse theo biến thể, tinh chỉnh SuperGlobal, hợp nhất lane
+theo trọng số, cộng tín hiệu BM25 + object boost + neighbor boost trên \emph{đúng tập ứng
+viên} (độ phức tạp $O(K)$), rồi tùy chọn rerank cross-encoder trước khi xuất kết quả/CSV/DRES.
+
+\begin{figure}[H]
+  \centering
+  \fbox{\parbox{0.92\linewidth}{\centering\vspace{3em}
+    \textbf{TODO HÌNH 1:} Sơ đồ pipeline offline/online hai cột\\
+    (xuất từ \texttt{docs/PROJECT\_CONTEXT.md} mục 2 sang draw.io/TikZ,\\
+    lưu \texttt{figures/pipeline.pdf} rồi thay khối này bằng \texttt{\textbackslash includegraphics})
+    \vspace{3em}}}
+  \begin{figurecaptionmodern}
+    \capfig{Kiến trúc hai pha của Core Vision Perfect V1. \textbf{TODO: chèn hình.}}
+  \end{figurecaptionmodern}
+\end{figure}
+
+Bất biến trung tâm là \emph{catalog}: \texttt{global\_id} $=$ số dòng manifest.parquet $=$
+số dòng FAISS index; index lưu chữ ký corpus và \texttt{model\_tag}, lệch là từ chối phục vụ
+--- vì sai một hàng là sai \texttt{frame\_idx}, tức 0 điểm. \texttt{frame\_idx} nộp bài là số
+frame trong video \emph{gốc} lấy từ \texttt{map-keyframes}; với các bản data drop thiếu sạch
+map-keyframes (thực tế dữ liệu chúng tôi tải về), công cụ
+\texttt{scripts/05\_rebuild\_map\_keyframes.py} tái tạo chúng bằng dhash từng keyframe, quét
+video theo bước nhảy rồi khớp đơn điệu bằng quy hoạch động (thứ hạng keyframe có thứ tự thời
+gian nên ràng buộc được các shot lặp), cuối cùng tinh chỉnh chính xác trong cửa sổ
+$\pm$stride. Toàn bộ cấu hình nằm trong \texttt{configs/settings.yaml}, override qua biến
+môi trường tiền tố \texttt{CVP\_} (ví dụ \texttt{CVP\_SEARCH\_\_RERANKER=qwen\_reranker}) ---
+mọi thí nghiệm trong mục~\ref{sec:exp} đều là thay đổi cấu hình thuần, không sửa mã.
+
+% ======================================================================
+\section{Các thành phần chính}
+% ======================================================================
+
+\subsection{Ensemble hai lane embedding (+ lane tùy chọn)}\label{sec:lanes}
+Lane mặc định gồm \texttt{google/siglip2-so400m-patch16-384}~\cite{tschannen2025siglip2}
+(đa ngữ, đọc tiếng Việt trực tiếp, đồng thời là lane duy nhất được fine-tune ---
+mục~\ref{sec:training}) và \texttt{PE-Core-bigG-14-448}~\cite{bolya2025pe} qua open\_clip
+(lane tiếng Anh mạnh nhất 2026, đúng model đội 79/88 điểm AIC 2025 sử dụng; fallback tự động
+PE-Core-L $\rightarrow$ DFN5B khi thiếu VRAM). Điểm hai lane được min-max rồi cộng trọng số
+0.55/0.45 --- bộ trọng số đã chứng minh, có thể chuyển \texttt{search.fusion\_method: rrf}
+khi chưa kịp tune~\cite{bruch2023fusion}. Ba lane \emph{tùy chọn} phục vụ ablation và dự
+phòng: \texttt{Qwen/Qwen3-VL-Embedding-2B} (tiếng Việt bản địa, cắt MRL 1024-d),
+\texttt{jinaai/jina-clip-v2} (89 ngôn ngữ, Matryoshka) và
+\texttt{facebook/metaclip-2-worldwide-huge-quickgelu} (SOTA đa ngữ XM3600) --- bật bằng cách
+thêm tên lane vào \texttt{embedding.ensemble\_members}. Mỗi index ghi \texttt{model\_tag}
+để phát hiện lệch checkpoint giữa máy build và máy thi.
+
+\subsection{BM25 bốn kênh, object boost và SuperGlobal}
+Chỉ mục văn bản BM25+ được tokenize \emph{một lần} lúc build và persist
+(\texttt{artifacts/text\_index/*.json.gz}); lúc truy vấn chỉ chấm điểm trên tập ứng viên dense
+nên chi phí là $O(K\cdot|q|)$ thật sự. Bốn kênh --- OCR, ASR, caption, metadata --- cùng
+object boost (từ vựng 228 danh từ tiếng Việt ánh xạ 600 lớp Open Images, parser đa ràng buộc
+kiểu ``2 người bên trái và 1 người bên phải'') được hợp nhất bằng weighted-sum theo
+\texttt{search.weights}; chỉ mục object dạng parquet compact (build bằng
+\texttt{scripts/03\_build\_aux\_indexes.py --objects-index}) được ObjectBooster tự ưu tiên khi
+có mặt. SuperGlobal~\cite{shao2023superglobal} tinh chỉnh top-$K$ \emph{trên mọi biến thể truy
+vấn} (max-fuse, mask hàng zero) --- biến thể mở rộng tìm ra hit không còn bị rerank dìm.
+
+\subsection{TRAKE bằng DANTE và AVS bằng MMR}
+Với TRAKE, từng sự kiện được encode bởi \emph{mọi} lane, pool $\le$30 video, rồi quy hoạch
+động DANTE $O(N\cdot T)$: $DP[j,t] = sim[t,j] + \max_{\tau<t}\bigl(DP[j{-}1,\tau] -
+\lambda\,(time_t - time_\tau)\bigr)$ với running-max trượt, ràng buộc khoảng cách
+$[min\_gap, max\_gap]$ và $\lambda = 0.0005$/giây --- đúng thuật toán đạt ``Outstanding
+TRAKE'' AIC 2025; \texttt{temporal.algo: beam} giữ phương án beam đa dạng để A/B. Parser đề
+TRAKE đọc đúng định dạng đề thật của BTC (dòng ngữ cảnh + sự kiện tiền tố \texttt{E1:}\ldots).
+Với AVS (giữ sau cờ vì 2026 chưa chắc thi), kết quả được đa dạng hóa bằng
+MMR~\cite{carbonell1998mmr} mức embedding ($\lambda=0.7$) khử near-duplicate \emph{xuyên}
+video --- tin tức tái sử dụng b-roll rất nhiều --- kèm trần 3 dòng/video và giãn cách 10 giây.
+
+\subsection{Rerank cross-encoder pairwise}
+Tầng rerank mới của Perfect V1: \texttt{search.reranker} nhận \texttt{blip2\_itm}
+(đầu ITM của BLIP-2~\cite{li2023blip2}, đúng blueprint đội 76.4/88 AIC 2025) hoặc
+\texttt{qwen\_reranker} (\texttt{Qwen/Qwen3-VL-Reranker-2B}, model 01/2026, chấm cặp
+ảnh--văn bản đa ngữ trực tiếp bằng tiếng Việt, không cần dịch). Reranker chỉ chấm lại
+top đầu bảng, lỗi model thì giữ nguyên thứ hạng --- không bao giờ làm kết quả tệ hơn vì
+sự cố. Tầng này độc lập với VLM listwise rerank (\texttt{search.vlm\_rerank}, Gemini chấm
+0--10) đã có từ bản kế thừa; hai cơ chế được so trực tiếp trong ablation A9.
+
+\subsection{VQA đa khung hình cho Q\&A}
+Ứng viên Q\&A được gộp nhóm theo (video, ngắt cảnh), VQA trả lời \emph{theo từng nhóm} để
+mỗi dòng CSV mang đúng answer của nhóm nó --- yêu cầu bắt buộc của công thức chấm. Nâng cấp
+2026: \texttt{vqa.frames\_per\_answer} (mặc định 3) gửi \emph{dải} khung hình lân cận trong
+một lần gọi kèm bỏ phiếu nhất quán, khắc phục lớp câu hỏi ``giải toán trong video'' của đề
+2025 mà một khung hình đơn không đủ ngữ cảnh. Chuỗi model VQA/enhance dùng Gemini với
+fallback tự động \texttt{gemini-3.5-flash} $\rightarrow$ \texttt{gemini-3-flash-preview}
+$\rightarrow$ \texttt{gemini-2.5-flash}, offline thì rơi về Vintern-1B; answer luôn được
+sanitize về $\le$100 ký tự đúng thể lệ.
+
+\subsection{Tăng cường truy vấn thời gian và retry tự tin thấp}
+Hai knob phục vụ đề khó: \texttt{search.temporal\_boost} tách truy vấn dạng
+``\ldots{} sau khi \ldots'' thành Before/Now/After và thưởng điểm các frame có ngữ cảnh
+láng giềng khớp (ý tưởng Vortex, đội 79.6/88 AIC 2025); \texttt{search.low\_confidence\_retry}
+--- dành cho hình thức tự động --- phát hiện bảng xếp hạng ``phẳng'' (margin thấp), tự
+reformulate truy vấn và trộn RRF hai lượt tìm.
+
+\subsection{Auto-agent và dịch vụ máy-gọi-máy}\label{sec:autoagent}
+Cho hình thức tự động, \texttt{pipeline/auto\_agent.py} chạy trọn gói: phân loại dạng đề,
+tìm kiếm, gate tự tin theo margin, mở rộng thích ứng, reformulate retry, STAR-style
+đa bước cho Q\&A, log tương tác episodic; adapter giao thức được trừu tượng hóa chờ spec
+BTC. Nền tảng máy-gọi-máy là dịch vụ FastAPI khởi động bằng \texttt{cvp serve}
+(console entry \texttt{cvp} khai báo trong \texttt{pyproject.toml}) với các endpoint
+\texttt{/health}, \texttt{/search/text}, \texttt{/search/qa}, \texttt{/search/trake},
+\texttt{/search/avs}, \texttt{/nearest/\{global\_id\}}, \texttt{/keyframe/\{global\_id\}}.
+Ứng dụng tương tác Streamlit giữ 5 tab nghiệp vụ, đồng hồ 5 phút KIS-C realtime, basket,
+export CSV validate sẵn và feedback Rocchio trong không gian từng lane.
+
+% ======================================================================
+\section{Huấn luyện bổ trợ: LoRA-LiT + WiSE-FT (kênh phụ)}\label{sec:training}
+% ======================================================================
+
+Bằng chứng từ AIC/VBS nhiều năm cho thấy các đội thắng đều dùng \emph{zero-shot ensemble +
+dịch câu}; vì vậy fine-tune trong hệ thống này là \emph{kênh bổ sung có đo đạc}, không phải
+mặc định. Dữ liệu huấn luyện gồm caption tiếng Việt do Vintern-1B sinh cho chính keyframe
+của corpus (in-domain, giá trị nhất) cộng hai bộ công khai KTVIC (21.6k) và UIT-ViIC (19.3k)
+qua \texttt{scripts/12\_build\_public\_datasets.py}; lọc độ dài 15--400 ký tự, khử near-dup
+($\cos>0.97$), và \emph{split theo video} chống rò rỉ. Cơ chế LiT: đóng băng image tower
+(FAISS index giữ nguyên --- không phải re-embed), LoRA~\cite{hu2022lora} $r{=}32$ trên text
+tower của SigLIP-2, giữ logit\_scale/bias pretrained; loss sigmoid SigLIP mặc định
+(knob \texttt{loss: infonce} để A/B), distillation anchor $1-\cos$(student, teacher) với
+$\beta: 0.3\rightarrow0$, trộn 25\% cặp anchor tiếng Anh chống quên đa ngữ, và tùy chọn hard
+negative cùng video. Sau huấn luyện, WiSE-FT~\cite{wortsman2022wiseft} quét
+$\alpha\in\{0.4,0.5,0.6,1.0\}$ nội suy base$\leftrightarrow$tuned trên val R@5 ---
+$\alpha{=}1.0$ chính là tower gốc nên winner không bao giờ tệ hơn zero-shot. Trên Colab
+H100, autopilot dò micro-batch theo OOM thực nghiệm (effective batch $\approx$2048, bf16),
+checkpoint atomic lên Drive và \emph{resume chính xác giữa epoch}. Kênh này chỉ được bật thi
+đấu (\texttt{CVP\_EMBEDDING\_\_MODEL=finetuned} hoặc thêm vào ensemble) sau khi
+\texttt{scripts/eval\_model.py} xác nhận thắng baseline trên bộ đề dev --- kết quả đo tại
+mục~\ref{sec:exp} (hàng A5). % TODO: điền kết quả train khi notebook 02 chạy xong với data 2026.
+
+% ======================================================================
+\section{Thực nghiệm}\label{sec:exp}
+% ======================================================================
+
+Bộ đề phát triển hiện hành là gói 89 truy vấn chung kết AIC 2025 nguyên bản (73 KIS, 9 Q\&A,
+7 TRAKE) chạy trên corpus cục bộ; khi BTC phát hành dữ liệu và baseline 2026 (chậm nhất
+25/07), toàn bộ bảng dưới sẽ được đo lại bằng \emph{một lệnh} trên scorer chính thức
+(\texttt{cvp/eval/official.py} --- cài đúng công thức R@k của BTC, 60+ test):
+
+\begin{aivnoutputbox}[Tái lập toàn bộ bảng ablation]
+python scripts/26_run_ablations.py --query-dir queries/dev --gt queries/dev/gt.json
+# chạy chọn lọc: --only A1 A9 A10 ; kết quả lưu artifacts/ablations/
+\end{aivnoutputbox}
+
+\begin{table}[H]
+\centering
+\begin{adjustbox}{max width=\linewidth}
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+\textbf{ID} & \textbf{Cấu hình (nhãn trong scripts/26)} & \textbf{R@1} & \textbf{R@5} & \textbf{R@100} & \textbf{Final} \\
+\midrule
+A1 & siglip2-only vs ensemble(siglip2+openclip) & TODO & TODO & TODO & TODO \\
+A2 & SuperGlobal off/on & TODO & TODO & TODO & TODO \\
+A3 & visual-only / all-signals / rrf-fusion & TODO & TODO & TODO & TODO \\
+A4 & TRAKE: beam / dante / dante-ensemble & TODO & TODO & TODO & TODO \\
+A5 & zero-shot vs LoRA-LiT+WiSE-FT (notebook 02) & TODO & TODO & TODO & TODO \\
+A6 & VLM listwise rerank off/gemini & TODO & TODO & TODO & TODO \\
+A7 & AVS: greedy / MMR $\lambda{=}0.7$ / $\lambda{=}0.5$ & TODO & TODO & TODO & TODO \\
+A8 & QA: 1 answer toàn cục vs per-group & TODO & TODO & TODO & TODO \\
+A9 & cross-rerank: off / blip2 / qwen & TODO & TODO & TODO & TODO \\
+A10 & temporal-boost off/on + low-conf-retry & TODO & TODO & TODO & TODO \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\captable{Ablation A1--A10 trên bộ đề dev 89 truy vấn. \textbf{TODO: điền số từ
+\texttt{artifacts/ablations/} sau khi chạy \texttt{scripts/26\_run\_ablations.py} trên
+artifacts thật.} A5 in bảng riêng trong notebook 02; quét trọng số đầy đủ của A3 nằm ở
+\texttt{scripts/21\_tune\_weights.py}.}
+\end{table}
+
+Trọng số tín hiệu được tune \emph{offline} trên score map đã cache: \texttt{scripts/23\_dump\_signals.py}
+chạy engine một lần mỗi câu, \texttt{scripts/21\_tune\_weights.py} tối ưu rồi in đúng các dòng
+\texttt{CVP\_SEARCH\_\_WEIGHTS\_\_*} để dán sang máy thi --- không tốn lượt nộp nào của Codabench.
+Độ trễ được đo bằng \texttt{scripts/50\_bench\_latency.py} (mặc định $N{=}200$ truy vấn, báo cáo
+p50/p95/p99 của đường nóng \texttt{search\_text}); chỉ tiêu vận hành đã chốt: \textbf{p50
+$\le$ 200 ms, p95 $\le$ 500 ms} trên laptop thi đấu --- dư ngân sách lớn trong khung 4--5 phút
+mỗi truy vấn chung kết. % TODO: dán bảng percentile thật sau khi build artifacts 2026.
+Chất lượng kỹ thuật của mã được găm bằng 400 test CPU thuần (không cần GPU/mạng/data thật)
+chạy trong CI, phủ scorer chính thức, packager, parser đề thật của BTC và toàn bộ engine
+tích hợp với fake model.
+
+% ======================================================================
+\section{Vận hành thi đấu và bài học}
+% ======================================================================
+
+Quy trình vòng loại là một lệnh duy nhất, thiết kế để \emph{tiết kiệm lượt nộp} (20 tổng,
+5/ngày --- và có thể bị bó vào khung giờ sáng như 2025):
+
+\begin{aivnoutputbox}[Vòng loại: chạy đề $\rightarrow$ validate $\rightarrow$ zip $\rightarrow$ chấm thử offline]
+python scripts/20_run_queries.py --query-dir <thư mục đề> --zip --gt <gt.json nếu có>
+# zip đầu ra CHỨA folder 'submission' đúng thể lệ Codabench, kèm MANIFEST sha256;
+# --gt in bảng điểm per-query/per-task/MEAN FINAL đúng công thức BTC trước khi nộp.
+\end{aivnoutputbox}
+
+Packager validate mọi CSV theo thể lệ (không header, $\le$100 dòng, answer $\le$100 ký tự,
+quote khi có dấu phẩy) \emph{trước} khi đóng gói --- lỗi định dạng bị chặn tại chỗ thay vì
+tốn một lượt nộp. Mọi lượt nộp thật đều đi sau ít nhất một lần chấm thử offline bằng
+\texttt{--gt} trên bộ dev; kỷ luật nộp: không quá 2 lượt cho ngày đầu (dò phân phối đề),
+giữ tối thiểu 3 lượt cho ngày cuối. Ở chung kết, laptop chạy app + artifacts đồng bộ về từ
+Drive; DRES client (\texttt{submission/dres\_client.py}, urllib thuần, không bao giờ tự retry
+lệnh bị server từ chối) trỏ \texttt{submission.dres\_base\_url} khi BTC công bố endpoint;
+đồng hồ 5 phút với nhịp gợi ý 1 phút/lần đã dựng sẵn trong app theo đúng thể thức KIS 2025.
+Trước mỗi ngày thi chạy lại \texttt{scripts/doctor.py} (kiểm artifacts/chữ ký/model) và
+\texttt{scripts/50\_bench\_latency.py}. Bài học lớn nhất từ các vòng review đối kháng nội bộ:
+(1) sai \texttt{frame\_idx} do thiếu map-keyframes là lỗi \emph{chết người} --- phải có công
+cụ tái tạo (mục 2) thay vì tin dữ liệu tải về; (2) parser đề thật quan trọng ngang model ---
+một dòng ngữ cảnh TRAKE đọc sai làm lệch cả chuỗi frame về 0 điểm; (3) mọi tầng thông minh
+(Gemini, reranker, VLM) đều phải có đường degrade để hệ thống không bao giờ chết giữa trận.
+% TODO: bổ sung bài học thực chiến sau sơ tuyển 8/2026.
+
+% ======================================================================
+\section{Kết luận}
+% ======================================================================
+
+Core Vision Perfect V1 hợp nhất các cơ chế đã được kiểm chứng bởi những đội dẫn đầu AIC 2025
+--- ensemble PE-Core, RRF/Rocchio, BLIP-2 ITM rerank, DANTE TRAKE, dense keyframes ---
+với các nâng cấp 2026: rerank pairwise Qwen3-VL đọc thẳng tiếng Việt, VQA dải khung hình,
+temporal boost, retry tự tin thấp, và một lớp dịch vụ máy-gọi-máy đón đầu hình thức thi tự
+động. Triết lý xuyên suốt là \emph{đúng trước, nhanh sau, thông minh cuối}: bất biến catalog
+và scorer chính thức găm tính đúng; chỉ mục persisted và ngân sách trễ p95 $\le$ 500 ms găm
+tốc độ; các tầng LLM/VLM chỉ xếp lại đầu bảng và luôn có đường lui. Toàn bộ thí nghiệm là
+thay đổi cấu hình thuần có thể tái lập bằng một lệnh, nên khi dữ liệu 2026 phát hành
+(chậm nhất 25/07) hệ thống chỉ cần build lại artifacts và điền số vào các bảng TODO của báo
+cáo này. Hướng tiếp theo: hoàn thiện adapter cho spec hình thức tự động ngay khi BTC công bố,
+đo lại ablation trên dữ liệu 2026 (đặc biệt nếu xuất hiện lifelog/egocentric), và nộp phiên
+bản mở rộng của báo cáo cho SOICT 2026. % TODO: cập nhật kết quả sơ tuyển thực tế.
+
+\newpage
+\section*{Tài liệu tham khảo}
+\printbibliography[heading=none]
+
+\end{document}

@@ -1,5 +1,20 @@
 # 🏆 COMPETITION_PLAYBOOK — Đấu pháp thi đấu trực tiếp
 
+## ⚔️ Hai hình thức thi 2026 (đọc trước tiên)
+
+1. **Tương tác (truyền thống)** — người + hệ thống. Dùng agent trong công cụ là
+   **TÙY CHỌN**, không bắt buộc: đấu pháp chính vẫn là Driver/Spotter/Verifier
+   ở các mục dưới; agent (KIS-C tab, gợi ý VQA) chỉ là trợ thủ.
+2. **Tự động (pilot 2026)** — trợ lý đấu trợ lý, KHÔNG người can thiệp. BTC
+   **CHƯA công bố spec** (chắc chắn KHÔNG phải kiểu "tự nộp file"); nền
+   máy-gọi-được của ta đã sẵn: `cvp serve` (FastAPI: `GET /health`,
+   `POST /search/text|qa|trake|avs`, `GET /nearest/{gid}`, `GET /keyframe/{gid}`)
+   + `scripts/25_auto_agent.py`. Khi spec ra chỉ cần viết adapter giao thức trên
+   nền service này.
+3. **Theo dõi 3 kênh để bắt spec sớm:** Q&A sheet của BTC · Facebook AICHCMC ·
+   Codabench organizer `vnaic` (trang 2026 dự kiến mở đầu–giữa T8/2026; trang
+   2025 id 10187 là mẫu đối chiếu format).
+
 ## 0. Trước ngày thi (checklist)
 
 - [ ] Artifacts sync về laptop, app chạy `< 1s/query` (test bằng nb 03 trước).
@@ -7,6 +22,9 @@
       nếu máy yếu: `finetuned` đơn.
 - [ ] GEMINI_API_KEY nạp sẵn + **đã test offline fallback** (rút mạng thử 1 query).
 - [ ] Cache truy vấn ấm (chạy 20–30 query luyện tập).
+- [ ] **Cổng latency**: `python scripts/50_bench_latency.py` đạt p50 ≤ 200 ms /
+      p95 ≤ 500 ms trên đúng laptop thi — chạy SAU mỗi lần rebuild artifacts và
+      TRƯỚC mỗi vòng thi; script tự gợi ý nguyên nhân khi vượt ngưỡng.
 - [ ] Luyện gõ: mô tả cảnh bằng danh từ + màu + hành động, KHÔNG mô tả meta
       ("tìm cảnh..." là thừa — Gemini enhancement tự bỏ, nhưng đừng phí thời gian gõ).
 - [ ] Phân vai 3 người: **Driver** (gõ + thao tác), **Spotter** (nhìn lưới kết quả,
@@ -28,11 +46,23 @@
 ("hai xe máy màu đỏ"), (3) bối cảnh ("trường quay nền xanh", "bờ sông lúc hoàng hôn"),
 (4) hành động. Tránh khái niệm trừu tượng.
 
-## 2. KIS-V (xem clip)
+## 2. KIS-V (xem clip — CẤM quay/chụp/screen-capture)
 
-Cả đội cùng xem; Spotter đọc to các chi tiết phân biệt; Driver gõ ngay 2–3 biến thể
-mô tả. Chọn khoảnh khắc ĐẶC TRƯNG nhất của clip (đầu/cuối shot đặc biệt) thay vì
-cảnh chung chung.
+**Luật 2026:** clip chỉ được **XEM** trên màn hình BTC — cấm quay phim, chụp ảnh,
+screen-capture dưới mọi hình thức; **âm thanh có thể bị TẮT** (đừng xây đấu pháp
+dựa vào nghe). ĐƯỢC PHÉP: mô tả lại bằng lời, VẼ lại, hoặc dùng AI sinh ảnh từ
+mô tả để đối chiếu. (2025: VKIS 4 phút / clip 20 giây.)
+
+Quy trình "xem → mô tả lại → search":
+1. Cả đội cùng xem trọn clip; Spotter đọc TO các chi tiết phân biệt (chữ trên
+   hình, màu áo, số người/vật, góc máy, bối cảnh); Verifier ghi thứ tự shot.
+2. Driver gõ ngay 2–3 biến thể mô tả → search. Chọn khoảnh khắc ĐẶC TRƯNG nhất
+   của clip (đầu/cuối shot đặc biệt) thay vì cảnh chung chung.
+3. Thấy frame "gần đúng" → **🔍 similar** (query-by-example) để xoay quanh vùng
+   ảnh đó — đây là đường bù cho việc không được giữ clip.
+4. Nếu vẽ/sinh ảnh: trước hết dùng ảnh để CẢ ĐỘI thống nhất mô tả; ở mức API đã
+   có `SearchEngine.search_image` (chưa nối vào app — gọi qua notebook/service
+   khi thật sự cần đường ảnh-vào).
 
 ## 3. QA — 2 bước
 
@@ -71,6 +101,25 @@ trợ lý đề xuất — đó là những chi tiết nên chờ/đoán từ g�
   cảnh + tiền tố `E1:`; QA một dòng có "Hỏi …?") — KHÔNG cần sửa tay file đề nữa;
   GT tự soạn giờ nhận cả `"ranges": [[s1,e1],[s2,e2]]` (nhiều cửa sổ chấp nhận được).
 
+### 7.1 Bán kết: nộp ĐÚNG 1 FILE (trong khung thời gian)
+
+- Mỗi lượt nộp = **MỘT file zip duy nhất**, bên trong BẮT BUỘC có folder
+  `submission/` chứa các CSV per-query — đúng mặc định của packager
+  (`submission.package_name: submission`); nộp lẻ CSV hay zip sai layout = 0 điểm.
+- CSV: UTF-8, **KHÔNG header**, **≤100 dòng**, phân cách phẩy. KIS:
+  `video_name,frame_id` · QA: `video_name,frame_id,answer` (answer ≤100 ký tự,
+  VI hoặc EN, quote nếu chứa phẩy) · TRAKE: `video_name,f1,...,fN`
+  (`writer.py`/`packager.py` enforce toàn bộ — spec 2025, cổng BTC ghi 2026 giữ format).
+- Điểm mỗi câu = trung bình trên k∈{1,5,20,50,100} của **max R-Score trong top-k**
+  → luôn điền đủ 100 dòng, xếp hạng tốt ăn điểm gấp bội.
+- Hạn mức: **tối đa 20 lượt tổng, ≤5 lượt/ngày**; 2025 còn giới hạn khung giờ
+  sáng 9:00–11:59 — chuẩn bị đấu pháp cho CẢ HAI chế độ (dồn chấm offline từ hôm
+  trước, nộp bản tốt nhất đầu khung giờ).
+- **Bán kết còn phải nộp BÁO CÁO giải pháp** (văn bản) — LaTeX kit có sẵn trong
+  `report/` (`ai_conquer2026.cls`); viết song song với các đợt nộp, đừng dồn sát hạn.
+- Mốc: dataset + đề + baseline + metrics phát hành **≤ 25/07/2026**; kết quả
+  sơ tuyển **30/8**; chung kết on-site **12–26/9/2026**.
+
 ## 8. Thể thức TỰ ĐỘNG 2026 (assistant vs assistant)
 
 - `python scripts/25_auto_agent.py --query-dir <đề>` chạy trọn: nhận diện dạng đề theo tên
@@ -78,6 +127,11 @@ trợ lý đề xuất — đó là những chi tiết nên chờ/đoán từ g�
 - Bật nộp thẳng DRES: đặt `submission.dres_base_url` + env `DRES_USER/DRES_PASSWORD`
   + `submission.auto_submit: true` — client KHÔNG BAO GIỜ tự retry lệnh bị từ chối (bị trừ điểm).
 - Diễn tập trước ở nhà bằng bộ đề practice (RUN_AUTO_AGENT trong notebook 03).
+- ⚠️ Spec thể thức tự động **CHƯA công bố** (assistant-vs-assistant, chắc chắn
+  không phải "tự nộp file") — phần trên là baseline "chạy trọn gói đề"; khi BTC
+  ra giao thức, viết adapter trên nền `cvp serve` (xem mục ⚔️ đầu file). Cho track
+  này cân nhắc bật `CVP_SEARCH__LOW_CONFIDENCE_RETRY=true` (tự reformulate +
+  RRF-merge khi ranking phẳng — không có người để đổi query thay máy).
 
 ## 9. Chung kết — vũ khí bí mật
 
@@ -86,6 +140,23 @@ trợ lý đề xuất — đó là những chi tiết nên chờ/đoán từ g�
   `st.fragment(run_every)` — không cần bấm gì để nó cập nhật nữa.)
 - **VLM rerank** (`CVP_SEARCH__VLM_RERANK=true`): bật khi mạng ổn — top-24 được Gemini
   chấm lại, +~10% H@1 theo UIT; lỗi API tự về thứ tự cũ nên bật không rủi ro.
+- **Cross-encoder rerank** (`CVP_SEARCH__RERANKER=blip2_itm` hoặc `qwen_reranker`):
+  chấm lại top-100 (`search.rerank_topk`) từng cặp (query, ảnh) — `blip2_itm`
+  offline cần GPU (blueprint Unified-IMMR 76.4/88); `qwen_reranker` =
+  Qwen3-VL-Reranker-2B (model 01/2026). Blend `search.rerank_weight: 0.5`.
+  **Chỉ bật sau khi A9 (scripts/26) cho số dương** trên bộ đề dev.
+- **Temporal boost** (`CVP_SEARCH__TEMPORAL_BOOST=true`): câu "… sau khi / trước
+  khi …" được tách target/context bằng regex (không gọi LLM, deterministic) và
+  cộng điểm láng giềng đúng hướng thời gian (công thức Vortex 79.6/88) — bật sau
+  khi đo A10.
+- **Low-confidence retry** (`CVP_SEARCH__LOW_CONFIDENCE_RETRY=true`) — dành cho
+  track TỰ ĐỘNG: ranking phẳng (confidence < `low_confidence_threshold` 0.25) →
+  tự reformulate + RRF-merge. Thi tương tác để tắt (người đổi query tốt hơn).
+- **📺 Group by video (VISIONE-style)**: checkbox trong app — gom lưới kết quả
+  theo video khi cần quét ngữ cảnh nhanh hoặc nghi các hit dồn về một video.
+- **Ablations 1 lệnh**: `python scripts/26_run_ablations.py --query-dir queries/dev
+  --gt queries/dev/gt.json [--only A9 A10]` — chấm bằng scorer chính thức, quyết
+  định knob nào được bật bằng SỐ, không cảm tính.
 - Checkpoint drift: nếu app cảnh báo "index was built by X but loaded Y" → máy này
   tải fallback khác checkpoint đã build index. Đừng thi trên máy đó — rebuild hoặc đổi máy.
 
@@ -94,7 +165,7 @@ trợ lý đề xuất — đó là những chi tiết nên chờ/đoán từ g�
 | Sự cố | Phản xạ |
 |---|---|
 | Mất mạng | Hệ tự chạy raw-query (SigLIP-2 đọc tiếng Việt) — cứ thi tiếp, thêm từ khóa OCR |
-| Gemini limit | Fallback tự động Google Translate — không cần làm gì |
+| Gemini lỗi/limit | Chuỗi model tự fallback `gemini-3.5-flash → gemini-3-flash-preview → gemini-2.5-flash`, hết chuỗi → Google Translate → raw query — không cần làm gì |
 | App crash | `streamlit run` lại (~30s load); index/catalog bất biến nên không mất gì |
 | Query bí | Đổi chiến thuật: tìm bằng OCR text / object đếm được / metadata chương trình |
 | Chậm | Giảm `Results shown`; tắt rerank: `CVP_SEARCH__RERANK=false` (khởi động lại) |

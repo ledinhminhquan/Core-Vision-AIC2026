@@ -108,3 +108,26 @@ artifacts/
 ├── signal_dumps/<pack>/*.json    raw per-signal maps for scripts/21_tune_weights.py
 └── submissions/*.csv (+ *.zip Codabench package + MANIFEST.json sha256)
 ```
+
+## 5. 2026 clarifications (query forms & finals rules — verified 07/2026)
+
+- **Qualifiers (Codabench, 8/2026): queries are TEXT-only.** No clips at the
+  qualifier stage — the batch runner (`scripts/20_run_queries.py`) covers the
+  whole round. The uploaded zip **MUST contain a folder named `submission`** —
+  already our default (`submission.package_name` in `configs/settings.yaml`;
+  `cvp/submission/packager.py` builds exactly this layout).
+- **Finals add watched-only clips (KIS-V):** the clip is SHOWN on the organiser
+  screen and may only be WATCHED — no recording, no photographing, no
+  screen-capturing in any form. You MAY re-describe it in words, draw it, or
+  generate an image from your description to feed your own system (workflow in
+  `COMPETITION_PLAYBOOK.md` §2). **Audio may be muted** — never build a
+  workflow that depends on hearing the clip.
+- **AVS is UNCERTAIN for 2026** (organiser-side instructor recalls no AVS this
+  year, but rules change yearly). It stays fully supported — AVS tab,
+  `/search/avs`, MMR diversification — but keep it flag-gated and spend zero
+  tuning effort on it until the đề bài confirms.
+- **KIS-C is a desired system STYLE, not (yet) a confirmed task.** The concrete
+  precedent is the 2025 finals progressive format: textual KIS ran **5 minutes
+  with 5 hints released at 1-minute intervals** (VKIS: 4 minutes, 20-second
+  clip). The KIS-C tab (hint merging + realtime 5-minute clock) is built for
+  exactly that regime.
