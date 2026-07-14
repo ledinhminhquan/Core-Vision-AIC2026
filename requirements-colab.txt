@@ -1,0 +1,33 @@
+# Colab-safe dependency set (July 2026 images).
+# Rules learned the hard way:
+#   * NEVER touch torch / CUDA — Colab ships an optimized build.
+#   * --prefer-binary everywhere; ranges not exact pins (Colab preinstalls move).
+#   * faiss-gpu-cu12 is installed separately in the notebooks with a
+#     faiss-cpu fallback (see notebook cell "Install dependencies").
+
+pydantic>=2.6,<3
+pyyaml>=6.0
+numpy>=1.26
+pandas>=2.1
+pyarrow>=14.0
+tqdm>=4.66
+pillow>=10.2
+rank-bm25>=0.2.2
+
+transformers>=4.57,<5   # 4.57+ = Qwen3-VL classes (qwen_embed lane); fine for siglip2 too
+safetensors>=0.4
+sentencepiece>=0.2
+accelerate>=1.0,<2
+peft>=0.11,<1
+open_clip_torch>=2.30
+datasets>=2.19          # public VI caption channels (training/public_datasets.py)
+timm>=1.0               # Vintern-1B trust_remote_code dependency
+einops>=0.7             # Vintern-1B trust_remote_code dependency
+
+opencv-python-headless>=4.9
+scenedetect>=0.6.4
+easyocr>=1.7
+
+streamlit>=1.40
+deep-translator>=1.11
+google-genai>=1.0

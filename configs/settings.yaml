@@ -1,0 +1,141 @@
+# ══════════════════════════════════════════════════════════════════════════
+# Core Vision Ultimate Final — single config for the whole system.
+# Any key can be overridden per-machine via env vars:  CVF_<SECTION>__<KEY>=...
+#   e.g.  CVF_PATHS__DATA_ROOT=/content/drive/MyDrive/AIC2025/data
+#         CVF_EMBEDDING__MODEL=ensemble    CVF_SEARCH__TOPK=800
+# ══════════════════════════════════════════════════════════════════════════
+
+project_name: core-vision-ultimate-final
+
+paths:
+  data_root: ./data                # AIC dataset root (merged organiser packages)
+  artifacts_root: ./artifacts      # everything we build (indexes, ocr, ...)
+  keyframes_dir: keyframes
+  clip_features_dir: clip-features-32
+  map_keyframes_dir: map-keyframes
+  media_info_dir: media-info
+  objects_dir: objects
+  videos_dir: videos
+
+embedding:
+  # siglip2 (multilingual default) | finetuned (your trained vi tower)
+  # | openclip (English lane) | qwen_embed (native-vi MLLM lane, heavy)
+  # | provided_clip32 (organiser features, instant) | mclip
+  # | ensemble (fuses ensemble_members below)
+  model: siglip2
+  siglip2_id: google/siglip2-so400m-patch16-384
+  # English lane: Meta Perception Encoder first (best open dual-encoder 2026,
+  # used by MERVIN at AIC-2025), Apple DFN5B ViT-H/14-378 as the fallback.
+  openclip_hub_ids:
+    - "hf-hub:timm/PE-Core-bigG-14-448"
+    - "hf-hub:timm/PE-Core-L-14-336"
+  openclip_arch: ViT-H-14-378-quickgelu
+  openclip_pretrained: dfn5b
+  # Optional native-Vietnamese lane (Qwen3-VL-Embedding: best vi zero-shot R@1).
+  qwen_embed_id: Qwen/Qwen3-VL-Embedding-2B
+  qwen_embed_dim: 1024
+  qwen_embed_instruction: "Represent this news-video keyframe / query for retrieval."
+  mclip_id: M-CLIP/XLM-Roberta-Large-Vit-L-14
+  mclip_image_arch: ViT-L-14
+  mclip_image_pretrained: openai
+  # Competition setting: ensemble of the Vietnamese-tuned tower + English lane.
+  ensemble_members: [siglip2, openclip]
+  ensemble_weights: [0.55, 0.45]
+  text_max_length: 64
+  device: auto        # auto | cuda | cpu
+  dtype: auto         # auto | bf16 | fp16 | fp32
+  batch_size: 64
+
+finetuned:
+  base_id: google/siglip2-so400m-patch16-384
+  checkpoint: ./artifacts/checkpoints/vi_siglip2_best   # from the H100 notebook
+
+index:
+  type: flatip        # flatip (exact, ≤1M vectors) | ivf (faster CPU) | hnsw
+  ivf_nlist: 4096
+  ivf_nprobe: 32
+  hnsw_m: 32
+  hnsw_ef_search: 128
+  use_gpu: false      # true if faiss-gpu is installed (Colab)
+
+search:
+  topk: 500           # dense candidates per member before fusion
+  display_k: 120      # rows surfaced to UI / submission
+  rerank: true        # SuperGlobal re-ranking of each member's candidates
+  fusion_method: weighted_sum   # weighted_sum (tuned, default) | rrf (untuned-safe)
+  rrf_k: 60
+  weights:            # signal blend (min-max normalized before weighting)
+    visual: 1.0
+    ocr: 0.35
+    asr: 0.30
+    caption: 0.25
+    metadata: 0.15
+    object: 0.25
+  neighbor_boost: 0.10   # temporal-context smoothing strength
+  neighbor_window: 2
+  vlm_rerank: false      # listwise VLM re-rank of the top rows (needs API/GPU)
+  vlm_rerank_topk: 24
+  vlm_rerank_provider: gemini   # gemini | vintern | none
+  avs_mmr_lambda: 0.7    # AVS: relevance-vs-novelty trade-off (1.0 = pure relevance)
+  avs_per_video_cap: 3
+  avs_min_gap_s: 10.0
+
+query:
+  provider: gemini    # none | google | gemini  (degrades automatically)
+  gemini_model: gemini-2.5-flash
+  enhance: true       # rewrite the query as a concrete visual description
+  enhance_english: true
+  expansions: 2       # extra paraphrases for multi-query max-fusion
+  multi_query_agg: max
+  cache: true
+  timeout_s: 8.0
+
+temporal:             # TRAKE
+  algo: dante         # dante (O(N·T) running-max DP) | beam (diverse beam DP)
+  use_ensemble: true  # score events with the full ensemble
+  per_event_topk: 100
+  max_gap_s: 150.0
+  min_gap_s: 0.0
+  sim_floor: 0.10
+  beam_size: 8
+  max_videos: 30
+  gap_penalty_per_s: 0.0005   # DANTE-style soft gap penalty
+  # Organiser TRAKE files: header line + "E1:…" events. none = drop the header
+  # (safe default) | prepend = merge it into every event text (A/B knob).
+  event_context: none
+
+extraction:           # K-batch keyframe self-extraction (density = recall knob)
+  shot_positions: [0.15, 0.50, 0.85]   # denser (vd [0.1,0.3,0.5,0.7,0.9]) → +recall, +disk/embed time
+  dedup_mad_threshold: 6.0             # hạ xuống → giữ nhiều frame gần trùng hơn
+
+ocr:
+  engine: easyocr     # easyocr | paddle | none
+  langs: [vi, en]
+  min_confidence: 0.30
+
+asr:
+  model: vinai/PhoWhisper-medium   # -large for best accuracy on H100
+  chunk_length_s: 30
+  batch_size: 8       # transformers-pipeline chunk batching
+
+caption:
+  model: 5CD-AI/Vintern-1B-v3_5
+  max_new_tokens: 96
+  max_tiles: 6
+
+vqa:
+  provider: gemini    # gemini | vintern | none
+  gemini_model: gemini-2.5-flash
+  local_model: 5CD-AI/Vintern-1B-v3_5
+  top_frames: 5
+  answers_per_query: 5      # distinct candidate groups answered in batch mode
+  max_calls_per_query: 5
+
+submission:
+  package_name: submission  # folder name inside the Codabench zip
+  dres_base_url: ""         # finals endpoint; credentials via DRES_USER / DRES_PASSWORD
+  dres_timeout_s: 6.0
+  auto_submit: false        # automatic track: submit without human confirmation
+
+logging:
+  level: INFO

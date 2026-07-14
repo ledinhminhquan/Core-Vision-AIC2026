@@ -1,0 +1,5 @@
+Đoạn video một vận động viên nhảy xa trên sân điền kinh, tìm các sự kiện sau:
+E1: Vận động viên bắt đầu chạy đà trên đường chạy. Lấy khoảnh khắc bước chạy đầu tiên.
+E2: Vận động viên giậm nhảy tại ván giậm. Lấy khoảnh khắc chân chạm ván.
+E3: Vận động viên bay trên không với hai tay vươn về phía trước.
+E4: Vận động viên tiếp cát. Lấy khoảnh khắc đầu tiên chân chạm hố cát.

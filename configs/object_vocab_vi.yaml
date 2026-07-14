@@ -1,0 +1,260 @@
+# Vietnamese noun → Open Images class (the organiser's object detections use
+# Open Images V4 entities). Longest phrase wins during parsing.
+# Extend freely — unknown nouns are simply ignored. Every value on the right
+# MUST be a real Open Images V4 class name, otherwise the boost silently
+# never fires (there is nothing for it to match in the detection files).
+#
+# Notes on deliberate approximations (OIV4 has no closer class):
+#   - roles (cảnh sát, bác sĩ, ...) → Person
+#   - trâu (water buffalo)          → Cattle
+#   - lân / múa lân (dance lion)    → Lion
+#   - phở / bún / tô (noodle soup)  → Bowl (what the detector actually sees)
+#   - chùa / nhà thờ                → Building
+
+# ── people & roles ──────────────────────────────────────────────────────────
+người: Person
+người đàn ông: Man
+đàn ông: Man
+người phụ nữ: Woman
+phụ nữ: Woman
+cô gái: Girl
+bé gái: Girl
+cậu bé: Boy
+bé trai: Boy
+trẻ em: Person
+em bé: Person
+đám đông: Person
+cảnh sát: Person
+công an: Person
+bộ đội: Person
+bác sĩ: Person
+phóng viên: Person
+vận động viên: Person
+cầu thủ: Person
+phi hành gia: Person
+khuôn mặt: Human face
+
+# ── vehicles ────────────────────────────────────────────────────────────────
+xe hơi: Car
+ô tô: Car
+taxi: Taxi
+xe buýt: Bus
+xe khách: Bus
+xe tải: Truck
+xe máy: Motorcycle
+xe mô tô: Motorcycle
+xe gắn máy: Motorcycle
+xe đạp: Bicycle
+xe cứu thương: Ambulance
+xe lăn: Wheelchair
+xe tăng: Tank
+tàu hỏa: Train
+xe lửa: Train
+tàu điện: Train
+tàu điện ngầm: Train
+tàu: Boat
+tàu thủy: Watercraft
+tàu ngầm: Submarine
+thuyền: Boat
+ghe: Boat
+xuồng: Canoe
+ca nô: Canoe
+phà: Watercraft
+máy bay: Airplane
+trực thăng: Helicopter
+tên lửa: Rocket
+bánh xe: Wheel
+
+# ── animals ─────────────────────────────────────────────────────────────────
+chó: Dog
+mèo: Cat
+chim: Bird
+gà: Chicken
+vịt: Duck
+chim cánh cụt: Penguin
+cá: Fish
+cá mập: Shark
+cá voi: Whale
+cá heo: Dolphin
+cá sấu: Crocodile
+tôm: Shrimp
+tôm hùm: Lobster
+rùa: Turtle
+rắn: Snake
+ngựa: Horse
+bò: Cattle
+trâu: Cattle
+dê: Goat
+cừu: Sheep
+heo: Pig
+lợn: Pig
+voi: Elephant
+hổ: Tiger
+cọp: Tiger
+sư tử: Lion
+lân: Lion
+múa lân: Lion
+gấu: Bear
+gấu trúc: Panda
+khỉ: Monkey
+hươu cao cổ: Giraffe
+thỏ: Rabbit
+chuột: Mouse
+ong: Bee
+động vật: Animal
+
+# ── plants & outdoor scene ──────────────────────────────────────────────────
+cây: Tree
+cây dừa: Palm tree
+hoa: Flower
+bông hoa: Flower
+hoa hồng: Rose
+chậu cây: Houseplant
+lúa: Plant
+nhà: House
+tòa nhà: Building
+chùa: Building
+nhà thờ: Building
+tượng: Sculpture
+cầu: Bridge
+cầu thang: Stairs
+cửa: Door
+cửa sổ: Window
+đèn đường: Street light
+đèn giao thông: Traffic light
+biển báo: Traffic sign
+biển quảng cáo: Billboard
+bảng hiệu: Billboard
+lá cờ: Flag
+cờ: Flag
+bong bóng: Balloon
+thùng rác: Waste container
+ghế đá: Bench
+
+# ── household & electronics ─────────────────────────────────────────────────
+bàn: Table
+ghế: Chair
+ghế sofa: Couch
+giường: Bed
+tủ: Cupboard
+tủ lạnh: Refrigerator
+đồng hồ: Clock
+tivi: Television
+ti vi: Television
+màn hình: Computer monitor
+máy tính: Laptop
+máy tính bảng: Tablet computer
+laptop: Laptop
+điện thoại: Mobile phone
+micro: Microphone
+máy ảnh: Camera
+camera: Camera
+đèn: Lamp
+quạt: Mechanical fan
+sách: Book
+bút: Pen
+đồ chơi: Toy
+gấu bông: Teddy bear
+vali: Suitcase
+hộp: Box
+thùng: Barrel
+
+# ── clothing & accessories ──────────────────────────────────────────────────
+áo: Clothing
+quần áo: Clothing
+trang phục: Clothing
+áo dài: Dress
+váy: Dress
+đầm: Dress
+áo sơ mi: Shirt
+áo khoác: Jacket
+quần: Trousers
+khăn: Scarf
+mũ: Hat
+nón: Hat
+nón lá: Sun hat
+mũ bảo hiểm: Helmet
+nón bảo hiểm: Helmet
+kính: Glasses
+kính râm: Sunglasses
+găng tay: Glove
+giày: Footwear
+dép: Sandal
+túi xách: Handbag
+ba lô: Backpack
+ô dù: Umbrella
+dù: Umbrella
+
+# ── food & drink ────────────────────────────────────────────────────────────
+thức ăn: Food
+đồ ăn: Food
+món ăn: Food
+trái cây: Fruit
+hoa quả: Fruit
+rau: Vegetable
+bánh: Cake
+bánh mì: Bread
+bánh ngọt: Pastry
+bánh xèo: Pancake
+pizza: Pizza
+kem: Ice cream
+cơm: Food
+phở: Bowl
+bún: Bowl
+mì: Pasta
+hải sản: Seafood
+sữa: Milk
+cà phê: Coffee
+cafe: Coffee
+trà: Tea
+rượu: Wine
+bia: Beer
+chuối: Banana
+táo: Apple
+xoài: Mango
+dưa hấu: Watermelon
+cà chua: Tomato
+dừa: Coconut
+
+# ── kitchen & tableware ─────────────────────────────────────────────────────
+nồi: Kitchenware
+nồi cơm điện: Kitchen appliance
+chảo: Frying pan
+dao: Knife
+muỗng: Spoon
+đũa: Chopsticks
+tô: Bowl
+bát: Bowl
+chén: Bowl
+đĩa: Plate
+dĩa: Plate
+ly: Coffee cup
+ly rượu: Wine glass
+cốc: Mug
+chai: Bottle
+bình nước: Jug
+
+# ── music & sports ──────────────────────────────────────────────────────────
+đàn ghi ta: Guitar
+ghi ta: Guitar
+guitar: Guitar
+piano: Piano
+trống: Drum
+nhạc cụ: Musical instrument
+bóng đá: Football
+quả bóng: Ball
+trái bóng: Ball
+bóng rổ: Ball
+bóng chuyền: Ball
+vợt: Racket
+vợt tennis: Tennis racket
+hồ bơi: Swimming pool
+bể bơi: Swimming pool
+
+# ── weapons / medical ───────────────────────────────────────────────────────
+súng: Weapon
+vũ khí: Weapon
+súng ngắn: Handgun
+súng trường: Rifle
+kim tiêm: Syringe
+thiết bị y tế: Medical equipment
