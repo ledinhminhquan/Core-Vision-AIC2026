@@ -178,8 +178,9 @@ python scripts/40_eval_official.py --submission-dir ./artifacts/submissions/p1 -
 `--gt` in bảng per-query + per-task + `MEAN FINAL` — **luôn chấm offline trước
 khi tiêu một lượt nộp** (5 lượt/ngày, 20 lượt tổng). `--no-vqa` bỏ bước gợi ý
 answer khi chỉ đo retrieval. Notebook 03 wrap đúng flow này trên Colab (đổi
-`EMBEDDING_MODE`, batch-run, chấm tại chỗ khi set `GT_JSON`). Bộ đề dev thường
-trực là **gói 89 câu chung kết 2025** (73 KIS / 9 QA / 7 TRAKE).
+`CVP_EMBEDDING__MODEL` ở ô cấu hình; thả `gt.json` vào thư mục queries trên
+Drive là ô chấm điểm tự chạy). Bộ đề dev thường trực là **gói 89 câu chung kết
+2025** (73 KIS / 9 QA / 7 TRAKE — có sẵn trong repo: `queries/dev-2025-finals/`).
 
 ### Mức 3 — con người: Streamlit UI
 
@@ -288,7 +289,7 @@ engine nên số đo này đại diện luôn cho track tự động.
 |---|---|
 | `mean_final` tăng nhưng `mean_r_at[1]` đứng yên | đuôi ranking tốt lên nhưng hit chưa lên đỉnh — bật cross-encoder (`search.reranker: blip2_itm` hoặc `qwen_reranker`, đo bằng A9) hoặc tune weights (mục 5) |
 | `best_rank` hay rơi vào 5–20 | ensemble TÌM RA nhưng xếp thấp — đúng ca cross-encoder rerank sinh ra để xử |
-| KIS cao, QA thấp | localisation ổn, answer sai — soát DẤU tiếng Việt, ≤100 ký tự, thử `vqa.frames_per_answer: 3` (dải frame + consistency vote, fix ca "giải toán trong video" 2025), verify bằng mắt ở mức 3 |
+| KIS cao, QA thấp | localisation ổn, answer sai — soát DẤU tiếng Việt, ≤100 ký tự, kiểm tra `vqa.frames_per_answer` chưa bị hạ dưới 3 (MỘT call Gemini nhìn CẢ DẢI frame — fix ca "giải toán trong video" 2025; thử nâng 5 khi chữ trải dài nhiều khung), verify bằng mắt ở mức 3 |
 | TRAKE hay ra ≈ (N−1)/N | một sự kiện trượt cửa sổ có hệ thống — chỉnh `temporal.max_gap_s`/`min_gap_s`, thử `temporal.event_context: prepend`, diễn đạt lại sự kiện đó |
 | Truy vấn "… sau khi …" kém | bật `search.temporal_boost: true` (Vortex before/now/after, đo bằng A10) |
 | Ranking phẳng, top-1 điểm thấp | bật `search.low_confidence_retry: true` (reformulate + RRF merge, track tự động) |

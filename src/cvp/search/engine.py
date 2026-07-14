@@ -303,7 +303,7 @@ class SearchEngine:
             return fused
         from cvp.search.temporal_boost import (
             apply_context_boost,
-            neighbor_rows,
+            neighbor_rows_from_video_span,
             split_temporal_query,
         )
 
@@ -322,8 +322,9 @@ class SearchEngine:
             spans = self._spans_for([gid for gid, _ in head])
             ctx_scores: dict[int, float] = {}
             for gid, _score in head:
-                rows = neighbor_rows(gid, spans[gid], parts.direction,
-                                     cfg.temporal_boost_window)
+                # _spans_for returns catalog.video_span = (first_row, COUNT).
+                rows = neighbor_rows_from_video_span(gid, spans[gid], parts.direction,
+                                                     cfg.temporal_boost_window)
                 if not rows:
                     continue
                 vecs = self._vectors_for(store, rows)
@@ -347,6 +348,25 @@ class SearchEngine:
         # BM25 fields hold Vietnamese text (OCR/ASR/captions) — score with the
         # original query; diacritic folding handles sloppy typing.
         return self._finalize(dense, query_vi, display_k)
+
+    def search_prepared(self, text: str, topk: int | None = None,
+                        display_k: int | None = None) -> list[SearchResult]:
+        """Search an ALREADY-prepared text VERBATIM — the query processor is
+        bypassed entirely (no Gemini call, no enhancement-of-enhancement).
+
+        Used by the low-confidence retry: its inputs are the processor's own
+        cached enhanced/expansion strings, so re-processing them would both
+        cost fresh API round-trips and search a re-description of a
+        re-description (review finding C2).
+        """
+        if not text or not text.strip():
+            return []
+        topk = topk or self.settings.search.topk
+        display_k = display_k or self.settings.search.display_k
+        processed = ProcessedQuery(original=text, translation=text,
+                                   provider_used="prepared")
+        dense = self._dense_scores(processed, topk)
+        return self._finalize(dense, text, display_k)
 
     def search_text_debug(
         self, query_vi: str, topk: int | None = None, display_k: int | None = None

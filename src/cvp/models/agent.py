@@ -83,10 +83,14 @@ class ConversationalAssistant:
                     f"Current top results look like: {results_summary}" if results_summary else ""
                 ),
             )
-            resp = self._gemini().models.generate_content(
-                model=self.settings.query.gemini_model, contents=prompt
+            from cvp.search.vqa import gemini_model_chain, generate_with_fallback
+
+            raw = generate_with_fallback(
+                self._gemini(),
+                gemini_model_chain(self.settings, self.settings.query.gemini_model),
+                prompt,
             )
-            text = re.sub(r"^```(?:json)?|```$", "", (resp.text or "").strip(), flags=re.MULTILINE).strip()
+            text = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
             data = json.loads(text)
 
             def _clean_str(v, default: str) -> str:

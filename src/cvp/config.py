@@ -119,8 +119,9 @@ class SearchCfg(BaseModel):
     temporal_boost_window: int = 12    # neighbour rows scanned on the context side
     temporal_boost_topk: int = 200     # candidates re-scored (head of the fused map)
     # Batch/auto-track: when the ranking looks flat (low confidence), re-search
-    # the cached query expansions and RRF-merge. Costs extra dense searches
-    # only on the flagged queries; no extra API calls (expansions are cached).
+    # the cached enhanced/expansion texts VERBATIM (engine.search_prepared —
+    # bypasses the query processor, so no extra API calls) and RRF-merge.
+    # Cost when triggered: up to 3 extra dense searches on flagged queries.
     low_confidence_retry: bool = False
     low_confidence_threshold: float = 0.25
     # Optional PAIRWISE cross-encoder rerank of the fused head (Unified-IMMR

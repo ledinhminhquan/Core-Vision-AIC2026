@@ -212,15 +212,17 @@ def group_candidates(results: Sequence[SearchResult], gap_s: float = 10.0,
 def ranking_confidence(scores: Sequence[float]) -> float:
     """How separated the top of a ranking is from its bulk, in [0, 1].
 
-    ``(s1 − median) / (s1 − min)``: → 1 when the top-1 towers over a flat tail,
-    → 0 when the whole list is one indistinguishable plateau (classic sign the
+    ``(s1 − median) / |s1|``: → ~1 when the top score towers over a flat tail,
+    → ~0 when the whole list is one indistinguishable plateau (classic sign the
     query text failed to discriminate). Short or degenerate lists count as
-    LOW confidence — with <10 candidates a retry can only help.
+    LOW confidence — with <10 candidates a retry can only help. The input is
+    sorted internally, so callers may pass rankings whose display order was
+    reshuffled by a reranker without updating ``.score`` (review finding C20).
     """
-    s = [float(x) for x in scores]
+    s = sorted((float(x) for x in scores), reverse=True)
     if len(s) < 10:
         return 0.0
-    top, mid = s[0], sorted(s)[len(s) // 2]
+    top, mid = s[0], s[len(s) // 2]
     # Gap relative to the score MAGNITUDE (fused scores are ≥0): a plateau of
     # near-identical values scores ~0 regardless of where its median sits —
     # a (top−med)/(top−min) form would miss exactly that failure mode.
@@ -251,10 +253,12 @@ def maybe_retry_low_confidence(engine: SearchEngine, retrieval_text: str,
     """Auto-track upgrade: reformulate-and-merge when the ranking looks flat.
 
     Off by default (``search.low_confidence_retry``). When the confidence of
-    the initial ranking is below the threshold, re-search each cached query
-    EXPANSION (no extra API call — ``QueryProcessor.process`` is disk-cached)
-    and RRF-merge the rankings, primary first. Every failure path returns the
-    original ranking.
+    the initial ranking is below the threshold, re-search the processor's
+    cached enhanced/expansion texts VERBATIM via ``engine.search_prepared``
+    (no extra API calls: reading the cache is free and the alts skip the
+    query processor entirely) and RRF-merge the rankings, primary first.
+    Cost when triggered: up to 3 extra dense searches. Every failure path
+    returns the original ranking.
     """
     settings = getattr(engine, "settings", None)
     cfg = getattr(settings, "search", None)
@@ -270,8 +274,13 @@ def maybe_retry_low_confidence(engine: SearchEngine, retrieval_text: str,
         if not alt_texts:
             return results
         rankings: list[list[SearchResult]] = [results]
+        # search_prepared bypasses the query processor (the alts ARE its own
+        # cached outputs — re-processing would fire fresh Gemini calls and
+        # search an enhancement-of-an-enhancement). Stub engines without the
+        # method fall back to plain search_text.
+        search = getattr(engine, "search_prepared", None) or engine.search_text
         for alt in alt_texts[:3]:
-            alt_results = engine.search_text(alt)
+            alt_results = search(alt)
             if alt_results:
                 rankings.append(alt_results)
         if len(rankings) == 1:

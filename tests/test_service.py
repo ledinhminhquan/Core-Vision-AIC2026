@@ -167,3 +167,21 @@ def test_engine_not_ready_returns_503():
     c = TestClient(app, raise_server_exceptions=False)
     assert c.post("/search/text", json={"query": "q"}).status_code == 503
     assert c.get("/health").json()["status"] == "loading"
+
+# ── review findings C5/C21/C22 regressions ───────────────────────────────────
+def test_negative_ids_are_404_not_wraparound(client):
+    assert client.get("/nearest/-1").status_code == 404
+    assert client.get("/keyframe/-1").status_code == 404
+
+
+def test_keyframe_row_exists_but_file_missing_is_404(client):
+    # gid 1 resolves in the stub catalog but its /fake path is not on disk —
+    # FileResponse would 500 at send time without the is_file() guard.
+    assert client.get("/keyframe/1").status_code == 404
+
+
+def test_oversized_topk_rejected(client):
+    r = client.post("/search/text", json={"query": "q", "topk": 10**9})
+    assert r.status_code == 422
+    r2 = client.post("/search/text", json={"query": "q", "display_k": 99999})
+    assert r2.status_code == 422

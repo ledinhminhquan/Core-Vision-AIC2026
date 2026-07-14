@@ -75,9 +75,9 @@ Tìm chuỗi `TODO` trong `main.tex` (11 chỗ). Cụ thể:
 | Bảng latency p50/p95/p99 (mục V) | `python scripts/50_bench_latency.py --n 200` trên laptop thi đấu, sau khi build artifacts thật |
 | Bài học thực chiến + kết quả sơ tuyển (mục VI, VII, Tóm tắt) | sau các lượt nộp Codabench tháng 8/2026 |
 
-Lưu ý: trong repo hiện chỉ có `queries/example`; thư mục `queries/dev` (bộ 89 truy vấn
-chung kết 2025: 73 KIS / 9 QA / 7 TRAKE + `gt.json`) phải tự tạo từ gói đề đã tải về —
-đây là quy ước dev-set mà chính docstring của `scripts/26_run_ablations.py` sử dụng.
+Lưu ý: repo đã kèm sẵn `queries/example` VÀ **`queries/dev-2025-finals/`** (89 truy vấn
+chung kết 2025 nguyên bản: 73 KIS / 9 QA / 7 TRAKE). Chỉ còn `gt.json` là phải tự soạn
+cho những câu đội đã xác minh đáp án (format: docstring `cvp/eval/official.py`).
 
 Quy tắc: **số nào chưa đo thì để nguyên TODO**, không ước lượng. Bảng ablation lấy đúng
 nhãn cấu hình như script in ra để người chấm đối chiếu được với repo

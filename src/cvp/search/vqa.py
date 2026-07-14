@@ -42,6 +42,31 @@ class VqaAnswer:
     provider: str
 
 
+def gemini_model_chain(settings: Settings, primary: str) -> list[str]:
+    """Primary model + the query section's fallback ids (deduped, in order).
+
+    Model ids churn mid-season (previews get retired) — every Gemini call site
+    (query enhancement, VQA, VLM rerank) walks the same chain so a stale id
+    degrades to the next Gemini model instead of failing the feature
+    (review finding C9: docs promised this for VQA/rerank too).
+    """
+    fallbacks = list(getattr(settings.query, "gemini_model_fallbacks", []))
+    return [primary] + [m for m in fallbacks if m != primary]
+
+
+def generate_with_fallback(client, models: list[str], contents) -> str:
+    """One generate_content call, trying each model id until one answers."""
+    last: Exception | None = None
+    for model_id in models:
+        try:
+            resp = client.models.generate_content(model=model_id, contents=contents)
+            return (resp.text or "").strip()
+        except Exception as e:  # noqa: BLE001 — try the next model id
+            last = e
+            log.warning("Gemini model %r failed (%s) — trying next fallback", model_id, e)
+    raise last if last else RuntimeError("no Gemini model succeeded")
+
+
 class VqaAssistant:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -62,11 +87,11 @@ class VqaAssistant:
         img = load_rgb(image_path)
         if img is None:
             raise RuntimeError(f"Unreadable image: {image_path}")
-        resp = self._gemini_client.models.generate_content(
-            model=self.cfg.gemini_model,
-            contents=[_VQA_PROMPT.format(question=question), img],
+        return generate_with_fallback(
+            self._gemini_client,
+            gemini_model_chain(self.settings, self.cfg.gemini_model),
+            [_VQA_PROMPT.format(question=question), img],
         )
-        return (resp.text or "").strip()
 
     def _ask_local(self, image_path: str, question: str) -> str:
         """Vintern-1B (InternVL family) — loaded lazily, cached."""
@@ -110,11 +135,11 @@ class VqaAssistant:
                 imgs.append(img)
         if not imgs:
             raise RuntimeError("no readable frame in the strip")
-        resp = self._gemini_client.models.generate_content(
-            model=self.cfg.gemini_model,
-            contents=[_VQA_STRIP_PROMPT.format(n=len(imgs), question=question), *imgs],
+        return generate_with_fallback(
+            self._gemini_client,
+            gemini_model_chain(self.settings, self.cfg.gemini_model),
+            [_VQA_STRIP_PROMPT.format(n=len(imgs), question=question), *imgs],
         )
-        return (resp.text or "").strip()
 
     # ── public ───────────────────────────────────────────────────────────
 

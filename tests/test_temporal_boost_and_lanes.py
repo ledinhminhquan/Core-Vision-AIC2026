@@ -117,3 +117,30 @@ def test_new_settings_defaults_are_wired():
     assert s.query.gemini_model == "gemini-3.5-flash"
     assert s.query.gemini_model_fallbacks[-1] == "gemini-2.5-flash"
     assert s.vqa.frames_per_answer == 3
+
+
+# ── review finding C1: catalog span convention (first_row, COUNT) ────────────
+def test_neighbor_rows_from_video_span_after_direction_works():
+    from cvp.search.temporal_boost import neighbor_rows_from_video_span
+
+    # catalog.video_span returns (first_row, COUNT). Before the fix, passing it
+    # raw made 'after' a silent no-op for every video beyond the first.
+    rows = neighbor_rows_from_video_span(5100, (5000, 300), "after", 12)
+    assert rows == list(range(5101, 5113))
+
+
+def test_neighbor_rows_from_video_span_never_leaks_across_video_end():
+    from cvp.search.temporal_boost import neighbor_rows_from_video_span
+
+    # Video = rows [0..299]; gid near the end must clip at 299 — row 300
+    # belongs to the NEXT video.
+    rows = neighbor_rows_from_video_span(295, (0, 300), "after", 12)
+    assert rows == [296, 297, 298, 299]
+    assert 300 not in rows
+
+
+def test_neighbor_rows_from_video_span_before_matches_plain():
+    from cvp.search.temporal_boost import neighbor_rows, neighbor_rows_from_video_span
+
+    assert neighbor_rows_from_video_span(150, (100, 101), "before", 3) == \
+        neighbor_rows(150, (100, 200), "before", 3)

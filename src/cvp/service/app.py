@@ -23,6 +23,7 @@ models that are imported inside ``create_app``.
 """
 
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from cvp.config import Settings, load_settings
@@ -86,6 +87,21 @@ def create_app(engine=None, settings: Settings | None = None):
             raise HTTPException(503, "Engine not ready")
         return e
 
+    _vqa_lock = threading.Lock()
+
+    def _vqa_singleton(s):
+        """One VqaAssistant per app — its lazily-loaded local Vintern model is
+        multi-GB; building per request would reload it every call exactly when
+        Gemini is down (review finding C18). Lock: first concurrent QA requests
+        must not double-build."""
+        with _vqa_lock:
+            if "vqa" not in state:
+                from cvp.search.vqa import VqaAssistant
+
+                state["vqa"] = (VqaAssistant(s)
+                                if s.vqa.provider not in ("", "none") else None)
+            return state["vqa"]
+
     @app.get("/health")
     def health():
         e = state["engine"]
@@ -112,11 +128,10 @@ def create_app(engine=None, settings: Settings | None = None):
         if q.answers and results:
             try:
                 from cvp.pipeline.run_queries import compute_qa_answers
-                from cvp.search.vqa import VqaAssistant
 
                 s = state["settings"] or getattr(e, "settings", None) or load_settings()
-                vqa = VqaAssistant(s) if s.vqa.provider not in ("", "none") else None
-                answers = list(compute_qa_answers(results, q.question or q.query, vqa, s))
+                answers = list(compute_qa_answers(results, q.question or q.query,
+                                                  _vqa_singleton(s), s))
             except Exception as exc:  # noqa: BLE001 — answers are best-effort extras
                 log.warning("QA answering failed (%s) — returning ranking only", exc)
                 answers = [None] * len(results)
@@ -166,6 +181,10 @@ def create_app(engine=None, settings: Settings | None = None):
     @app.get("/nearest/{global_id}", response_model=SearchResponse)
     def nearest(global_id: int, k: int = Query(default=60, ge=1, le=500)):
         e = _engine()
+        if global_id < 0:
+            # pandas .iloc would wrap negative ids to a REAL but wrong frame
+            # with 200 OK (review finding C21) — reject explicitly.
+            raise HTTPException(404, f"unknown global_id {global_id}")
         try:
             results = e.nearest(global_id, k=k)
         except (KeyError, IndexError):
@@ -175,11 +194,19 @@ def create_app(engine=None, settings: Settings | None = None):
 
     @app.get("/keyframe/{global_id}")
     def keyframe(global_id: int):
+        from pathlib import Path as _P
+
         e = _engine()
+        if global_id < 0:
+            raise HTTPException(404, "keyframe not found")
         try:
             path = e.catalog.ref(int(global_id)).path
         except Exception:  # noqa: BLE001 — any lookup failure is a plain 404
             raise HTTPException(404, "keyframe not found") from None
+        # Row can exist while the JPEG is missing (partially-synced keyframes
+        # folder) — FileResponse would 500 at send time (review finding C5).
+        if not _P(str(path)).is_file():
+            raise HTTPException(404, "keyframe file missing on disk")
         return FileResponse(str(path), media_type="image/jpeg")
 
     return app

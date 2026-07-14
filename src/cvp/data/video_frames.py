@@ -180,7 +180,21 @@ class VideoFrames:
             n = len(self)
             for start in range(0, n, _STREAM_BATCH * stride):
                 idx = list(range(start, min(start + _STREAM_BATCH * stride, n), stride))
-                batch = self._vr.get_batch(idx).asnumpy()
+                try:
+                    batch = self._vr.get_batch(idx).asnumpy()
+                except Exception:
+                    # Truncated/corrupt tail (container header overstated the
+                    # decodable range): salvage the chunk frame-by-frame, then
+                    # STOP - mirroring the cv2 branch's graceful end so callers
+                    # (e.g. scripts/05 rebuild) keep everything decoded so far
+                    # (review finding C6).
+                    for i in idx:
+                        try:
+                            frame = self._vr[i].asnumpy()
+                        except Exception:
+                            return
+                        yield i, self._finalize(frame.astype(np.uint8, copy=False), size)
+                    return
                 for i, frame in zip(idx, batch):
                     yield i, self._finalize(frame.astype(np.uint8, copy=False), size)
             return

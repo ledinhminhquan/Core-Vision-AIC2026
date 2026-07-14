@@ -128,3 +128,28 @@ def test_new_retry_settings_defaults():
     s = Settings()
     assert s.search.low_confidence_retry is False
     assert s.search.low_confidence_threshold == pytest.approx(0.25)
+
+
+# ── review findings C2/C19/C20 regressions ───────────────────────────────────
+def test_confidence_is_order_invariant():
+    # Rerankers reorder rows WITHOUT updating .score — the metric must sort.
+    decisive = [1.0] + [0.1] * 49
+    shuffled = [0.1] * 25 + [1.0] + [0.1] * 24
+    assert ranking_confidence(shuffled) == ranking_confidence(decisive)
+
+
+def test_retry_prefers_search_prepared_over_search_text():
+    alt = {"mô tả tăng cường chi tiết": [_r(77, 0.9)], "cảnh quay khác": [_r(88, 0.7)]}
+    eng = _Engine(_flat(), alternates=alt)
+    eng.settings.search.low_confidence_retry = True
+    prepared_calls = []
+
+    def search_prepared(text, **kw):
+        prepared_calls.append(text)
+        return list(alt.get(text, []))
+
+    eng.search_prepared = search_prepared
+    out = maybe_retry_low_confidence(eng, "câu truy vấn gốc", _flat())
+    # The alts went through the processor BYPASS, not the Gemini-bound path.
+    assert len(prepared_calls) == 2 and eng.searched == []
+    assert 77 in [r.ref.global_id for r in out]

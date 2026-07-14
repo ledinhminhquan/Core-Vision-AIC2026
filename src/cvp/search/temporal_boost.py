@@ -66,13 +66,25 @@ def neighbor_rows(gid: int, span: tuple[int, int], direction: str,
                   window: int) -> list[int]:
     """Global-row ids of the temporal neighbours of ``gid`` on one side.
 
-    ``span`` is the video's (first_row, last_row) inclusive — neighbours never
-    cross video boundaries.
+    ``span`` is the video's (first_row, last_row) INCLUSIVE — neighbours never
+    cross video boundaries. NOTE: ``catalog.video_span`` returns
+    (first_row, COUNT) — convert with :func:`neighbor_rows_from_video_span`
+    (review finding C1: passing the raw catalog tuple silently killed the
+    'after' direction and leaked one row across the first video's boundary).
     """
     lo, hi = span
     if direction == "before":
         return list(range(max(lo, gid - window), gid))
     return list(range(gid + 1, min(hi, gid + window) + 1))
+
+
+def neighbor_rows_from_video_span(gid: int, video_span: tuple[int, int],
+                                  direction: str, window: int) -> list[int]:
+    """Same as :func:`neighbor_rows` but takes ``catalog.video_span`` output
+    directly — (first_row, count) — so callers cannot mix up the conventions."""
+    first, count = video_span
+    return neighbor_rows(gid, (first, first + max(0, int(count)) - 1),
+                         direction, window)
 
 
 def apply_context_boost(fused: dict[int, float], ctx_scores: dict[int, float],

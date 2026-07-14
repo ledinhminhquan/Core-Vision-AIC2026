@@ -159,3 +159,44 @@ def test_settings_yaml_declares_reranker_keys():
     assert s.search.rerank_topk == 100
     assert s.search.blip2_itm_id == "Salesforce/blip2-itm-vit-g"
     assert s.search.qwen_reranker_id == "Qwen/Qwen3-VL-Reranker-2B"
+
+
+# ── review findings C3/C17/C4 regressions ────────────────────────────────────
+def test_model_id_change_rebuilds_and_clears_failed_latch(monkeypatch):
+    built = []
+
+    class _Backend:
+        def __init__(self, settings):
+            built.append(settings.search.blip2_itm_id)
+            if settings.search.blip2_itm_id == "bad/model":
+                raise RuntimeError("404 model not found")
+
+        def score(self, q, p):
+            return np.zeros(len(p), dtype=np.float32)
+
+    monkeypatch.setitem(cr._BACKENDS, "blip2_itm", _Backend)
+    s = _settings(reranker="blip2_itm")
+    s.search.blip2_itm_id = "bad/model"
+    assert cr._get_reranker(s) is None            # failed build → disabled
+    assert cr._get_reranker(s) is None and built == ["bad/model"]  # latched
+    s2 = _settings(reranker="blip2_itm")
+    s2.search.blip2_itm_id = "good/model"
+    assert cr._get_reranker(s2) is not None       # corrected id → REBUILD
+    assert built == ["bad/model", "good/model"]
+
+
+def test_score_ce_zeroes_unreadable_images(monkeypatch):
+    from cvp.search.cross_rerank import QwenVLReranker
+
+    rr = object.__new__(QwenVLReranker)
+    rr.batch_size = 8
+
+    class _CE:
+        def predict(self, pairs, batch_size=8):
+            return [0.9] * len(pairs)             # every READABLE pair scores high
+
+    rr._ce = _CE()
+    monkeypatch.setattr(cr, "load_rgb",
+                        lambda p: None if "corrupt" in str(p) else object())
+    scores = rr._score_ce("query", ["/a.jpg", "/corrupt.jpg", "/b.jpg"])
+    assert scores.tolist() == [pytest.approx(0.9), 0.0, pytest.approx(0.9)]

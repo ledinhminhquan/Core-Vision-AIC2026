@@ -67,8 +67,11 @@ def _gemini_scores(query: str, paths: list[str], settings: Settings) -> list[flo
         img = Image.open(p).convert("RGB")
         img.thumbnail((448, 448))
         parts.append(img)
-    resp = client.models.generate_content(model=settings.vqa.gemini_model, contents=parts)
-    return _parse_scores(resp.text or "", len(paths))
+    from cvp.search.vqa import gemini_model_chain, generate_with_fallback
+
+    text = generate_with_fallback(
+        client, gemini_model_chain(settings, settings.vqa.gemini_model), parts)
+    return _parse_scores(text, len(paths))
 
 
 _LOCAL_VLM = None  # (model, tokenizer, device, dtype) — module-level lazy singleton

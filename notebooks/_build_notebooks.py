@@ -53,7 +53,10 @@ def write_nb(name: str, cells: list[dict]) -> None:
         "cells": cells,
     }
     out = HERE / name
-    out.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")
+    # newline="\n": without it Windows emits CRLF and every pytest run (the
+    # suite regenerates notebooks) leaves git status dirty (review finding C7).
+    out.write_text(json.dumps(nb, ensure_ascii=False, indent=1),
+                   encoding="utf-8", newline="\n")
     print(f"wrote {out.name} ({len(cells)} cells)")
 
 

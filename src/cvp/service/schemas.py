@@ -7,8 +7,11 @@ from pydantic import BaseModel, Field
 
 class TextQuery(BaseModel):
     query: str = Field(..., description="Vietnamese (or English) text query")
-    topk: int | None = None
-    display_k: int | None = None
+    # Bounded (review finding C22): an unbounded topk allocates
+    # n_variants × topk result arrays per FAISS lane — a fat-fingered client
+    # posting 10**9 would OOM the service mid-competition.
+    topk: int | None = Field(default=None, ge=1, le=5000)
+    display_k: int | None = Field(default=None, ge=1, le=1000)
 
 
 class QaQuery(BaseModel):
@@ -16,7 +19,7 @@ class QaQuery(BaseModel):
     question: str | None = Field(
         default=None,
         description="The actual question; defaults to `query` when omitted")
-    display_k: int | None = None
+    display_k: int | None = Field(default=None, ge=1, le=1000)
     answers: bool = Field(
         default=True, description="Run VQA per candidate group (needs a provider)")
 
@@ -26,7 +29,7 @@ class ImageQuery(BaseModel):
     team re-describes/sketches/generates an image and feeds it here)."""
 
     image_b64: str = Field(..., description="Base64 image bytes (raw or data: URL)")
-    display_k: int | None = None
+    display_k: int | None = Field(default=None, ge=1, le=1000)
 
 
 class TrakeQuery(BaseModel):

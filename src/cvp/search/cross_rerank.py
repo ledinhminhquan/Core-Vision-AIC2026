@@ -29,6 +29,7 @@ only — the tail is untouched, so a reranker failure can cost at most
 from __future__ import annotations
 
 import logging
+import threading
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -167,12 +168,24 @@ class QwenVLReranker:
         return self._score_manual(query, image_paths)
 
     def _score_ce(self, query: str, image_paths: list[str]) -> np.ndarray:
-        pairs = []
-        for p in image_paths:
+        # Same contract as the BLIP-2 lane: unreadable keyframes score 0.0 —
+        # feeding the CrossEncoder a placeholder would give a corrupt frame an
+        # arbitrary (possibly boosting) score (review finding C4).
+        scores = np.zeros(len(image_paths), dtype=np.float32)
+        pairs, ok_idx = [], []
+        for i, p in enumerate(image_paths):
             img = load_rgb(p)
-            pairs.append([query, img if img is not None else ""])
-        preds = self._ce.predict(pairs, batch_size=self.batch_size)
-        return np.asarray(preds, dtype=np.float32).reshape(-1)
+            if img is None:
+                log.warning("Unreadable keyframe %s; rerank score 0.0.", p)
+                continue
+            pairs.append([query, img])
+            ok_idx.append(i)
+        if pairs:
+            preds = np.asarray(self._ce.predict(pairs, batch_size=self.batch_size),
+                               dtype=np.float32).reshape(-1)
+            for i, s in zip(ok_idx, preds):
+                scores[i] = s
+        return scores
 
     def _score_manual(self, query: str, image_paths: list[str]) -> np.ndarray:
         import torch
@@ -210,21 +223,40 @@ class QwenVLReranker:
 _BACKENDS = {"blip2_itm": Blip2ItmReranker, "qwen_reranker": QwenVLReranker}
 
 _RERANKER = None      # lazy singleton (or False after a failed build)
-_RERANKER_KEY = None  # backend name the singleton was built for
+_RERANKER_KEY = None  # full identity the singleton was built for
+_BUILD_LOCK = threading.Lock()
+
+
+def _identity_key(settings: Settings) -> tuple:
+    """Full identity of the reranker a Settings object asks for.
+
+    Keyed on backend + model id + device (not just the backend name): an
+    in-process A/B (scripts/26-style) or a notebook that edits settings must
+    get a REBUILD, not the previous configuration's weights; and correcting a
+    bad model id must clear the failed-build latch (review findings C3/C17).
+    """
+    sc = settings.search
+    model_id = sc.blip2_itm_id if sc.reranker == "blip2_itm" else sc.qwen_reranker_id
+    return (sc.reranker, model_id, settings.embedding.device)
 
 
 def _get_reranker(settings: Settings):
     global _RERANKER, _RERANKER_KEY
-    key = settings.search.reranker
-    if _RERANKER_KEY != key:
-        _RERANKER, _RERANKER_KEY = None, key
-    if _RERANKER is None:
-        try:
-            _RERANKER = _BACKENDS[key](settings)
-        except Exception as e:  # noqa: BLE001 — optional stage must never sink the engine
-            log.warning("Cross-encoder reranker %r failed to build (%s) — "
-                        "DISABLED for this session", key, e)
-            _RERANKER = False
+    key = _identity_key(settings)
+    # Double-checked locking: model builds take tens of seconds — a thundering
+    # herd of first requests (service/Streamlit) must build exactly ONE copy.
+    if _RERANKER_KEY == key and _RERANKER is not None:
+        return _RERANKER or None
+    with _BUILD_LOCK:
+        if _RERANKER_KEY != key:
+            _RERANKER, _RERANKER_KEY = None, key
+        if _RERANKER is None:
+            try:
+                _RERANKER = _BACKENDS[settings.search.reranker](settings)
+            except Exception as e:  # noqa: BLE001 — optional stage must never sink the engine
+                log.warning("Cross-encoder reranker %r failed to build (%s) — "
+                            "DISABLED until the configuration changes", key, e)
+                _RERANKER = False
     return _RERANKER or None
 
 
