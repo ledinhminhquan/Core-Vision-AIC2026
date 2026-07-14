@@ -1,11 +1,11 @@
 # ══════════════════════════════════════════════════════════════════════════
-# Core Vision Ultimate Final — single config for the whole system.
+# Core Vision Perfect V1 — single config for the whole system.
 # Any key can be overridden per-machine via env vars:  CVP_<SECTION>__<KEY>=...
 #   e.g.  CVP_PATHS__DATA_ROOT=/content/drive/MyDrive/AIC2025/data
 #         CVP_EMBEDDING__MODEL=ensemble    CVP_SEARCH__TOPK=800
 # ══════════════════════════════════════════════════════════════════════════
 
-project_name: core-vision-ultimate-final
+project_name: core-vision-perfect-v1
 
 paths:
   data_root: ./data                # AIC dataset root (merged organiser packages)

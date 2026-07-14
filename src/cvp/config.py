@@ -250,7 +250,7 @@ class LoggingCfg(BaseModel):
 
 
 class Settings(BaseModel):
-    project_name: str = "core-vision-ultimate-final"
+    project_name: str = "core-vision-perfect-v1"
     paths: PathsCfg = Field(default_factory=PathsCfg)
     embedding: EmbeddingCfg = Field(default_factory=EmbeddingCfg)
     finetuned: FinetunedCfg = Field(default_factory=FinetunedCfg)

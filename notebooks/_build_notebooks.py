@@ -362,7 +362,7 @@ print("artifacts_root =", settings.paths.artifacts_root)
 # ══════════════════════════════════════════════════════════════════════════
 
 NB1_TITLE = r'''
-# 🏗 Core Vision Ultimate Final — 01 · Build Artifacts (Colab)
+# 🏗 Core Vision Perfect V1 — 01 · Build Artifacts (Colab)
 
 Builds **everything the search system needs** from the organiser dataset on
 your Drive: catalog → keyframe self-extraction (K-batches) → dense embeddings
@@ -674,7 +674,7 @@ print("\n✅ Artifacts build complete. Next: notebooks/02_train_vi_encoder_H100.
 # ══════════════════════════════════════════════════════════════════════════
 
 NB2_TITLE = r'''
-# 🚀 Core Vision Ultimate Final — 02 · Train Vietnamese Encoder (H100 autopilot)
+# 🚀 Core Vision Perfect V1 — 02 · Train Vietnamese Encoder (H100 autopilot)
 
 Fine-tunes the **SigLIP-2 text tower on Vietnamese** captions of *this exact
 corpus* via **LoRA-LiT**: image tower frozen → your FAISS index stays valid;
@@ -1056,7 +1056,7 @@ openclip lane from notebook 01):
 # ══════════════════════════════════════════════════════════════════════════
 
 NB3_TITLE = r'''
-# ✅ Core Vision Ultimate Final — 03 · Test the System & Trained Model
+# ✅ Core Vision Perfect V1 — 03 · Test the System & Trained Model
 
 Sanity-checks the full retrieval stack on Colab: loads the engine, runs
 Vietnamese queries end-to-end (KIS / TRAKE / AVS), measures latency, writes a

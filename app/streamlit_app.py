@@ -1,4 +1,4 @@
-"""Core Vision Ultimate Final — competition UI.
+"""Core Vision Perfect V1 — competition UI.
 
 Run:  streamlit run app/streamlit_app.py
 Env:  CVP_PATHS__DATA_ROOT=... CVP_EMBEDDING__MODEL=siglip2|ensemble|finetuned
@@ -23,7 +23,7 @@ sys.path.insert(0, str(_REPO / "src"))
 from cvp.config import load_settings  # noqa: E402
 from cvp.utils.logging import setup_logging  # noqa: E402
 
-st.set_page_config(page_title="Core Vision Ultimate Final", layout="wide", page_icon="🎯")
+st.set_page_config(page_title="Core Vision Perfect V1", layout="wide", page_icon="🎯")
 
 
 # ── cached singletons ────────────────────────────────────────────────────────
@@ -83,9 +83,30 @@ def _init_state() -> None:
 # ── shared widgets ───────────────────────────────────────────────────────────
 
 
+def group_results_by_video(results) -> list:
+    """VISIONE'23-style ordering: videos by their best rank, frames of each
+    video CONSECUTIVE in temporal order. One glance judges a whole video —
+    a flat grid wastes screen on interleaved near-identical frames (organiser
+    tập-huấn buổi 2 teaches exactly this display pattern)."""
+    order: list[str] = []
+    by_video: dict[str, list] = {}
+    for r in results:
+        vid = r.video_id
+        if vid not in by_video:
+            by_video[vid] = []
+            order.append(vid)
+        by_video[vid].append(r)
+    out = []
+    for vid in order:
+        out.extend(sorted(by_video[vid], key=lambda r: r.ref.n))
+    return out
+
+
 def render_result_grid(results, cols: int, task: str, engine, qa_answer: str = "") -> None:
     if not results:
         return
+    if st.session_state.get("group_by_video"):
+        results = group_results_by_video(results)
     for row_start in range(0, len(results), cols):
         columns = st.columns(cols)
         for col, r in zip(columns, results[row_start : row_start + cols]):
@@ -255,13 +276,16 @@ def main() -> None:
     engine = get_engine()
 
     with st.sidebar:
-        st.title("🎯 Core Vision Ultimate Final")
+        st.title("🎯 Core Vision Perfect V1")
         st.caption(
             f"{len(engine.catalog)} keyframes · members: "
             + ", ".join(m.key for m, _ in engine.members)
         )
         cols = st.slider("Grid columns", 3, 8, 5)
         display_k = st.slider("Results shown", 20, 300, engine.settings.search.display_k, step=20)
+        st.checkbox("📺 Group by video (VISIONE-style)", key="group_by_video",
+                    help="Videos ordered by best rank; each video's frames "
+                         "consecutive in temporal order — judge a whole video at a glance.")
 
     tab_kis, tab_qa, tab_trake, tab_avs, tab_chat = st.tabs(
         ["🔎 KIS", "❓ QA", "⛓ TRAKE", "🌊 AVS", "💬 KIS-C"]

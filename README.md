@@ -1,4 +1,4 @@
-# 🎯 Core Vision Ultimate Final
+# 🎯 Core Vision Perfect V1
 
 > **Vietnamese text-to-keyframe interactive video retrieval** for the
 > **HCMC AI Challenge (AIC) 2026** — full coverage of KIS · KIS-V · QA · TRAKE ·
