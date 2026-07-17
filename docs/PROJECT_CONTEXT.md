@@ -49,8 +49,15 @@ tách theo ranh giới câu cho QA không marker); lệnh cài TransNetV2 local 
 9. **Chuỗi fallback Gemini** `gemini-3.5-flash → gemini-3-flash-preview → 2.5-flash`
    (model id chết giữa mùa → tự rơi xuống model kế, không rơi thẳng về Google Translate).
 10. **Ops:** `scripts/26_run_ablations.py` (trận A1–A10 một lệnh, chấm bằng scorer
-    chính thức) · `scripts/50_bench_latency.py` (gate p50≤200ms/p95≤500ms) · toggle
-    **📺 group-by-video** kiểu VISIONE trong app (BTC dạy đúng pattern này ở buổi 2).
+    chính thức) · `scripts/50_bench_latency.py` (gate p50≤200ms/p95≤500ms) ·
+    `scripts/51_warm_cache.py` (làm ấm cache Gemini trước giờ thi) · CLI `cvp eval` ·
+    toggle **📺 group-by-video** kiểu VISIONE trong app (BTC dạy pattern này ở buổi 2).
+11. **Vòng enhancement 14/07 (chiều):** `search_image` giờ FUSE TOÀN BỘ ensemble
+    member (KIS-V hưởng đa dạng lane như text); app thêm **uploader ảnh KIS-V**
+    (vẽ/sinh ảnh → tải lên → search) + **🧩 concept chips** (objects phổ biến trong
+    top kết quả — recipe exploration/exploitation buổi 2) + **EpisodicLog** append-only
+    cho KIS-C (recipe buổi 3: ghi mọi hint/query/top-hit để trả lời "tìm lại video lúc
+    nãy"; JSONL tại `artifacts/agent_logs/`).
 
 **Facts 2026 đã xác minh (tập huấn buổi 1–3 + FAQ + portal, 14/07/2026):**
 - **2 hình thức thi:** interactive (dùng trợ lý ảo trong tool là **TÙY CHỌN**) +

@@ -383,14 +383,39 @@ class SearchEngine:
         return results, dump
 
     def search_image(self, image: Image.Image, display_k: int | None = None) -> list[SearchResult]:
-        """Query-by-example with the primary model (click a frame → similar)."""
+        """Query-by-example fused over ALL ensemble members.
+
+        The finals KIS-V path (clip may only be WATCHED → the team re-creates
+        an image and feeds it here) deserves the same lane diversity as text
+        queries: each member encodes the image into ITS OWN space and searches
+        its own index; maps are min-max normalised and weight-summed exactly
+        like the text path. A member that fails (missing lane on this machine,
+        OOM) is skipped with a warning — one lane is enough to answer.
+        """
         display_k = display_k or self.settings.search.display_k
-        vec = self.primary_model.encode_image([image])
-        scores, gids = self.primary_store.search(vec, display_k)
+        maps: list[dict[int, float]] = []
+        weights: list[float] = []
+        for (model, store), w in zip(self.members, self.member_weights):
+            try:
+                vec = model.encode_image([image])
+                # Wider per-lane pool so fusion has candidates to agree on.
+                scores, gids = store.search(vec, min(3 * display_k, 1000))
+                m = {int(g): float(s) for s, g in zip(scores[0], gids[0]) if g >= 0}
+            except Exception as e:  # noqa: BLE001 — degrade to the lanes that work
+                log.warning("search_image: member %r failed (%s) — skipping lane",
+                            getattr(model, "key", "?"), e)
+                continue
+            if m:
+                maps.append(m)
+                weights.append(w)
+        if not maps:
+            return []
+        fused = fusion.weighted_sum(maps, weights)
+        ranked = sorted(fused.items(), key=lambda kv: -kv[1])[:display_k]
         return [
-            SearchResult(ref=self.catalog.ref(int(g)), score=float(s), signals={"visual": float(s)})
-            for s, g in zip(scores[0], gids[0])
-            if g >= 0
+            SearchResult(ref=self.catalog.ref(int(g)), score=float(s),
+                         signals={"visual": float(s)})
+            for g, s in ranked
         ]
 
     def nearest(self, global_id: int, k: int = 60) -> list[SearchResult]:

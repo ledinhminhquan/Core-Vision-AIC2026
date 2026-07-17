@@ -11,6 +11,12 @@ running dialogue state and, per turn, produces:
   candidate space (colour? indoor/outdoor? on-screen text? camera angle?).
 
 Requires Gemini; without a key it degrades to simple hint concatenation.
+
+Also home of :class:`EpisodicLog` — the append-only interaction log the
+organisers' buổi-3 lecture explicitly recommends for conversational retrieval
+agents ("ghi lại mọi sự kiện: query đã chạy, filter đã dùng, ảnh đã click…" so
+follow-up turns can reference earlier events). One JSONL per session under
+``artifacts/agent_logs/``; doubles as the paper's failure-case transcript.
 """
 
 from __future__ import annotations
@@ -19,11 +25,56 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass, field
 
 from cvp.config import Settings
 
 log = logging.getLogger(__name__)
+
+
+class EpisodicLog:
+    """Append-only event stream for one KIS-C / agent session.
+
+    Events are ``{"t": epoch_s, "kind": ..., **payload}`` JSON lines. Appends
+    are best-effort: a full disk or locked file must NEVER break a live
+    competition turn (failures are logged and swallowed).
+    """
+
+    def __init__(self, settings: Settings, session: str | None = None):
+        stamp = session or time.strftime("%Y%m%d-%H%M%S")
+        self.path = settings.paths.art("agent_logs") / f"session-{stamp}.jsonl"
+
+    def append(self, kind: str, **payload) -> None:
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            record = {"t": round(time.time(), 3), "kind": str(kind), **payload}
+            with open(self.path, "a", encoding="utf-8", newline="\n") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception as e:  # noqa: BLE001 — logging must never block a turn
+            log.warning("Episodic log append failed (%s) — continuing", e)
+
+    def events(self) -> list[dict]:
+        """All events so far (skips corrupt lines rather than raising)."""
+        if not self.path.is_file():
+            return []
+        out: list[dict] = []
+        for line in self.path.read_text(encoding="utf-8").splitlines():
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return out
+
+    def recent_summary(self, n: int = 8) -> str:
+        """Compact one-line-per-event digest of the last ``n`` events —
+        injectable into agent prompts so the assistant can resolve references
+        like "tìm lại video giống kết quả lúc nãy"."""
+        lines = []
+        for ev in self.events()[-n:]:
+            extras = {k: v for k, v in ev.items() if k not in ("t", "kind")}
+            lines.append(f"[{ev.get('kind', '?')}] " + json.dumps(extras, ensure_ascii=False))
+        return "\n".join(lines)
 
 _AGENT_PROMPT = """You assist a team searching Vietnamese TV-news video by text query (CLIP-style retrieval).
 The target scene is described by progressive hints; later hints add detail to earlier ones.

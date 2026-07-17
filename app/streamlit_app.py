@@ -142,6 +142,36 @@ def render_result_grid(results, cols: int, task: str, engine, qa_answer: str = "
                     st.session_state.marks_neg.add(gid)
 
 
+def render_concept_chips(results, engine, top_n: int = 30) -> None:
+    """Exploitation concepts (organiser buổi-2 recipe): the most frequent
+    detected objects among the top results — one glance tells the operator
+    which countable/visible nouns to ADD to the query to discriminate."""
+    if not results:
+        return
+    store = getattr(getattr(engine, "object_booster", None), "store", None)
+    if store is None:
+        return
+    counts: dict[str, int] = {}
+    try:
+        for r in results[:top_n]:
+            for d in store.get(r.video_id, r.ref.n):
+                if d.score >= 0.4:
+                    counts[d.entity] = counts.get(d.entity, 0) + 1
+    except Exception:  # noqa: BLE001 — chips are advisory, never blocking
+        return
+    if counts:
+        top = sorted(counts.items(), key=lambda kv: -kv[1])[:10]
+        st.caption("🧩 Concepts trong top kết quả (thêm vào mô tả để phân biệt / loại trừ): "
+                   + " · ".join(f"{e}×{c}" for e, c in top))
+
+
+@st.cache_resource
+def get_episodic_log():
+    from cvp.models.agent import EpisodicLog
+
+    return EpisodicLog(load_settings())
+
+
 @st.fragment(run_every="1s")
 def _kisc_clock() -> None:
     """Progressive-KIS 5-minute countdown, ticking in REAL TIME.
@@ -314,9 +344,21 @@ def main() -> None:
             st.caption(
                 f"Refined with {len(st.session_state.marks_pos)}✓ / {len(st.session_state.marks_neg)}✗"
             )
+        with st.expander("🖼 KIS-V — tìm bằng ẢNH (clip chỉ được XEM: vẽ/sinh ảnh lại rồi tải lên)"):
+            up = st.file_uploader("Ảnh truy vấn", type=["png", "jpg", "jpeg", "webp"],
+                                  key="kisv_upload")
+            if up is not None and st.button("🔎 Search bằng ảnh", key="kisv_go"):
+                from PIL import Image as _Img
+
+                t0 = time.time()
+                img = _Img.open(up).convert("RGB")
+                _set_results(engine.search_image(img, display_k=display_k), "kis")
+                st.caption(f"{len(st.session_state.results)} results in "
+                           f"{time.time() - t0:.2f}s (image query, ensemble-fused)")
         if st.button("📤 Export KIS CSV"):
             _export("kis", engine)
         render_result_grid(st.session_state.results, cols, "kis", engine)
+        render_concept_chips(st.session_state.results, engine)
 
     # ── QA ───────────────────────────────────────────────────────────────
     with tab_qa:
@@ -448,6 +490,14 @@ def main() -> None:
             # Marks made on a previous KIS query must not refine THIS query
             # (round-3 fix L-R3-2 — last_query changed, so the marks expire).
             st.session_state.marks_pos, st.session_state.marks_neg = set(), set()
+            # Episodic memory (organiser buổi-3 recipe): every hint + merged
+            # query + top hits go to the append-only session log, so later
+            # turns can resolve "tìm lại video giống kết quả lúc nãy".
+            get_episodic_log().append(
+                "kisc_turn", hint=new_hint.strip(), merged_query=turn.query,
+                top=[f"{r.video_id}@{int(r.ref.pts_time)}s"
+                     for r in st.session_state.results[:5]],
+            )
         if st.session_state.kisc_questions:
             st.info("❓ Câu hỏi làm rõ nên đặt: " + " · ".join(st.session_state.kisc_questions))
         if st.button("📤 Export KIS CSV", key="kisc_export"):

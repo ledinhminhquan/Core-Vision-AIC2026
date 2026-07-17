@@ -6,6 +6,7 @@ The CLI covers what you want from any terminal without remembering paths:
 
     cvp serve   [--host 0.0.0.0 --port 8000]   # HTTP/JSON retrieval service
     cvp search  "câu truy vấn" [--k 10]        # quick smoke search
+    cvp eval    --submission-dir D --gt gt.json # official-formula offline scoring
     cvp version                                 # package + lane summary
 """
 
@@ -44,6 +45,26 @@ def _cmd_search(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_eval(args: argparse.Namespace) -> int:
+    """Score a submission folder with the OFFICIAL formulas (no engine load)."""
+    from pathlib import Path
+
+    from cvp.eval.official import score_run
+
+    report = score_run(Path(args.submission_dir), Path(args.gt))
+    for stem in sorted(report.per_query):
+        qs = report.per_query[stem]
+        print(f"  {stem:<28s} {qs.task:<6s} final={qs.final:.3f} "
+              f"best_rank={qs.best_rank if qs.best_rank is not None else '-'}")
+    for stem, why in sorted(report.unscored.items()):
+        print(f"  {stem:<28s} UNSCORED: {why}")
+    for stem in report.gt_without_submission:
+        print(f"  {stem:<28s} MISSING submission (counts 0)")
+    print(f"mean final = {report.mean_final:.4f} over {report.num_gt} GT queries "
+          f"({report.num_scored} scored)")
+    return 0
+
+
 def _cmd_version(_args: argparse.Namespace) -> int:
     from importlib.metadata import PackageNotFoundError, version
 
@@ -70,6 +91,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--k", type=int, default=10)
     p.add_argument("--settings", default=None)
     p.set_defaults(fn=_cmd_search)
+
+    p = sub.add_parser("eval", help="offline official-formula scoring of a CSV folder")
+    p.add_argument("--submission-dir", required=True)
+    p.add_argument("--gt", required=True)
+    p.set_defaults(fn=_cmd_eval)
 
     p = sub.add_parser("version", help="print package version")
     p.set_defaults(fn=_cmd_version)

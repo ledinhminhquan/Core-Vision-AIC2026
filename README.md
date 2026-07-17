@@ -62,6 +62,8 @@ python scripts/40_eval_official.py --submission-dir ... --gt gt.json    # offici
 python scripts/23_dump_signals.py + scripts/21_tune_weights.py          # tune fusion weights on dev GT
 python scripts/26_run_ablations.py --query-dir <dev> --gt gt.json       # A1–A10 ablation battery
 python scripts/50_bench_latency.py                                      # p50/p95 latency gate
+python scripts/51_warm_cache.py --query-dir <pack>                      # pre-warm Gemini cache before a round
+cvp eval --submission-dir <dir> --gt gt.json                            # official scoring from any terminal
 python scripts/25_auto_agent.py --query-dir <pack>                      # 2026 automatic track, end-to-end
 cvp serve                                                               # HTTP/JSON retrieval service
 ```
