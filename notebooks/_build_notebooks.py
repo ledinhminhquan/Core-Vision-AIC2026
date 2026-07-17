@@ -1211,8 +1211,10 @@ if RUN_AUTO_AGENT:
     if not any(qdir.glob("*.txt")):     # seed one sample query for the dry-run
         (qdir / "query-p1-1-kis.txt").write_text(
             "người dẫn chương trình mặc áo dài đứng trong trường quay", encoding="utf-8")
+    # Reuse the cell-5 engine (review C6): the default engine_factory would
+    # build a SECOND full engine and double index+catalog memory this session.
     rep = run_auto(qdir, settings.paths.art("submissions", "auto_dry_run"),
-                   settings, submit=False)
+                   settings, submit=False, engine_factory=lambda _s: engine)
     print(f"AutoRunReport: written={len(rep.written)} ok={rep.ok} zip={rep.zip_path}")
     for i in rep.issues:
         print("  ", i)

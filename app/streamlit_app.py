@@ -165,11 +165,15 @@ def render_concept_chips(results, engine, top_n: int = 30) -> None:
                    + " · ".join(f"{e}×{c}" for e, c in top))
 
 
-@st.cache_resource
 def get_episodic_log():
-    from cvp.models.agent import EpisodicLog
+    """One EpisodicLog per BROWSER SESSION (st.session_state, not
+    st.cache_resource — that would share one file across every operator until
+    the server restarts; review C3). 'Reset dialogue' rotates the file."""
+    if "episodic_log" not in st.session_state:
+        from cvp.models.agent import EpisodicLog
 
-    return EpisodicLog(load_settings())
+        st.session_state.episodic_log = EpisodicLog(load_settings())
+    return st.session_state.episodic_log
 
 
 @st.fragment(run_every="1s")
@@ -353,6 +357,11 @@ def main() -> None:
                 t0 = time.time()
                 img = _Img.open(up).convert("RGB")
                 _set_results(engine.search_image(img, display_k=display_k), "kis")
+                # Image ranking replaced the text ranking — old feedback marks
+                # and last_query must expire (invariant L-R3-2; review C2:
+                # Refine on stale marks would silently restore the OLD query).
+                st.session_state.last_query = ""
+                st.session_state.marks_pos, st.session_state.marks_neg = set(), set()
                 st.caption(f"{len(st.session_state.results)} results in "
                            f"{time.time() - t0:.2f}s (image query, ensemble-fused)")
         if st.button("📤 Export KIS CSV"):
@@ -464,6 +473,9 @@ def main() -> None:
             st.session_state.kisc_hints, st.session_state.kisc_questions = [], []
             _set_results([], "kisc")
             st.session_state.kisc_started_at = None
+            # New dialogue = new episodic-log file (review C3): the old
+            # transcript stays on disk, the next turn opens a fresh session.
+            st.session_state.pop("episodic_log", None)
         if do_add and new_hint.strip():
             import time as _time
 
@@ -482,6 +494,7 @@ def main() -> None:
             turn = get_assistant().step(
                 DialogueState(hints=list(st.session_state.kisc_hints)),
                 results_summary=summary,
+                episodic_summary=get_episodic_log().recent_summary() or None,
             )
             st.session_state.kisc_questions = turn.questions
             st.markdown(f"**Truy vấn gộp:** {turn.query}")

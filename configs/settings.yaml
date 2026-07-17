@@ -20,7 +20,7 @@ paths:
 embedding:
   # siglip2 (multilingual default) | finetuned (your trained vi tower)
   # | openclip (English lane) | qwen_embed (native-vi MLLM lane, heavy)
-  # | provided_clip32 (organiser features, instant) | mclip
+  # | provided_clip32 (organiser features, instant) | mclip | jina | metaclip2
   # | ensemble (fuses ensemble_members below)
   model: siglip2
   siglip2_id: google/siglip2-so400m-patch16-384
@@ -151,6 +151,7 @@ vqa:
 submission:
   package_name: submission  # folder name inside the Codabench zip
   dres_base_url: ""         # finals endpoint; credentials via DRES_USER / DRES_PASSWORD
+  dres_evaluation_id: ""    # DRES v2 evaluation id (announced at the finals)
   dres_timeout_s: 6.0
   auto_submit: false        # automatic track: submit without human confirmation
 

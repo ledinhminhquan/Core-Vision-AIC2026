@@ -49,7 +49,7 @@ auxindex ─────── ocr (EasyOCR) · asr (PhoWhisper) · captioner (V
 ```
 
 Quy ước chung: import nặng (torch/transformers/faiss) luôn **lazy** bên trong
-constructor/hàm — mọi module import sạch trên máy không GPU; suite **412 test CPU**
+constructor/hàm — mọi module import sạch trên máy không GPU; suite **436 test CPU**
 chạy không cần model/mạng/data thật.
 
 ## 2. Bất biến trung tâm: `global_id == dòng manifest == dòng FAISS`
@@ -188,8 +188,8 @@ spec giao thức**). Thiết kế: một `SearchEngine` duy nhất, ba mặt g�
    người vận hành ─►│ app/streamlit_app.py     │ 5 tab + đồng hồ + basket + feedback
                     ├──────────────────────────┤
    máy / BTC ──────►│ cvp.service (FastAPI)    │ GET  /health · /nearest/{gid} · /keyframe/{gid}
-                    │  cvp serve --port 8000   │ POST /search/text · /search/qa
-                    │                          │      /search/trake · /search/avs
+                    │  cvp serve --port 8000   │ POST /search/text · /search/image
+                    │                          │      /search/qa · /search/trake · /search/avs
                     ├──────────────────────────┤
    query pack ─────►│ pipeline/auto_agent      │ đề → CSV → validate → zip → [DRES top-1]
                     └────────────┬─────────────┘

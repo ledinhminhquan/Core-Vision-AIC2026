@@ -104,7 +104,13 @@ def _submit_top1(written: list[Path], client: Any,
         except Exception as e:  # noqa: BLE001 — a bad row must not stop the run
             res = SubmitResult(False, 0, f"submit failed: {e}")
         out.append((path.stem, res))
-        log.info("DRES %s: %s (%s) %s", path.stem, "OK" if res.ok else "REJECTED", res.status, res.message)
+        # ok = server ACCEPTED the call; the verdict says whether the answer was
+        # judged CORRECT/WRONG (review C21 — an accepted-but-WRONG answer must
+        # never read as a win in the finals log).
+        log.info("DRES %s: %s%s (%s) %s", path.stem,
+                 "ACCEPTED" if res.ok else "REJECTED",
+                 f" verdict={res.verdict}" if res.verdict else "",
+                 res.status, res.message)
     return out
 
 
@@ -199,7 +205,8 @@ def run_auto(
             client = (
                 client_factory(settings)
                 if client_factory is not None
-                else DresClient(sub.dres_base_url, timeout=sub.dres_timeout_s)
+                else DresClient(sub.dres_base_url, timeout=sub.dres_timeout_s,
+                                evaluation_id=sub.dres_evaluation_id)
             )
             login = client.login()  # env DRES_USER / DRES_PASSWORD
             if not login.ok:

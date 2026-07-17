@@ -61,6 +61,8 @@ llm = ["google-genai>=1.0", "deep-translator>=1.11"]
 mclip = ["multilingual-clip>=1.0.10"]
 # HTTP/JSON retrieval service (machine-callable face for the 2026 automatic track).
 service = ["fastapi>=0.111", "uvicorn>=0.30"]
+# Preferred backend of the qwen_reranker cross-encoder lane (search.reranker).
+rerank = ["sentence-transformers>=3.0"]
 # fastapi+httpx let CI exercise the service endpoints (TestClient) without uvicorn.
 dev = ["pytest>=8.0", "ruff>=0.4", "fastapi>=0.111", "httpx>=0.27"]
 

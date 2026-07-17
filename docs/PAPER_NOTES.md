@@ -46,7 +46,7 @@
     threshold) → re-search các expansion đã cache + RRF-merge; mọi đường lỗi
     trả về ranking gốc (fail-open).
 11. **Kiến trúc hai-track dùng chung engine**: một `SearchEngine` phục vụ cả app
-    tương tác lẫn HTTP service (`cvp serve`: /health, /search/{text,qa,trake,avs},
+    tương tác lẫn HTTP service (`cvp serve`: /health, /search/{text,image,qa,trake,avs},
     /nearest, /keyframe) — nền tảng máy-gọi-được cho thể thức assistant-vs-assistant.
 
 ## 3. Ablation bắt buộc phải chạy (khi có data + GT)

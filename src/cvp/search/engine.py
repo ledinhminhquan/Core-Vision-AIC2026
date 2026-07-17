@@ -151,29 +151,46 @@ class SearchEngine:
         return out / norms
 
     def _dense_scores(self, processed: ProcessedQuery, topk: int) -> dict[int, float]:
-        """Ensemble dense retrieval: variants→max, SuperGlobal refine, members→weighted sum."""
+        """Ensemble dense retrieval: variants→max, SuperGlobal refine, members→weighted sum.
+
+        Per-member guard (review C16): a runtime failure in ONE lane (encode
+        OOM, index error) degrades to the surviving lanes — exactly like
+        ``search_image`` and load-time degradation — instead of killing every
+        text search of the session.
+        """
         member_maps: list[dict[int, float]] = []
-        for model, store in self.members:
-            texts = processed.texts_for_search(model.multilingual)
-            vecs = model.encode_text(texts)
-            scores, gids = store.search(vecs, topk)
-            per_variant = []
-            for qi in range(len(texts)):
-                m = {
-                    int(g): float(s)
-                    for s, g in zip(scores[qi], gids[qi])
-                    if g >= 0
-                }
-                per_variant.append(m)
-            member_map = fusion.aggregate_queries(per_variant, self.settings.query.multi_query_agg)
-            if self.settings.search.rerank and member_map:
-                # All query variants participate — max-fused inside the reranker,
-                # matching the dense stage, so expansion-found hits can't be demoted.
-                member_map = self._superglobal(store, vecs, member_map)
+        weights: list[float] = []
+        for (model, store), w in zip(self.members, self.member_weights):
+            try:
+                texts = processed.texts_for_search(model.multilingual)
+                vecs = model.encode_text(texts)
+                scores, gids = store.search(vecs, topk)
+                per_variant = []
+                for qi in range(len(texts)):
+                    m = {
+                        int(g): float(s)
+                        for s, g in zip(scores[qi], gids[qi])
+                        if g >= 0
+                    }
+                    per_variant.append(m)
+                member_map = fusion.aggregate_queries(per_variant, self.settings.query.multi_query_agg)
+                if self.settings.search.rerank and member_map:
+                    # All query variants participate — max-fused inside the reranker,
+                    # matching the dense stage, so expansion-found hits can't be demoted.
+                    member_map = self._superglobal(store, vecs, member_map)
+            except Exception as e:  # noqa: BLE001 — degrade to the lanes that work
+                log.error("Dense lane %r failed at query time (%s) — CONTINUING "
+                          "without it; search quality is degraded",
+                          getattr(model, "key", "?"), e)
+                continue
             member_maps.append(member_map)
+            weights.append(w)
+        if not member_maps:
+            log.error("EVERY dense lane failed for this query — empty ranking")
+            return {}
         if len(member_maps) == 1:
             return member_maps[0]
-        return fusion.weighted_sum(member_maps, self.member_weights)
+        return fusion.weighted_sum(member_maps, weights)
 
     def _superglobal(self, store: IndexStore, query_vecs: np.ndarray,
                      dense: dict[int, float]) -> dict[int, float]:
@@ -421,7 +438,16 @@ class SearchEngine:
     def nearest(self, global_id: int, k: int = 60) -> list[SearchResult]:
         """Visual neighbourhood of an indexed frame (uses its stored vector)."""
         ref = self.catalog.ref(global_id)
-        vecs = np.load(self.primary_store.embedding_path(ref.video_id))
+        try:
+            vecs = np.load(self.primary_store.embedding_path(ref.video_id))
+        except OSError as e:
+            # Machine synced artifacts/indexes but not artifacts/embeddings —
+            # a valid lightweight deployment; the similar-frames button must
+            # degrade, not crash the UI/service (review C18).
+            log.warning("nearest(): embeddings for %s unavailable (%s) — "
+                        "sync artifacts/embeddings to enable similar-search",
+                        ref.video_id, e)
+            return []
         start, _count = self.catalog.video_span(ref.video_id)
         row = vecs[ref.global_id - start]  # positional row, robust to ordinal gaps
         row = row / (np.linalg.norm(row) or 1.0)

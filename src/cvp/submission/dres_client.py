@@ -47,11 +47,17 @@ DEFAULT_SUBMIT_PATH = "/api/v2/submit/{evaluation_id}"
 
 @dataclass(frozen=True)
 class SubmitResult:
-    """Outcome of one HTTP call. ``status`` is the HTTP code (0 = transport error)."""
+    """Outcome of one HTTP call. ``status`` is the HTTP code (0 = transport error).
+
+    ``verdict`` carries DRES's JUDGEMENT of an accepted submission
+    ("CORRECT" / "WRONG" / "INDETERMINATE" / "" when absent) — ``ok`` means the
+    server ACCEPTED the call, not that the answer was right (review C21).
+    """
 
     ok: bool
     status: int
     message: str
+    verdict: str = ""
 
 
 class DresClient:
@@ -118,7 +124,8 @@ class DresClient:
     def _result(status: int, body: dict, raw: str) -> SubmitResult:
         message = str(body.get("description") or body.get("message") or raw).strip()
         ok = 200 <= status < 300 and body.get("status") is not False
-        return SubmitResult(ok=ok, status=status, message=message[:500])
+        verdict = str(body.get("submission") or "").strip().upper()
+        return SubmitResult(ok=ok, status=status, message=message[:500], verdict=verdict)
 
     # ── public API ───────────────────────────────────────────────────────
 

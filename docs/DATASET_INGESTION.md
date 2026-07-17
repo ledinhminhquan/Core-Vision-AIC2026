@@ -119,6 +119,7 @@ python scripts/01_extract_keyframes.py            # K-batch tự cắt (nếu c�
 python scripts/00_build_catalog.py --force        # manifest.parquet + signature
 python scripts/02_embed_and_index.py --all-members   # hoặc --model siglip2
 python scripts/03_build_aux_indexes.py --objects-index --text-index
+# (local cần extra aux: pip install -e ".[aux]" — easyocr/opencv/scenedetect/timm/einops)
 python scripts/doctor.py
 ```
 

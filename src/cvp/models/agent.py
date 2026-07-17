@@ -26,6 +26,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 
 from cvp.config import Settings
@@ -42,7 +43,9 @@ class EpisodicLog:
     """
 
     def __init__(self, settings: Settings, session: str | None = None):
-        stamp = session or time.strftime("%Y%m%d-%H%M%S")
+        # uuid suffix: two sessions starting the same second must not
+        # interleave into one file (review C3).
+        stamp = session or f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
         self.path = settings.paths.art("agent_logs") / f"session-{stamp}.jsonl"
 
     def append(self, kind: str, **payload) -> None:
@@ -83,6 +86,7 @@ Hints so far (in order):
 {hints}
 
 {results_note}
+{episodic_note}
 
 Return STRICT JSON (no markdown) with keys:
   "query": ONE English sentence describing the target FRAME visually, merging every hint
@@ -121,8 +125,15 @@ class ConversationalAssistant:
             self._client = genai.Client(api_key=api_key)
         return self._client
 
-    def step(self, state: DialogueState, results_summary: str | None = None) -> AgentTurn:
-        """Produce the consolidated query + clarifying questions for this turn."""
+    def step(self, state: DialogueState, results_summary: str | None = None,
+             episodic_summary: str | None = None) -> AgentTurn:
+        """Produce the consolidated query + clarifying questions for this turn.
+
+        ``episodic_summary`` is the :class:`EpisodicLog` digest of EARLIER
+        events this session — it lets the assistant resolve references like
+        "tìm lại video giống kết quả lúc nãy" (review C4: the log used to be
+        write-only; now it feeds every turn).
+        """
         all_hints = state.hints + state.notes
         fallback = AgentTurn(query=" . ".join(all_hints), query_vi=" . ".join(all_hints))
         if not all_hints:
@@ -132,6 +143,11 @@ class ConversationalAssistant:
                 hints="\n".join(f"{i + 1}. {h}" for i, h in enumerate(all_hints)),
                 results_note=(
                     f"Current top results look like: {results_summary}" if results_summary else ""
+                ),
+                episodic_note=(
+                    "Session log of EARLIER events (queries run, top hits shown) — "
+                    f"use it when a hint refers back to them:\n{episodic_summary}"
+                    if episodic_summary else ""
                 ),
             )
             from cvp.search.vqa import gemini_model_chain, generate_with_fallback

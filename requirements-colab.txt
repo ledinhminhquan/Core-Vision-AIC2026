@@ -31,3 +31,7 @@ easyocr>=1.7
 streamlit>=1.40
 deep-translator>=1.11
 google-genai>=1.0
+# NB3 result-grid plotting (present on Colab; pinned for completeness — C7).
+matplotlib>=3.8
+# Preferred backend of the qwen_reranker cross-encoder lane (C8); torch-safe.
+sentence-transformers>=3.0

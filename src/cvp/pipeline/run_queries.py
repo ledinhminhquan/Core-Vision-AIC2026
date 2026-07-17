@@ -19,6 +19,7 @@ Each query yields ``{stem}.csv`` in the output folder, ready for Codabench.
 
 from __future__ import annotations
 
+import csv
 import logging
 import re
 from pathlib import Path
@@ -375,9 +376,32 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
         return None
     out_path = out_dir / f"{path.stem}.csv"
 
-    def record(times: Sequence[float] | None) -> None:
+    expected_top: tuple[str, int] | None = None   # (video, first frame) the times belong to
+
+    def record(times: Sequence[float] | None,
+               expected: tuple[str, int] | None = None) -> None:
+        nonlocal expected_top
         if top1_times is not None and times:
             top1_times[path.stem] = [float(t) for t in times]
+            expected_top = expected
+
+    def _reconcile_times(written: Path | None) -> Path | None:
+        """Drop recorded DRES timestamps when the writer skipped/reordered the
+        top candidate (review C20): row 1 of the CSV must be the SAME
+        (video, frame) the pts times were captured from, or the auto-submit
+        would pair one candidate's frame with another's milliseconds."""
+        if (written is None or top1_times is None
+                or path.stem not in top1_times or expected_top is None):
+            return written
+        try:
+            with open(written, "r", encoding="utf-8", newline="") as f:
+                first = next((row for row in csv.reader(f) if row), None)
+            if (first is None or first[0].strip() != expected_top[0]
+                    or int(float(first[1])) != int(expected_top[1])):
+                top1_times.pop(path.stem, None)
+        except (OSError, ValueError, IndexError):
+            top1_times.pop(path.stem, None)
+        return written
 
     if task == "trake":
         # Organiser 2025 format: context/header line + "E1:…" events — the
@@ -387,8 +411,11 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
         events = parse_trake_events(lines, prepend_context=prepend)
         candidates = engine.search_trake(events)
         if candidates:
-            record(getattr(candidates[0], "pts_times", None))
-        return write_trake(out_path, [(c.video_id, c.frame_idxs) for c in candidates])
+            record(getattr(candidates[0], "pts_times", None),
+                   (candidates[0].video_id, int(candidates[0].frame_idxs[0]))
+                   if getattr(candidates[0], "frame_idxs", None) else None)
+        return _reconcile_times(
+            write_trake(out_path, [(c.video_id, c.frame_idxs) for c in candidates]))
 
     # Round-3 fix: multi-paragraph KIS/AVS joins ALL lines; QA question = last
     # interrogative line (real finals files have ≥3 lines). See parse_query_lines.
@@ -401,11 +428,14 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
 
     if results:
         t = _time_of(results[0])
-        record([t] if t is not None else None)
+        record([t] if t is not None else None,
+               (results[0].video_id, int(results[0].frame_idx)))
     if task == "qa":
         answers = compute_qa_answers(results, question, vqa, getattr(engine, "settings", None))
-        return write_qa(out_path, [(r.video_id, r.frame_idx, a) for r, a in zip(results, answers)])
-    return write_kis(out_path, [(r.video_id, r.frame_idx) for r in results])
+        return _reconcile_times(write_qa(
+            out_path, [(r.video_id, r.frame_idx, a) for r, a in zip(results, answers)]))
+    return _reconcile_times(
+        write_kis(out_path, [(r.video_id, r.frame_idx) for r in results]))
 
 
 def run_query_folder(settings: Settings, query_dir: Path, out_dir: Path,

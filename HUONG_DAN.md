@@ -315,9 +315,9 @@ pip install -e ".[service]"
 cvp serve                          # mặc định 127.0.0.1:8000; --host 0.0.0.0 --port 8000
 ```
 
-Endpoint: `GET /health` · `POST /search/text` · `POST /search/qa` ·
-`POST /search/trake` · `POST /search/avs` · `GET /nearest/{global_id}` ·
-`GET /keyframe/{global_id}`. Thử nhanh không cần service: `cvp search "câu truy vấn" --k 10`.
+Endpoint: `GET /health` · `POST /search/text` · `POST /search/image` (KIS-V, base64) ·
+`POST /search/qa` · `POST /search/trake` · `POST /search/avs` ·
+`GET /nearest/{global_id}` · `GET /keyframe/{global_id}`. Thử nhanh không cần service: `cvp search "câu truy vấn" --k 10`.
 
 Nên bật cho chế độ tự động: `CVP_SEARCH__LOW_CONFIDENCE_RETRY=true` (tự viết lại
 truy vấn khi kết quả "phẳng") và cân nhắc `CVP_SEARCH__RERANKER`.
@@ -375,7 +375,7 @@ Không cần embed lại ảnh trong mọi trường hợp — LiT giữ nguyên
 | Chung kết được xem clip mấy lần, có tiếng không? | Clip chỉ được XEM trên màn hình (cấm quay/chụp/capture — nhưng được mô tả lại/vẽ/sinh ảnh để đưa vào hệ); âm thanh CÓ THỂ bị tắt. 2025: KIS 5 phút với 5 hint nhỏ giọt mỗi phút; V-KIS 4 phút/clip 20s; server kiểu DRES — nộp sớm điểm cao, nộp sai bị trừ (xem `docs/COMPETITION_PLAYBOOK.md`). |
 | Làm sao biết train có "lãi" để bật vào ensemble? | `python scripts/eval_model.py` (Bước 8). Delta R@1/R@5 dương rõ → bật; lằng nhằng → thi bằng zero-shot ensemble mặc định `[siglip2, openclip]` 0.55/0.45 (công thức các đội top). |
 | Objects boost đọc chậm trên Drive? | Chạy `python scripts/03_build_aux_indexes.py --objects-index` — gộp hàng trăm nghìn JSON thành 1 parquet, ObjectBooster tự ưu tiên dùng. |
-| Kiểm tra tổng thể hệ đang thiếu gì? | `python scripts/doctor.py` — in coverage từng artifact + cảnh báo index stale. Test suite: `pytest` (412 tests, thuần CPU, không cần data thật). |
+| Kiểm tra tổng thể hệ đang thiếu gì? | `python scripts/doctor.py` — in coverage từng artifact + cảnh báo index stale. Test suite: `pytest` (436 tests, thuần CPU, không cần data thật). |
 
 ---
 

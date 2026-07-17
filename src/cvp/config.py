@@ -45,7 +45,7 @@ class PathsCfg(BaseModel):
 class EmbeddingCfg(BaseModel):
     """Primary dense encoder + optional ensemble members."""
 
-    # siglip2 | finetuned | openclip | qwen_embed | mclip | provided_clip32 | ensemble
+    # siglip2 | finetuned | openclip | qwen_embed | mclip | jina | metaclip2 | provided_clip32 | ensemble
     model: str = "siglip2"
     siglip2_id: str = "google/siglip2-so400m-patch16-384"
     # English lane. The loader tries `openclip_hub_ids` (open_clip hf-hub checkpoints,
@@ -71,6 +71,20 @@ class EmbeddingCfg(BaseModel):
     # Ensemble = late score fusion across per-model FAISS indexes.
     ensemble_members: list[str] = Field(default_factory=lambda: ["siglip2", "openclip"])
     ensemble_weights: list[float] = Field(default_factory=lambda: [0.55, 0.45])
+
+    @field_validator("ensemble_weights")
+    @classmethod
+    def _weights_match_members(cls, v: list[float], info) -> list[float]:
+        # Fail LOUD on a config typo: zip() in the engine would silently drop
+        # the unmatched tail member otherwise (review C17).
+        members = info.data.get("ensemble_members")
+        if members is not None and len(v) != len(members):
+            raise ValueError(
+                f"embedding.ensemble_weights has {len(v)} entries but "
+                f"ensemble_members has {len(members)} — they must match 1:1"
+            )
+        return v
+
     text_max_length: int = 64
     device: str = "auto"  # auto | cuda | cpu
     dtype: str = "auto"   # auto | bf16 | fp16 | fp32
@@ -241,7 +255,10 @@ class SubmissionCfg(BaseModel):
 
     package_name: str = "submission"     # folder name inside the Codabench zip
     # DRES endpoint for the on-site finals; credentials via env DRES_USER / DRES_PASSWORD.
-    dres_base_url: str = ""              # e.g. https://dres.example.org/api/v2
+    dres_base_url: str = ""              # e.g. https://dres.example.org
+    # DRES v2 submits to /api/v2/submit/{evaluationId} — the id is announced at
+    # the finals; without it the client posts to the id-less legacy path (C19).
+    dres_evaluation_id: str = ""
     dres_timeout_s: float = 6.0
     auto_submit: bool = False            # automatic track: submit without confirmation
 

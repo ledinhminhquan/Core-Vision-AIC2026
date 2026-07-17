@@ -49,10 +49,19 @@ def main() -> None:
             print(f"Packaged: {zip_path} (+ MANIFEST.json)")
 
     if args.gt:
+        import shutil
+        import tempfile
+
         from cvp.eval.official import score_run
 
-        report = score_run(out_dir, Path(args.gt))
-        print(f"\nOffline official score vs {args.gt}:")
+        # Score ONLY this run's CSVs (mirror of the --zip files= discipline):
+        # stale CSVs from earlier runs in out_dir would otherwise inflate or
+        # deflate the printed score vs what the packaged zip contains (C22).
+        with tempfile.TemporaryDirectory(prefix="cvp_score_") as td:
+            for p in written:
+                shutil.copy2(p, Path(td) / p.name)
+            report = score_run(Path(td), Path(args.gt))
+        print(f"\nOffline official score vs {args.gt} (THIS run's {len(written)} CSVs only):")
         for stem, qs in sorted(report.per_query.items()):
             print(f"  {stem:36s} final={qs.final:.3f}  "
                   + " ".join(f"R@{k}={v:.2f}" for k, v in sorted(qs.r_at.items())))

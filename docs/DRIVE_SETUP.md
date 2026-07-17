@@ -53,6 +53,7 @@ Với gói "Shared with me" của ban tổ chức: chuột phải → **Add shor
 |---|---|---|
 | `GEMINI_API_KEY` | Không (nên có) | dịch + mô tả lại truy vấn, VQA, trợ lý KIS-C |
 | `HF_TOKEN` | Không | push model đã train lên HF Hub |
+| `GITHUB_TOKEN` | BẮT BUỘC (repo private) | PAT fine-grained quyền Contents-read để notebook clone repo |
 
 Trong notebook, secrets được đọc bằng `google.colab.userdata` — cell nào cần sẽ tự hỏi quyền.
 

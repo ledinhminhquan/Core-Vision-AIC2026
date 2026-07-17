@@ -61,8 +61,7 @@ Quy trình "xem → mô tả lại → search":
 3. Thấy frame "gần đúng" → **🔍 similar** (query-by-example) để xoay quanh vùng
    ảnh đó — đây là đường bù cho việc không được giữ clip.
 4. Nếu vẽ/sinh ảnh: trước hết dùng ảnh để CẢ ĐỘI thống nhất mô tả; ở mức API đã
-   có `SearchEngine.search_image` (chưa nối vào app — gọi qua notebook/service
-   khi thật sự cần đường ảnh-vào).
+   có uploader **🖼 KIS-V — tìm bằng ẢNH** ngay trong tab KIS của app (vẽ/sinh ảnh → tải lên → search, fuse toàn bộ ensemble), hoặc POST `/search/image` của service.
 
 ## 3. QA — 2 bước
 
