@@ -11,6 +11,7 @@ Endpoints (one per competition task family + plumbing):
 
     GET  /health              liveness + corpus size + lanes
     POST /search/text         KIS / KIS-V ranking
+    POST /search/image        KIS-V query-by-recreated-image (base64)
     POST /search/qa           ranking + per-group VQA answers (QA task rows)
     POST /search/trake        ordered event sequences (TRAKE)
     POST /search/avs          diversified coverage ranking (AVS, behind flag)

@@ -8,7 +8,7 @@
 2. **Tự động (pilot 2026)** — trợ lý đấu trợ lý, KHÔNG người can thiệp. BTC
    **CHƯA công bố spec** (chắc chắn KHÔNG phải kiểu "tự nộp file"); nền
    máy-gọi-được của ta đã sẵn: `cvp serve` (FastAPI: `GET /health`,
-   `POST /search/text|qa|trake|avs`, `GET /nearest/{gid}`, `GET /keyframe/{gid}`)
+   `POST /search/text|image|qa|trake|avs`, `GET /nearest/{gid}`, `GET /keyframe/{gid}`)
    + `scripts/25_auto_agent.py`. Khi spec ra chỉ cần viết adapter giao thức trên
    nền service này.
 3. **Theo dõi 3 kênh để bắt spec sớm:** Q&A sheet của BTC · Facebook AICHCMC ·

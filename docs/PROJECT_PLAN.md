@@ -75,7 +75,7 @@ python scripts/03_build_aux_indexes.py --ocr --asr --captions --text-index --obj
 python scripts/20_run_queries.py --query-dir queries/dev --zip --gt queries/dev/gt.json
 python scripts/25_auto_agent.py --query-dir queries/dev      # dry-run thể thức tự động
 python scripts/50_bench_latency.py --n 200 --query-dir queries/dev
-cvp serve --port 8000    # smoke: /health /search/text /search/qa /search/trake /search/avs /nearest /keyframe
+cvp serve --port 8000    # smoke: /health /search/text /search/image /search/qa /search/trake /search/avs /nearest /keyframe
 ```
 K08: giải nén video K08 → `scripts/01_extract_keyframes.py` (TransNetV2 → fallback
 PySceneDetect) — đường này tự sinh map-keyframes CHÍNH XÁC, dùng đối chứng chất lượng
@@ -95,12 +95,12 @@ Dựng `report/` (LaTeX kit theo template AIO): khung sẵn phần kiến trúc 
 cáo giải pháp** (FAQ), không để dồn sang tuần nộp bài.
 
 **Nghiệm thu WS-1 (chốt 25/07):**
-- [ ] `pytest` **454 tests** xanh trên máy dev (CI cài torch-cpu để đủ bộ).
+- [ ] `pytest` **466 tests** xanh trên máy dev (CI cài torch-cpu để đủ bộ).
 - [ ] L28: `scripts/05` tái tạo map csv cho **100% video** có keyframes + video gốc; `frame_idx` tăng nghiêm ngặt; đối chiếu K08 (map tự cắt exact) sai lệch ≤ stride (5 frame).
 - [ ] `scripts/20 --zip` tạo zip Codabench hợp lệ (folder trong zip tên `submission`, MANIFEST sha256) — 0 lỗi validate.
 - [ ] Đo và GHI **B0** = MEAN FINAL trên dev-89 với config mặc định (đây là baseline mọi WS sau so vào).
 - [ ] Latency ghi nhận trên laptop thi: mục tiêu **p50 ≤ 200 ms, p95 ≤ 500 ms** (`scripts/50` tự cảnh báo khi vượt).
-- [ ] `cvp serve`: 7 endpoint trả 200 trên artifacts L28; `scripts/25` chạy trọn 89 câu ra zip hợp lệ không cần người can thiệp.
+- [ ] `cvp serve`: 8 endpoint trả 200 trên artifacts L28; `scripts/25` chạy trọn 89 câu ra zip hợp lệ không cần người can thiệp.
 - [ ] 6 câu hỏi đã nằm trong Q&A sheet của BTC; `report/` compile ra PDF khung.
 
 ## 4. WS-2 · Sprint dữ liệu (25/07 → ~08/08)
@@ -175,7 +175,7 @@ hoạt động); kết quả 30/08 — có tên trong danh sách chung kết.
 
 Nền đã có: `pipeline/auto_agent.py` (đề → search/TRAKE/AVS → QA theo nhóm → validate → zip
 → tùy chọn DRES) + **FastAPI service** làm bề mặt máy-gọi-được:
-`cvp serve` → `GET /health`, `POST /search/text|qa|trake|avs`, `GET /nearest/{global_id}`,
+`cvp serve` → `GET /health`, `POST /search/text|image|qa|trake|avs`, `GET /nearest/{global_id}`,
 `GET /keyframe/{global_id}` (cài `pip install -e ".[service]"`).
 
 1. **Khi BTC công bố spec** (theo dõi buổi tập huấn + FAQ): viết adapter mỏng dịch giao thức
@@ -230,7 +230,7 @@ xanh vào 11/09; checklist PLAYBOOK §0 tick đủ trên cả 2 máy.
 
 | Chỉ tiêu | Đích | Lệnh đo |
 |---|---|---|
-| Test suite | 454 pass (CI, torch-cpu) | `pytest` |
+| Test suite | 466 pass (CI, torch-cpu) | `pytest` |
 | Dev-89 MEAN FINAL | ghi **B0** ở WS-1 → WS-2 ≥ B0+10% tương đối → trước freeze ≥ B0+20% (hiệu chỉnh sau khi có B0) | `scripts/20 --gt` / `scripts/26` |
 | Latency search_text | p50 ≤ 200 ms, p95 ≤ 500 ms (laptop thi) | `scripts/50_bench_latency.py` |
 | Artifacts từ drop mới | dùng được ≤48h, đủ aux ≤72h | notebook 01 + bảng WS-2 |

@@ -42,14 +42,14 @@ eval ─────────── official (công thức BTC, pure stdlib) 
 pipeline ─────── ingest (idempotent build) · run_queries (parser đề thật + QA theo nhóm
   │              + low-confidence retry) · auto_agent (thể thức TỰ ĐỘNG 2026)
   │
-interfaces ───── service/ (FastAPI: /health /search/* /nearest /keyframe) · cli (cvp serve|search|version)
+interfaces ───── service/ (FastAPI: /health /search/* /nearest /keyframe) · cli (cvp serve|search|eval|version)
   │              · app/streamlit_app.py (5 tab + đồng hồ + basket)
 training ─────── build_dataset · datamodule · losses · lit_trainer (LoRA-LiT + WiSE-FT) [offline]
 auxindex ─────── ocr (EasyOCR) · asr (PhoWhisper) · captioner (Vintern-1B)              [offline]
 ```
 
 Quy ước chung: import nặng (torch/transformers/faiss) luôn **lazy** bên trong
-constructor/hàm — mọi module import sạch trên máy không GPU; suite **454 test CPU**
+constructor/hàm — mọi module import sạch trên máy không GPU; suite **466 test CPU**
 chạy không cần model/mạng/data thật.
 
 ## 2. Bất biến trung tâm: `global_id == dòng manifest == dòng FAISS`

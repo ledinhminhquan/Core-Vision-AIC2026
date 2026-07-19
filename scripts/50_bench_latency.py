@@ -57,6 +57,12 @@ def main() -> None:
     from cvp.search.engine import SearchEngine  # heavy import after arg parsing
 
     engine = SearchEngine(settings)
+    # Warm EVERY distinct query once (review R3-C13): with query.provider=gemini
+    # the first hit of each query pays a full enhancement round-trip — leaving
+    # most queries cold would poison p95/p99 with network latency, not search
+    # latency. --warmup adds extra repeat passes over the head on top.
+    for q in queries:
+        engine.search_text(q)
     for q in queries[: args.warmup]:
         engine.search_text(q)
 

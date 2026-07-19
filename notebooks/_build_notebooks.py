@@ -400,14 +400,20 @@ ZIP_DEST = {
 def guess_dest(zname: str):
     # Normalise _/space → '-' so 2026 spelling variants (clip_features,
     # Map Keyframes, keyframe singular, video_…) still route correctly.
+    # SPECIFIC families are tested FIRST (review R3-C25): a 2026 rename like
+    # "keyframe-map-b1.zip" must never fall into the generic keyframes bucket.
     z = zname.lower().replace("_", "-").replace(" ", "-")
+    if "map" in z and "keyframe" in z:                        return ZIP_DEST["map-keyframes"]
+    if "clip-feature" in z or "features-32" in z:             return ZIP_DEST["clip-features"]
+    if "media-info" in z or "metadata" in z:                  return ZIP_DEST["media-info"]
+    if "object" in z:                                         return ZIP_DEST["objects"]
     if z.startswith(("keyframes", "keyframe", "key-frames")): return ZIP_DEST["keyframes"]
     if z.startswith(("videos", "video-")):                    return ZIP_DEST["videos"]
-    if "clip-features" in z or "clip-feature" in z:           return ZIP_DEST["clip-features"]
-    if "map-keyframes" in z or "map-keyframe" in z:           return ZIP_DEST["map-keyframes"]
-    if "media-info" in z or "metadata" in z:                  return ZIP_DEST["media-info"]
-    if "objects" in z or "object-" in z:                      return ZIP_DEST["objects"]
     return None
+
+import re as _re
+import shutil as _sh
+_VID_DIR_RE = _re.compile(r"^[A-Z]\d{2}_V\d{3}$")   # per-video PAYLOAD dirs, never wrappers
 
 _unknown_zips = []
 for zp in sorted(DATA_DIR.glob("*.zip")):
@@ -419,21 +425,40 @@ for zp in sorted(DATA_DIR.glob("*.zip")):
         continue
     print("unzipping", zp.name, "→", dest)
     dest.mkdir(parents=True, exist_ok=True)
+    tmp_root = dest.parent / "__tmp_unzip"
+    if tmp_root.exists():
+        _sh.rmtree(tmp_root)
     with zipfile.ZipFile(zp) as z:
-        names = z.namelist()
-        # strip a wrapping top-level folder if the zip has one
-        top = names[0].split("/")[0] if names and "/" in names[0] else None
-        wrapped = top and all(n.startswith(top + "/") for n in names if n.strip("/"))
-        z.extractall(dest.parent / "__tmp_unzip" if wrapped else dest)
-        if wrapped:
-            import shutil as _sh
-            src = dest.parent / "__tmp_unzip" / top
-            dest.mkdir(parents=True, exist_ok=True)
-            for item in src.iterdir():
-                target = dest / item.name
-                if not target.exists():
-                    _sh.move(str(item), str(target))
-            _sh.rmtree(dest.parent / "__tmp_unzip", ignore_errors=True)
+        z.extractall(tmp_root)
+    # Walk down through GENUINE wrapper folders only: a single child dir that
+    # is NOT video-id-shaped. Handles nested shapes like Videos_L28_a/video/*
+    # or Keyframes_L26/keyframes/L26_*/ (review R3-C28) while never mistaking
+    # a lone per-video payload dir for a wrapper (review R3-C14).
+    src = tmp_root
+    while True:
+        children = list(src.iterdir())
+        if len(children) == 1 and children[0].is_dir() and not _VID_DIR_RE.match(children[0].name):
+            src = children[0]
+            continue
+        break
+    # MERGE into dest — never overwrite, never drop a second zip's files.
+    kept_existing = 0
+    for item in src.iterdir():
+        target = dest / item.name
+        if not target.exists():
+            _sh.move(str(item), str(target))
+        elif item.is_dir() and target.is_dir():
+            for sub in item.iterdir():
+                sub_target = target / sub.name
+                if not sub_target.exists():
+                    _sh.move(str(sub), str(sub_target))
+                else:
+                    kept_existing += 1
+        else:
+            kept_existing += 1
+    _sh.rmtree(tmp_root, ignore_errors=True)
+    if kept_existing:
+        print(f"   giữ nguyên {kept_existing} mục đã tồn tại (không ghi đè)")
     marker.touch()
 if _unknown_zips:
     print("\n" + "!" * 70)
@@ -459,16 +484,33 @@ if COPY_KEYFRAMES_LOCAL and (DATA_DIR / "keyframes").exists():
     (LOCAL_DATA).mkdir(exist_ok=True)
     for sub in ("keyframes", "map-keyframes", "media-info", "objects", "clip-features-32"):
         src, dst = DATA_DIR / sub, LOCAL_DATA / sub
-        if not src.exists() or dst.exists():
+        if not src.exists():
             continue
-        print(f"copying {sub} → local ...")
-        # copy into a tmp dir then rename: an interrupted copy must not leave
-        # a partial folder that a re-run would silently accept
-        tmp_dst = LOCAL_DATA / (sub + ".__tmp")
-        if tmp_dst.exists():
-            shutil.rmtree(tmp_dst)
-        shutil.copytree(src, tmp_dst)
-        tmp_dst.rename(dst)
+        if not dst.exists():
+            print(f"copying {sub} → local ...")
+            # copy into a tmp dir then rename: an interrupted copy must not
+            # leave a partial folder that a re-run would silently accept
+            tmp_dst = LOCAL_DATA / (sub + ".__tmp")
+            if tmp_dst.exists():
+                shutil.rmtree(tmp_dst)
+            shutil.copytree(src, tmp_dst)
+            tmp_dst.rename(dst)
+            continue
+        # Local dir already exists: MERGE any children Drive has that local
+        # lacks — a batch added mid-session (unzip cell re-run, manual upload)
+        # must reach local instead of being silently skipped (review R3-C15).
+        added = 0
+        for item in src.iterdir():
+            target = dst / item.name
+            if target.exists():
+                continue
+            if item.is_dir():
+                shutil.copytree(item, target)
+            else:
+                shutil.copy2(item, target)
+            added += 1
+        if added:
+            print(f"merged {added} new item(s) from Drive into local {sub}/")
     # videos stay on Drive (huge); link them in
     if (DATA_DIR / "videos").exists() and not (LOCAL_DATA / "videos").exists():
         (LOCAL_DATA / "videos").symlink_to(DATA_DIR / "videos")
@@ -1208,7 +1250,8 @@ else:
     print("""{
   "demo-kis": {"task": "kis", "video_id": "L21_V001", "range": [500, 510]}
 }""")
-    print("Hỗ trợ range / center+epsilon / moments / answers — xem cvp/eval/official.py")
+    print("Hỗ trợ range / center+epsilon / moments / answers / targets (AVS coverage) "
+          "— xem cvp/eval/official.py")
 '''
 
 NB3_AUTO_AGENT = r'''

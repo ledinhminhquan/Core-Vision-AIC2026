@@ -112,8 +112,17 @@ def main() -> None:
             run_dir.mkdir(parents=True, exist_ok=True)
             t0 = time.perf_counter()
             try:
-                run_query_folder(s, Path(args.query_dir), run_dir)
-                report = score_run(run_dir, Path(args.gt))
+                written = run_query_folder(s, Path(args.query_dir), run_dir)
+                # Score ONLY this variant run's CSVs — stale files from earlier
+                # battery runs in the reused folder would contaminate the
+                # ablation table (review R3-C11, same trap scripts/20 guards).
+                import shutil
+                import tempfile
+
+                with tempfile.TemporaryDirectory(prefix="cvp_abl_") as td:
+                    for p in written:
+                        shutil.copy2(p, Path(td) / p.name)
+                    report = score_run(Path(td), Path(args.gt))
                 final = float(report.mean_final)
                 status = "ok"
             except Exception as e:  # noqa: BLE001 — one variant must not stop the battery

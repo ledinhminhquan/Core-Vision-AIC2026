@@ -325,6 +325,15 @@ def _entry_targets(entry: Mapping[str, Any]) -> list[dict[str, Any]]:
                 f"targets[{i}] has no usable frame window — need 'range', 'ranges', "
                 "'frame_start'/'frame_end' or 'center'/'epsilon'"
             )
+        declared = t.get("ranges")
+        if isinstance(declared, Sequence) and not isinstance(declared, (str, bytes)) \
+                and len(ranges) < len(declared):
+            # A typo'd window would otherwise silently shrink the acceptance
+            # region — same class of GT error as no window at all (R3-C4).
+            raise ValueError(
+                f"targets[{i}]: {len(declared) - len(ranges)} of {len(declared)} "
+                "declared windows are unparseable — fix the GT entry"
+            )
         out.append({"video_id": str(t["video_id"]).strip(),
                     "ranges": [[s, e] for s, e in ranges]})
     return out
@@ -468,10 +477,16 @@ def r_score_trake(row: Sequence[Any], gt: Mapping[str, Any]) -> float:
 
 
 def _row_hits_target(row: Sequence[Any], target: Mapping[str, Any]) -> bool:
-    """True when a (video, frame) row lands inside one AVS target's window."""
+    """True when a (video, frame) row lands inside one AVS target's window.
+
+    Accepts BOTH the canonical ``{"ranges": [[s,e],…]}`` form produced by
+    :func:`_entry_targets` and the raw docstring spellings (``range``,
+    ``frame_start``/``frame_end``, ``center``+``epsilon``) — a caller passing
+    hand-written GT straight in must not get silent zeros (review R3-C3).
+    """
     if len(row) < 2 or not _video_match(row[0], target.get("video_id")):
         return False
-    return any(_frame_in_range(row[1], s, e) for s, e in target.get("ranges", []))
+    return any(_frame_in_range(row[1], s, e) for s, e in _entry_ranges(target))
 
 
 def coverage_at_k(rows: Sequence[Sequence[Any]],
@@ -544,7 +559,8 @@ def score_rows(task: str, rows: list[list[str]], gt: dict) -> QueryScore:
     t = normalize_task(task)
     if t is None:
         raise ValueError(f"unknown task {task!r} (expected one of {ALL_TASKS})")
-    if t == TASK_QA and not _entry_answers(gt):
+    if t == TASK_QA and not gt.get("targets") and not _entry_answers(gt):
+        # Coverage entries never need answers (review R3-C2).
         raise ValueError("gt missing answer: QA entry needs a non-empty 'answer'/'answers'")
     if len(rows) > MAX_SUBMISSION_ROWS:
         log.warning("%d rows submitted; only the first %d are scored.", len(rows), MAX_SUBMISSION_ROWS)
@@ -632,7 +648,9 @@ def score_run(submission_dir: Path, gt_path: Path | str | Mapping[str, Any]) -> 
         if task is None:
             unscored[stem] = f"unknown task {entry.get('task')!r}"
             continue
-        if task == TASK_QA and not _entry_answers(entry):
+        # Coverage entries carry their own windows and ignore answers — the
+        # QA-answer gate must not reject them (review R3-C2).
+        if task == TASK_QA and not entry.get("targets") and not _entry_answers(entry):
             unscored[stem] = "gt missing answer"
             continue
         try:
@@ -648,7 +666,14 @@ def score_run(submission_dir: Path, gt_path: Path | str | Mapping[str, Any]) -> 
         k: (sum(qs.r_at[k] for qs in per_query.values()) / n_gt) if n_gt else 0.0
         for k in K_VALUES
     }
-    task_of_gt = {stem: (_task_for(stem, entry) or "unknown") for stem, entry in gt_map.items()}
+    # Coverage entries group under their OWN task ("avs") so the by_task table
+    # matches per_query[stem].task and never contaminates the [kis] mean
+    # (review R3-C1: normalize_task aliases avs→kis, so keying off _task_for
+    # alone could never produce the [avs] row the docs promise).
+    task_of_gt = {
+        stem: ("avs" if entry.get("targets") else (_task_for(stem, entry) or "unknown"))
+        for stem, entry in gt_map.items()
+    }
     by_task: dict[str, float] = {}
     for t in sorted(set(task_of_gt.values())):
         stems = [s for s, tt in task_of_gt.items() if tt == t]

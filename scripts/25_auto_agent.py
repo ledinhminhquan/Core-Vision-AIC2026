@@ -29,7 +29,10 @@ def main() -> None:
     out_dir = Path(args.out_dir) if args.out_dir else settings.paths.art("submissions", "auto")
     report = run_auto(Path(args.query_dir), out_dir, settings, submit=args.submit)
 
-    print(f"Wrote {len(report.written)} submission CSVs → {out_dir}")
+    total = len(report.written) + len(report.failed)
+    print(f"Answered {len(report.written)}/{total} query files → {out_dir}")
+    for stem, why in sorted(report.failed.items()):
+        print(f"  ✗ DROPPED {stem}: {why}   ← query này sẽ 0 điểm nếu không xử lý!")
     for issue in report.issues:
         print(f"  {issue}")
     if report.zip_path:
@@ -37,7 +40,8 @@ def main() -> None:
     else:
         print("NOT packaged — fix the errors above and re-run.")
     for stem, res in report.submitted:
-        print(f"  DRES {stem}: {'OK' if res.ok else 'REJECTED'} ({res.status}) {res.message}")
+        print(f"  DRES {stem}: {'ACCEPTED' if res.ok else 'REJECTED'}"
+              f"{' verdict=' + res.verdict if res.verdict else ''} ({res.status}) {res.message}")
 
 
 if __name__ == "__main__":

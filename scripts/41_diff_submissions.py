@@ -29,19 +29,28 @@ def read_rows(csv_path: Path) -> list[tuple[str, ...]]:
 
 
 def diff_stems(dir_a: Path, dir_b: Path, k: int = 20) -> list[dict]:
-    """One record per stem in either folder — the script's printable payload."""
-    stems_a = {p.stem: p for p in sorted(dir_a.glob("*.csv"))}
-    stems_b = {p.stem: p for p in sorted(dir_b.glob("*.csv"))}
+    """One record per stem in either folder — the script's printable payload.
+
+    Rows are compared as FULL tuples (review R3-C9): a QA answer edit or a
+    TRAKE tail-frame move is a scoring-relevant change and must never read as
+    "identical". A missing/typo'd folder raises instead of printing an empty
+    diff that looks like "no changes" (R3-C12).
+    """
+    for d, name in ((dir_a, "--a"), (dir_b, "--b")):
+        if not Path(d).is_dir():
+            raise SystemExit(f"{name} folder does not exist: {d}")
+    stems_a = {p.stem: p for p in sorted(Path(dir_a).glob("*.csv"))}
+    stems_b = {p.stem: p for p in sorted(Path(dir_b).glob("*.csv"))}
     out: list[dict] = []
     for stem in sorted(set(stems_a) | set(stems_b)):
         if stem not in stems_a or stem not in stems_b:
             out.append({"stem": stem, "status": "only-in-A" if stem in stems_a else "only-in-B"})
             continue
         rows_a, rows_b = read_rows(stems_a[stem]), read_rows(stems_b[stem])
-        top_a = rows_a[0][:2] if rows_a else None
-        top_b = rows_b[0][:2] if rows_b else None
-        head_a = {r[:2] for r in rows_a[:k]}
-        head_b = {r[:2] for r in rows_b[:k]}
+        top_a = rows_a[0] if rows_a else None
+        top_b = rows_b[0] if rows_b else None
+        head_a = set(rows_a[:k])
+        head_b = set(rows_b[:k])
         denom = max(1, min(len(head_a), len(head_b)))
         out.append({
             "stem": stem,

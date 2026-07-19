@@ -50,10 +50,20 @@ class AutoRunReport:
     issues: list[ValidationIssue] = field(default_factory=list)
     zip_path: Path | None = None
     submitted: list[tuple[str, SubmitResult]] = field(default_factory=list)
+    # Queries that produced NO submission CSV (engine exception, empty file):
+    # {stem: reason}. The automatic track forfeits these silently otherwise —
+    # every caller must be able to see the shortfall (review R3-C26).
+    failed: dict[str, str] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
+        """Everything WRITTEN validated clean (a short pack can still be ok)."""
         return bool(self.written) and not has_errors(self.issues)
+
+    @property
+    def complete(self) -> bool:
+        """ok AND no query file was dropped — the finals-ready bar."""
+        return self.ok and not self.failed
 
 
 def _first_row(csv_path: Path) -> list[str]:
@@ -172,10 +182,17 @@ def run_auto(
             p = run_query_file(engine, qf, out_dir, vqa, top1_times=top1_times)
         except Exception as e:  # noqa: BLE001 — one bad query must not stop the pack
             log.error("Query %s failed: %s", qf.name, e)
+            report.failed[qf.stem] = f"error: {e}"
             continue
         if p:
             report.written.append(p)
             log.info("%s → %s", qf.name, p.name)
+        else:
+            report.failed[qf.stem] = "no submission produced (empty/unparseable query?)"
+    if report.failed:
+        log.error("%d/%d query files produced NO submission: %s — these queries "
+                  "score 0 unless fixed.", len(report.failed),
+                  len(report.failed) + len(report.written), sorted(report.failed))
 
     # Validate (and later package) ONLY the CSVs THIS run wrote — stale files
     # from earlier runs in the same folder must never block or ride along.

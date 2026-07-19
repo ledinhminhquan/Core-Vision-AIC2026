@@ -155,7 +155,7 @@ media-info + objects (Open Images)      ─┘            ──► kết quả 
     b-roll), vẫn giữ cap/video + khoảng cách thời gian.
 12. **Frame hỏng (vector 0) bị loại khỏi pool SuperGlobal** — không pha loãng refinement.
 13. **Test tầng tích hợp**: SearchEngine end-to-end với fake model (6 tests), official
-    scorer 60+ tests, packager 34 tests... tổng cộng **454 tests** (Perfect V1: 316 kế thừa + 138 mới cho cross-rerank/objects-parquet/keyframe-align/service/VQA-đa-khung/temporal-boost/confidence-retry) + GitHub Actions CI.
+    scorer 60+ tests, packager 34 tests... tổng cộng **466 tests** (Perfect V1: 316 kế thừa + 150 mới cho cross-rerank/objects-parquet/keyframe-align/service/VQA-đa-khung/temporal-boost/confidence-retry) + GitHub Actions CI.
 14. **KIS-C nhận tóm tắt kết quả hiện tại** → câu hỏi làm rõ có tính phân biệt;
     thêm **đồng hồ 5 phút** progressive-KIS trong app.
 15. **Truy vấn tiếng Anh cũng được enhance** (trước đây bị bỏ qua hoàn toàn).
@@ -260,26 +260,26 @@ Core-Vision_Perfect_V1/
 │   │            · lit_trainer (exact resume + WiSE-FT) · public_datasets
 │   ├── eval/    metrics · official (công thức BTC, pure stdlib)
 │   ├── service/  app (FastAPI: search/qa/trake/avs/nearest/keyframe) · schemas
-│   ├── cli.py   console `cvp` (serve / search / version)
+│   ├── cli.py   console `cvp` (serve / search / eval / version)
 │   └── pipeline/ ingest · run_queries (QA theo nhóm + confidence-retry) · auto_agent
 ├── scripts/  00 catalog · 01 extract · 02 embed+index · 03 aux(+text/objects-index)
 │             · 05 rebuild-map-keyframes(!) · 11 train-data · 12 public-datasets
 │             · 20 run-queries(--zip --gt) · 21 tune-weights · 23 dump-signals
 │             · 25 auto-agent · 26 ablations A1-A10 · 30 ingest · 40 eval-official
-│             · 50 bench-latency · doctor · eval_model
+│             · 41 diff-submissions · 50 bench-latency · 51 warm-cache · doctor · eval_model
 ├── app/streamlit_app.py          ← 5 tab + đồng hồ 5' + basket + export + feedback
 ├── notebooks/_build_notebooks.py ← nguồn sinh 3 notebook (đừng sửa tay .ipynb)
 ├── docs/    file này · ARCHITECTURE · EVALUATION · DATASET_INGESTION · COLAB_GUIDE
 │            · PROJECT_PLAN · DATA_FORMAT · DRIVE_SETUP · TRAINING · PLAYBOOK · PAPER_NOTES
 ├── report/  LaTeX kit báo cáo giải pháp (BẮT BUỘC nộp kèm vòng sơ tuyển)
 ├── HUONG_DAN.md  hướng dẫn A-Z tiếng Việt (Drive → Colab → thi đấu)
-├── tests/   454 tests CPU thuần (không cần GPU/mạng/data thật)
+├── tests/   466 tests CPU thuần (không cần GPU/mạng/data thật)
 └── .github/workflows/ci.yml
 ```
 
 ## 6. Quy trình A→Z
 
-1. **Local**: `pip install -e ".[search,dev]"` → `pytest` (bộ đầy đủ **454 pass** khi có torch-cpu như CI; không torch thì các test training/model bị skip — đo lại con số torch-less sau khi cài).
+1. **Local**: `pip install -e ".[search,dev]"` → `pytest` (bộ đầy đủ **466 pass** khi có torch-cpu như CI; không torch thì các test training/model bị skip — đo lại con số torch-less sau khi cài).
 2. **Drive**: upload theo `docs/DRIVE_SETUP.md`.
 3. **Colab nb 01** (GPU bất kỳ): catalog → extract K-batch → embed các lane → FAISS
    → OCR/ASR/captions → **text index**. Mọi bước resumable, FORCE_* để làm lại.
@@ -307,7 +307,7 @@ Core-Vision_Perfect_V1/
 
 ## 8. Trạng thái & việc còn lại
 
-- ✅ Source + 454 tests + CI + 3 notebooks + docs (11 file) + app + service + report/ LaTeX kit.
+- ✅ Source + 466 tests + CI + 3 notebooks + docs (11 file) + app + service + report/ LaTeX kit.
 - ⏳ Cần dữ liệu 2026 (BTC chưa phát hành — "sẽ gửi cho các đội khi sẵn sàng"):
   build artifacts (nb01), train (nb02), đo chất lượng thật (nb03 + tune weights).
 - 📌 Theo dõi buổi tập huấn kế (spec nộp bài + công cụ BTC 2026), endpoint DRES chung kết,

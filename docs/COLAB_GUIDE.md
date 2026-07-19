@@ -208,7 +208,7 @@ python scripts/50_bench_latency.py --n 200 --query-dir queries/dev
 
 **Nền cho thể thức tự động 2026:** spec BTC chưa công bố (chắc chắn KHÔNG phải "nộp file
 tự động"), nhưng nền machine-callable đã sẵn: `cvp serve [--host 0.0.0.0 --port 8000]`
-mở FastAPI với `/health`, `/search/text|qa|trake|avs`, `/nearest/{global_id}`,
+mở FastAPI với `/health`, `/search/text|image|qa|trake|avs`, `/nearest/{global_id}`,
 `/keyframe/{global_id}` — khi BTC ra protocol chỉ cần viết adapter mỏng lên trên.
 
 ---

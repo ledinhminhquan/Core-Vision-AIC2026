@@ -82,7 +82,21 @@ class IndexStore:
               model_tag: str | None = None) -> None:
         """Stream per-video embeddings (catalog order) into a fresh FAISS index."""
         faiss = _faiss()
-        if self.index_path.exists() and not force and not self.is_stale(catalog):
+        cfg_now = self.settings.index
+        # Staleness includes the INDEX SHAPE, not just the corpus: changing
+        # index.type / ivf_nlist / hnsw_m in config must trigger a rebuild —
+        # otherwise the old structure stays on disk and gets searched with the
+        # new config's expectations (review R3-C6).
+        meta_now = self.meta()
+        structure_changed = self.index_path.exists() and (
+            meta_now.get("index_type") != cfg_now.type
+            or (cfg_now.type == "ivf" and meta_now.get("ivf_nlist") not in (None, cfg_now.ivf_nlist))
+            or (cfg_now.type == "hnsw" and meta_now.get("hnsw_m") not in (None, cfg_now.hnsw_m))
+        )
+        if structure_changed:
+            log.info("[%s] index structure changed (%s → %s) — rebuilding",
+                     self.model_key, meta_now.get("index_type"), cfg_now.type)
+        elif self.index_path.exists() and not force and not self.is_stale(catalog):
             log.info("[%s] index up-to-date (%d vectors)", self.model_key, self.count())
             return
 
@@ -111,12 +125,35 @@ class IndexStore:
             raise ValueError(f"Unknown index type: {cfg.type}")
 
         if cfg.type == "ivf":
-            # Train on a subsample streamed from the corpus.
+            # Train on a subsample streamed from the corpus. The sample MUST
+            # hold at least nlist vectors (FAISS aborts with a cryptic C++
+            # assert otherwise) — grow it video by video until it does, up to
+            # the whole corpus (review R3-C7). ~39·nlist is FAISS's own
+            # recommended training floor; we warn below it instead of failing.
             rng = np.random.default_rng(0)
-            sample_vids = list(rng.permutation(videos))[: max(1, len(videos) // 10)]
-            train = np.concatenate(
-                [np.asarray(np.load(self.embedding_path(v), mmap_mode="r"), dtype=np.float32) for v in sample_vids]
-            )
+            shuffled = list(rng.permutation(videos))
+            want = max(int(cfg.ivf_nlist), 1)
+            chunks: list[np.ndarray] = []
+            have = 0
+            take = max(1, len(shuffled) // 10)
+            for i, v in enumerate(shuffled):
+                if i >= take and have >= want:
+                    break
+                chunks.append(np.asarray(np.load(self.embedding_path(v), mmap_mode="r"),
+                                         dtype=np.float32))
+                have += len(chunks[-1])
+            train = np.concatenate(chunks)
+            del chunks
+            if len(train) < want:
+                raise RuntimeError(
+                    f"[{self.model_key}] corpus has only {len(train)} vectors but "
+                    f"index.ivf_nlist={cfg.ivf_nlist} — lower ivf_nlist (rule of "
+                    f"thumb: ≤ corpus_size/39) or use index.type=flatip"
+                )
+            if len(train) < 39 * want:
+                log.warning("[%s] IVF training sample %d < 39×nlist (%d) — clustering "
+                            "quality may suffer; consider lowering ivf_nlist",
+                            self.model_key, len(train), 39 * want)
             index.train(train)
             del train
 
@@ -139,6 +176,8 @@ class IndexStore:
             "dim": dim,
             "count": total,
             "index_type": cfg.type,
+            "ivf_nlist": cfg.ivf_nlist if cfg.type == "ivf" else None,
+            "hnsw_m": cfg.hnsw_m if cfg.type == "hnsw" else None,
             "catalog_signature": catalog.signature(),
         }
         if model_tag:
@@ -174,8 +213,24 @@ class IndexStore:
                     "(A stale index returns wrong global_ids, which become wrong frame_idx submissions.)"
                 )
             index = faiss.read_index(str(self.index_path))
-            if self.settings.index.type == "ivf":
+            # Apply search-time knobs to what the index ACTUALLY IS — keying
+            # off settings.index.type let an IVF index loaded under a flatip
+            # config run at FAISS's default nprobe=1 (silent recall collapse,
+            # review R3-C5) and the reverse direction crash. efSearch is a
+            # search-time knob too: re-apply it so retuning never needs a
+            # rebuild (review R3-C8).
+            disk_type = self.meta().get("index_type")
+            if disk_type and disk_type != self.settings.index.type:
+                log.warning(
+                    "[%s] on-disk index is %r but settings.index.type is %r — "
+                    "searching the DISK structure with its own knobs; rebuild "
+                    "(scripts/02 or ingest) to switch structures",
+                    self.model_key, disk_type, self.settings.index.type,
+                )
+            if isinstance(index, faiss.IndexIVF):
                 index.nprobe = self.settings.index.ivf_nprobe
+            elif hasattr(index, "hnsw"):
+                index.hnsw.efSearch = self.settings.index.hnsw_ef_search
             if self.settings.index.use_gpu:
                 try:
                     res = faiss.StandardGpuResources()
