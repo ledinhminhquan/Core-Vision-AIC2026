@@ -39,6 +39,12 @@ the row scorers directly, so either format can be passed straight in):
   format), of ``[s, e]`` pairs, or of ``{"center", "epsilon"}`` dicts; or
   ``"centers": [c1..cN], "epsilon": eps`` for one shared epsilon.
 * ``"answer": "màu xanh"`` — a single acceptable answer instead of ``answers``.
+* AVS coverage: ``"targets": [{"video_id": "L01_V001", "range": [500, 510]},
+  {"video_id": "L07_V003", "center": 900, "epsilon": 10}, ...]`` — one item per
+  DISTINCT correct segment (possibly across videos). Entries with ``targets``
+  are scored as coverage@k (fraction of targets hit within the first k rows)
+  instead of the single-window max-R-Score — our closest offline analogue of
+  the organisers' hidden AVS list.
 * A missing ``"task"`` is inferred from the query stem (trake→avs→qa→kis
   substring priority, the same rule as ``cvp.pipeline.run_queries``).
 
@@ -294,9 +300,42 @@ def _entry_answers(gt: Mapping[str, Any]) -> list[str]:
     return [a for a in normalised if a]
 
 
+def _entry_targets(entry: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Canonical AVS target list from a GT entry, or [] when absent.
+
+    AVS coverage form (round-3 enhancement): the entry carries
+    ``"targets": [{"video_id": ..., <any window spelling>}, ...]`` — one item
+    per DISTINCT correct segment (they may live in different videos). Each
+    target accepts the same window spellings as a KIS entry (``range``,
+    ``ranges``, ``frame_start``/``frame_end``, ``center``+``epsilon``).
+    Malformed targets raise (silent 0-scoring GT is operator error).
+    """
+    raw = entry.get("targets")
+    if raw is None:
+        return []
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)) or not raw:
+        raise ValueError("'targets' must be a non-empty list of {video_id, window} objects")
+    out: list[dict[str, Any]] = []
+    for i, t in enumerate(raw):
+        if not isinstance(t, Mapping) or not str(t.get("video_id", "")).strip():
+            raise ValueError(f"targets[{i}] must be an object with a 'video_id'")
+        ranges = _entry_ranges(t)
+        if not ranges:
+            raise ValueError(
+                f"targets[{i}] has no usable frame window — need 'range', 'ranges', "
+                "'frame_start'/'frame_end' or 'center'/'epsilon'"
+            )
+        out.append({"video_id": str(t["video_id"]).strip(),
+                    "ranges": [[s, e] for s, e in ranges]})
+    return out
+
+
 def _canonical_entry(stem: str, entry: Mapping[str, Any]) -> dict[str, Any]:
     """Unify one GT entry into the canonical internal form (module docstring)."""
     e: dict[str, Any] = dict(entry)
+    targets = _entry_targets(entry)
+    if targets:
+        e["targets"] = targets
     raw_task = entry.get("task")
     if raw_task is None or not str(raw_task).strip():
         e["task"] = normalize_task(infer_task(stem))
@@ -353,10 +392,12 @@ def load_ground_truth(path: str | Path) -> dict[str, dict[str, Any]]:
         if not isinstance(entry, Mapping):
             raise ValueError(f"GT entry {stem!r} must be a JSON object, got {type(entry).__name__}")
         canonical = _canonical_entry(str(stem), entry)
-        if canonical.get("task") in (TASK_KIS, TASK_QA) and not _entry_ranges(canonical):
+        if (canonical.get("task") in (TASK_KIS, TASK_QA)
+                and not _entry_ranges(canonical) and not canonical.get("targets")):
+            # AVS coverage entries carry their windows inside `targets` instead.
             raise ValueError(
                 f"GT entry {stem!r} has no usable frame window — need 'range', 'ranges', "
-                "'frame_start'/'frame_end' or 'center'/'epsilon'"
+                "'frame_start'/'frame_end' or 'center'/'epsilon' (or AVS 'targets')"
             )
         out[str(stem)] = canonical
     return out
@@ -426,6 +467,29 @@ def r_score_trake(row: Sequence[Any], gt: Mapping[str, Any]) -> float:
     return hits / len(events)
 
 
+def _row_hits_target(row: Sequence[Any], target: Mapping[str, Any]) -> bool:
+    """True when a (video, frame) row lands inside one AVS target's window."""
+    if len(row) < 2 or not _video_match(row[0], target.get("video_id")):
+        return False
+    return any(_frame_in_range(row[1], s, e) for s, e in target.get("ranges", []))
+
+
+def coverage_at_k(rows: Sequence[Sequence[Any]],
+                  targets: Sequence[Mapping[str, Any]], k: int) -> float:
+    """AVS coverage@k = fraction of GT targets hit by ANY of the first k rows.
+
+    The official 2025/2026 AVS formula is unpublished (the organisers score
+    against a hidden multi-segment list); this is our closest offline
+    analogue: it rewards COVERING many distinct correct segments — which the
+    plain KIS proxy (max R-Score of a single window) cannot express.
+    """
+    if not targets:
+        return 0.0
+    head = list(rows[:k])
+    hit = sum(1 for t in targets if any(_row_hits_target(r, t) for r in head))
+    return hit / len(targets)
+
+
 # ── Ranked-list score ────────────────────────────────────────────────────────
 
 
@@ -485,6 +549,22 @@ def score_rows(task: str, rows: list[list[str]], gt: dict) -> QueryScore:
     if len(rows) > MAX_SUBMISSION_ROWS:
         log.warning("%d rows submitted; only the first %d are scored.", len(rows), MAX_SUBMISSION_ROWS)
         rows = rows[:MAX_SUBMISSION_ROWS]
+    # AVS coverage form: a GT entry carrying `targets` is scored as coverage@k
+    # over the DISTINCT correct segments (round-3 enhancement) — the plain
+    # single-window path below cannot express "cover as many as possible".
+    targets = _entry_targets(gt)
+    if targets:
+        best_rank = next((i + 1 for i, r in enumerate(rows)
+                          if any(_row_hits_target(r, tg) for tg in targets)), None)
+        cov = {k: coverage_at_k(rows, targets, k) for k in K_VALUES}
+        return QueryScore(
+            r_at=cov,
+            final=sum(cov.values()) / len(K_VALUES),
+            task="avs",
+            best_rank=best_rank,
+            best_score=cov[max(K_VALUES)],
+            num_rows=len(rows),
+        )
     scores = [_score_row(row, t, gt) for row in rows]
     best = max(scores) if scores else 0.0
     return QueryScore(

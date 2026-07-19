@@ -69,10 +69,13 @@ Cài đặt: `r_score_kis` / `r_score_qa` / `r_score_trake`, `r_at_k`, `final_sc
   `--stride 5` mặc định, `--overwrite` để build lại) trước khi tin bất kỳ điểm
   offline nào. Sai `frame_idx` = 0 điểm dù tìm đúng khoảnh khắc.
 - **AVS/KIS-C/KIS-V chấm local theo công thức KIS** (alias trong `_TASK_ALIASES`:
-  `avs`/`kis-v`/`kisv`/`vkis`/`video-kis`/`kis-c`/`tkis`/`vqa`…). Với AVS đây chỉ là
-  **proxy** — công thức AVS thật của BTC (nếu AVS xuất hiện, hiện **chưa chắc**
-  cho 2026) chấm độ phủ đa đoạn, scorer local không mô phỏng. Đọc điểm `avs`
-  local như "khả năng tìm ≥1 đoạn đúng", đừng đọc như điểm thật.
+  `avs`/`kis-v`/`kisv`/`vkis`/`video-kis`/`kis-c`/`tkis`/`vqa`…) — TRỪ KHI entry
+  GT mang **`targets`** (vòng 3): `"targets": [{"video_id":..., "range":[s,e]},…]`
+  — một item cho MỖI đoạn đúng riêng biệt (có thể khác video). Khi đó scorer
+  chấm **coverage@k** = tỉ lệ targets được phủ trong k dòng đầu (final = mean
+  coverage@{1,5,20,50,100}) — bản mô phỏng offline gần nhất của danh sách AVS
+  ẩn của BTC (công thức thật chưa công bố; AVS 2026 **chưa chắc** thi). Không
+  có `targets` → vẫn là proxy KIS "tìm ≥1 đoạn đúng" như cũ.
 
 ## 2. Định dạng ground-truth JSON
 
@@ -296,5 +299,5 @@ engine nên số đo này đại diện luôn cho track tự động.
 | Delta encoder (+) nhưng điểm hệ thống đứng yên | kênh dịch/enhance đang gánh — giữ zero-shot ensemble, coi fine-tune là kênh phụ |
 | Nhiều `unscored: no ground-truth entry` | stem CSV ≠ key GT — GT phải key theo đúng stem file query |
 | `gt_without_submission` khác rỗng | thiếu CSV cho câu đó — vẫn ăn 0 vào mẫu số, kiểm tra batch runner có bỏ sót file đề |
-| Điểm `[avs]` trong `by_task` | chỉ là proxy công thức KIS (mục 1) — KHÔNG dự đoán điểm AVS thật; AVS 2026 chưa chắc thi, giữ behind flag |
+| Điểm `[avs]` trong `by_task` | GT có `targets` → coverage@k đa đoạn (mục 2); không có → proxy KIS. AVS 2026 chưa chắc thi, giữ behind flag |
 | Điểm local đẹp nhưng nghi ngờ `frame_idx` | kiểm `map-keyframes` — thiếu thì `scripts/05_rebuild_map_keyframes.py`, đối chiếu vài frame bằng mắt ở mức 3 |

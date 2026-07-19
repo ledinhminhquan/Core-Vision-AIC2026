@@ -398,19 +398,22 @@ ZIP_DEST = {
 }
 
 def guess_dest(zname: str):
-    z = zname.lower()
-    if z.startswith("keyframes"): return ZIP_DEST["keyframes"]
-    if z.startswith("videos"):    return ZIP_DEST["videos"]
-    if "clip-features" in z:      return ZIP_DEST["clip-features"]
-    if "map-keyframes" in z:      return ZIP_DEST["map-keyframes"]
-    if "media-info" in z:         return ZIP_DEST["media-info"]
-    if "objects" in z:            return ZIP_DEST["objects"]
+    # Normalise _/space → '-' so 2026 spelling variants (clip_features,
+    # Map Keyframes, keyframe singular, video_…) still route correctly.
+    z = zname.lower().replace("_", "-").replace(" ", "-")
+    if z.startswith(("keyframes", "keyframe", "key-frames")): return ZIP_DEST["keyframes"]
+    if z.startswith(("videos", "video-")):                    return ZIP_DEST["videos"]
+    if "clip-features" in z or "clip-feature" in z:           return ZIP_DEST["clip-features"]
+    if "map-keyframes" in z or "map-keyframe" in z:           return ZIP_DEST["map-keyframes"]
+    if "media-info" in z or "metadata" in z:                  return ZIP_DEST["media-info"]
+    if "objects" in z or "object-" in z:                      return ZIP_DEST["objects"]
     return None
 
+_unknown_zips = []
 for zp in sorted(DATA_DIR.glob("*.zip")):
     dest = guess_dest(zp.name)
     if dest is None:
-        print("skip (unknown):", zp.name); continue
+        _unknown_zips.append(zp.name); continue
     marker = dest / f".unzipped-{zp.stem}"
     if marker.exists():
         continue
@@ -432,6 +435,15 @@ for zp in sorted(DATA_DIR.glob("*.zip")):
                     _sh.move(str(item), str(target))
             _sh.rmtree(dest.parent / "__tmp_unzip", ignore_errors=True)
     marker.touch()
+if _unknown_zips:
+    print("\n" + "!" * 70)
+    print("⚠ CÁC ZIP KHÔNG NHẬN DIỆN ĐƯỢC (KHÔNG được giải nén — kiểm tra tay!):")
+    for _n in _unknown_zips:
+        print("   •", _n)
+    print("  Nếu đây là gói 2026 với tên mới → giải nén thủ công vào đúng thư mục")
+    print("  data/{keyframes,map-keyframes,media-info,clip-features-32,objects,videos}")
+    print("  (mapping: docs/DATASET_INGESTION.md §2) rồi chạy lại từ ô này.")
+    print("!" * 70)
 print("zip check done")
 '''
 

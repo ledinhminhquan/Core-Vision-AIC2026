@@ -38,7 +38,7 @@ media-info · objects (Open Images→parquet)  ─┘     ─► [cross-encoder]
 
 ```bash
 pip install -e ".[search,app,dev]"
-pytest                                   # 436 tests, pure CPU
+pytest                                   # 454 tests, pure CPU
 
 # with the AIC dataset in ./data (see docs/DRIVE_SETUP.md):
 pip install -e ".[ml]"                        # query text encoder needs torch+open_clip
@@ -64,6 +64,7 @@ python scripts/26_run_ablations.py --query-dir <dev> --gt gt.json       # A1–A
 python scripts/50_bench_latency.py                                      # p50/p95 latency gate
 python scripts/51_warm_cache.py --query-dir <pack>                      # pre-warm Gemini cache before a round
 cvp eval --submission-dir <dir> --gt gt.json                            # official scoring from any terminal
+python scripts/41_diff_submissions.py --a <runA> --b <runB>             # what did a config change move?
 python scripts/25_auto_agent.py --query-dir <pack>                      # 2026 automatic track, end-to-end
 cvp serve                                                               # HTTP/JSON retrieval service
 ```
