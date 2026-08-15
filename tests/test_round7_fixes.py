@@ -148,8 +148,14 @@ def test_app_qa_suggest_is_provenance_gated():
 
 # ── R7-7 · report/docs truth ─────────────────────────────────────────────────
 def test_report_counts_and_paths_are_current():
+    import re
+
     tex = (REPO / "report" / "main.tex").read_text(encoding="utf-8")
-    assert "400 test" not in tex and "514 test" in tex
+    # The stale hard-coded "400 test" is gone; whatever count is quoted must
+    # be >= the round-7 suite so the report can only ever grow with the suite.
+    assert "400 test" not in tex
+    counts = [int(m) for m in re.findall(r"(\d{3}) test CPU", tex)]
+    assert counts and all(c >= 526 for c in counts), counts
     assert "thiếu sạch" not in tex                      # stale no-map-keyframes claim
     assert "queries/dev-2025-finals" in tex
 
