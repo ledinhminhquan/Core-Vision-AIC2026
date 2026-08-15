@@ -36,9 +36,11 @@ def test_selfmade_map_csv_is_re_extractable(tmp_path):
     (mp / "K01_V001.csv").write_text("n,pts_time,fps,frame_idx\n1,0.0,25.0,7\n", encoding="utf-8")
     (mp / "K01_V001.csv.selfmade").touch()          # OUR csv, marker survives
     # Guards must let this through to actual extraction — which then fails on
-    # the nonexistent video, PROVING the refusal did not fire.
-    with pytest.raises(RuntimeError, match="Cannot open video"):
+    # the nonexistent video (or on cv2 being absent, e.g. CI), PROVING the
+    # refusal did not fire (a refusal RETURNS 0, it never raises).
+    with pytest.raises((RuntimeError, ModuleNotFoundError)) as exc:
         extract_video(tmp_path / "K01_V001.mp4", kf, mp, overwrite=False)
+    assert "Cannot open video" in str(exc.value) or "cv2" in str(exc.value)
 
 
 def test_unmarked_map_csv_still_refused(tmp_path):
