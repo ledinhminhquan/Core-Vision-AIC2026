@@ -29,12 +29,15 @@ APP_SRC = (REPO / "app" / "streamlit_app.py").read_text(encoding="utf-8")
 
 # ── R6-1 · selfmade marker unlocks legitimate re-extraction ──────────────────
 def test_selfmade_map_csv_is_re_extractable(tmp_path):
-    from cvp.data.extraction import extract_video
+    from cvp.data.extraction import _map_csv_sha256, extract_video
 
     kf, mp = tmp_path / "keyframes", tmp_path / "map-keyframes"
     mp.mkdir(parents=True)
-    (mp / "K01_V001.csv").write_text("n,pts_time,fps,frame_idx\n1,0.0,25.0,7\n", encoding="utf-8")
-    (mp / "K01_V001.csv.selfmade").touch()          # OUR csv, marker survives
+    csv_p = mp / "K01_V001.csv"
+    csv_p.write_text("n,pts_time,fps,frame_idx\n1,0.0,25.0,7\n", encoding="utf-8")
+    # OUR csv: the marker stores its sha256 (round-7 — bare existence was
+    # forgeable by staleness) and survives deleting the keyframes dir.
+    (mp / "K01_V001.csv.selfmade").write_text(_map_csv_sha256(csv_p), encoding="utf-8")
     # Guards must let this through to actual extraction — which then fails on
     # the nonexistent video (or on cv2 being absent, e.g. CI), PROVING the
     # refusal did not fire (a refusal RETURNS 0, it never raises).

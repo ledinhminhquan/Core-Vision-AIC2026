@@ -409,10 +409,17 @@ def main() -> None:
         answer = st.text_input("Đáp án sẽ ghi vào CSV (≤100 ký tự)", key="qa_answer_input")
         if do_search and qd.strip():
             _set_results(engine.search_text(qd, display_k=display_k), "qa")
-        if do_vqa and st.session_state.results and qq.strip():
+        # Provenance-gated like the grid below: suggesting answers on another
+        # tab's ranking would burn Gemini calls on frames the operator cannot
+        # even see here (round-7).
+        _qa_results = _grid_results_for("qa")
+        if do_vqa and not _qa_results and st.session_state.results:
+            st.warning("Kết quả đang hiển thị thuộc tab khác — Search trong tab QA "
+                       "trước rồi mới Suggest answers.")
+        if do_vqa and _qa_results and qq.strip():
             try:
                 suggestions = get_vqa().suggest(
-                    qq, [(r.global_id, r.ref.path) for r in st.session_state.results[:5]]
+                    qq, [(r.global_id, r.ref.path) for r in _qa_results[:5]]
                 )
                 st.session_state.vqa_suggestions = {s.global_id: s.answer for s in suggestions}
                 if suggestions:

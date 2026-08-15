@@ -6,7 +6,7 @@ ablation is a pure env/config change — no code edits, exactly as PAPER_NOTES
 planned. Needs artifacts + a query dir + a GT json (the 89-query 2025 finals
 pack is the standing dev set).
 
-    python scripts/26_run_ablations.py --query-dir queries/dev --gt queries/dev/gt.json
+    python scripts/26_run_ablations.py --query-dir queries/dev-2025-finals --gt queries/dev-2025-finals/gt.json
         [--only A1 A2 ...] [--out artifacts/ablations]
 
 A5 (training) lives in notebook 02 (it prints its own table); A3's full weight

@@ -12,7 +12,7 @@ part only. Output shape is what scripts/21_tune_weights.py expects:
 Then: python scripts/21_tune_weights.py --signals-dir <out> --gt <gt.json> ...
 
 Example:
-    python scripts/23_dump_signals.py --query-dir ./queries/dev \
+    python scripts/23_dump_signals.py --query-dir ./queries/dev-2025-finals \
         --out-dir ./artifacts/signal_dumps/dev
 """
 

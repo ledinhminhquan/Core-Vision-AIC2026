@@ -32,16 +32,32 @@ def _call_with_timeout(fn, timeout_s: float):
 
     Raises ``concurrent.futures.TimeoutError`` on expiry so the caller's
     fallback chain engages (venue networks stall for minutes otherwise).
-    ``shutdown(wait=False)`` abandons the stuck worker thread instead of
-    blocking on it.
-    """
-    from concurrent.futures import ThreadPoolExecutor
 
-    pool = ThreadPoolExecutor(max_workers=1)
-    try:
-        return pool.submit(fn).result(timeout=timeout_s)
-    finally:
-        pool.shutdown(wait=False)
+    Uses a DAEMON thread, not a ThreadPoolExecutor (round-7): pool workers are
+    non-daemon and concurrent.futures joins every worker at interpreter exit —
+    one hung HTTP read would keep a finished batch script alive forever.
+    A daemon thread is simply abandoned; the process exits cleanly.
+    """
+    import threading
+    from concurrent.futures import TimeoutError as FuturesTimeoutError
+
+    outcome: list = []
+
+    def _runner():
+        try:
+            outcome.append((True, fn()))
+        except BaseException as e:  # noqa: BLE001 — re-raised in the caller below
+            outcome.append((False, e))
+
+    t = threading.Thread(target=_runner, daemon=True, name="cvp-gemini-call")
+    t.start()
+    t.join(timeout_s)
+    if not outcome:
+        raise FuturesTimeoutError(f"call exceeded {timeout_s:.1f}s wall clock")
+    ok, value = outcome[0]
+    if ok:
+        return value
+    raise value
 
 _GEMINI_PROMPT = """You help a video-retrieval team search Vietnamese TV news with a CLIP-style model.
 Given a Vietnamese query, return STRICT JSON (no markdown) with keys:

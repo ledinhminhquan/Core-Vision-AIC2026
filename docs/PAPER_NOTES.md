@@ -67,8 +67,8 @@
 Mỗi ablation chỉ là biến env/config — không sửa code. Ghi kết quả vào bảng này luôn.
 
 🆕 **Một lệnh chạy cả battery** (trừ A5 — bảng riêng trong nb02; A3 full sweep —
-`scripts/21`): `python scripts/26_run_ablations.py --query-dir queries/dev
---gt queries/dev/gt.json [--only A9 A10]` — mỗi variant chạy pack qua engine,
+`scripts/21`): `python scripts/26_run_ablations.py --query-dir queries/dev-2025-finals
+--gt queries/dev-2025-finals/gt.json [--only A9 A10]` — mỗi variant chạy pack qua engine,
 chấm bằng scorer chính thức, in + lưu `artifacts/ablations/ablation_results.json`.
 
 ## 4. Số liệu hệ thống cần thu để viết phần Experiments

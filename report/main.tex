@@ -39,7 +39,7 @@ hợp nhất với BM25 bốn kênh (OCR/ASR/caption/metadata), tinh chỉnh Sup
 rerank cross-encoder tùy chọn (BLIP-2 ITM~\cite{li2023blip2} / Qwen3-VL-Reranker),
 quy hoạch động DANTE cho TRAKE, MMR~\cite{carbonell1998mmr} cho AVS, và VQA đa khung hình
 cho Q\&A. Toàn bộ pipeline offline có thể resume, online trả lời
-dưới 1 giây/truy vấn; 400 test CPU + CI đảm bảo tính đúng của công thức chấm
+dưới 1 giây/truy vấn; 526 test CPU + CI đảm bảo tính đúng của công thức chấm
 và định dạng nộp bài. % TODO: cập nhật kết quả sơ tuyển khi có.
 \end{minisummaryboxaivn}
 
@@ -119,8 +119,9 @@ viên} (độ phức tạp $O(K)$), rồi tùy chọn rerank cross-encoder trư�
 Bất biến trung tâm là \emph{catalog}: \texttt{global\_id} $=$ số dòng manifest.parquet $=$
 số dòng FAISS index; index lưu chữ ký corpus và \texttt{model\_tag}, lệch là từ chối phục vụ
 --- vì sai một hàng là sai \texttt{frame\_idx}, tức 0 điểm. \texttt{frame\_idx} nộp bài là số
-frame trong video \emph{gốc} lấy từ \texttt{map-keyframes}; với các bản data drop thiếu sạch
-map-keyframes (thực tế dữ liệu chúng tôi tải về), công cụ
+frame trong video \emph{gốc} lấy từ \texttt{map-keyframes}; Batch~1 sơ tuyển 2026 phát
+hành ĐỦ 873/873 map csv chính thức (đã kiểm kê từng file), và với các gói tương lai
+chỉ-có-video, công cụ
 \texttt{scripts/05\_rebuild\_map\_keyframes.py} tái tạo chúng bằng dhash từng keyframe, quét
 video theo bước nhảy rồi khớp đơn điệu bằng quy hoạch động (thứ hạng keyframe có thứ tự thời
 gian nên ràng buộc được các shot lặp), cuối cùng tinh chỉnh chính xác trong cửa sổ
@@ -238,7 +239,8 @@ Bộ đề phát triển hiện hành là gói 89 truy vấn chung kết AIC 202
 (\texttt{cvp/eval/official.py} --- cài đúng công thức R@k của BTC, 60+ test):
 
 \begin{aivnoutputbox}[Tái lập toàn bộ bảng ablation]
-python scripts/26_run_ablations.py --query-dir queries/dev --gt queries/dev/gt.json
+python scripts/26_run_ablations.py --query-dir queries/dev-2025-finals \
+    --gt queries/dev-2025-finals/gt.json  # gt.json: đội tự soạn cho câu đã xác minh
 # chạy chọn lọc: --only A1 A9 A10 ; kết quả lưu artifacts/ablations/
 \end{aivnoutputbox}
 
@@ -275,7 +277,7 @@ chạy engine một lần mỗi câu, \texttt{scripts/21\_tune\_weights.py} tố
 p50/p95/p99 của đường nóng \texttt{search\_text}); chỉ tiêu vận hành đã chốt: \textbf{p50
 $\le$ 200 ms, p95 $\le$ 500 ms} trên laptop thi đấu --- dư ngân sách lớn trong khung 4--5 phút
 mỗi truy vấn chung kết. % TODO: dán bảng percentile thật sau khi build artifacts 2026.
-Chất lượng kỹ thuật của mã được găm bằng 400 test CPU thuần (không cần GPU/mạng/data thật)
+Chất lượng kỹ thuật của mã được găm bằng 526 test CPU thuần (không cần GPU/mạng/data thật)
 chạy trong CI, phủ scorer chính thức, packager, parser đề thật của BTC và toàn bộ engine
 tích hợp với fake model.
 

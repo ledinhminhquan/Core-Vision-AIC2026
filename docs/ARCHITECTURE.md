@@ -49,7 +49,7 @@ auxindex ─────── ocr (EasyOCR) · asr (PhoWhisper) · captioner (V
 ```
 
 Quy ước chung: import nặng (torch/transformers/faiss) luôn **lazy** bên trong
-constructor/hàm — mọi module import sạch trên máy không GPU; suite **514 test CPU**
+constructor/hàm — mọi module import sạch trên máy không GPU; suite **526 test CPU**
 chạy không cần model/mạng/data thật.
 
 ## 2. Bất biến trung tâm: `global_id == dòng manifest == dòng FAISS`
@@ -294,7 +294,7 @@ Spec chưa tồn tại — chắc chắn KHÔNG phải "tự nộp file". Kiến
   trên máy GPU; `qwen_reranker` cần smoke-test trên Colab trước ngày thi
   (xem EVALUATION). VLM rerank = 1 call API/query, tính vào budget mạng venue.
 - Đo ablation A1–A10 một lệnh:
-  `python scripts/26_run_ablations.py --query-dir queries/dev --gt queries/dev/gt.json`
+  `python scripts/26_run_ablations.py --query-dir queries/dev-2025-finals --gt queries/dev-2025-finals/gt.json`
   (bộ đề chuẩn: gói 89 câu chung kết 2025 — 73 KIS / 9 QA / 7 TRAKE).
 - Mọi call ngoài (Gemini/translate/VLM) đều exception-wrapped — mất mạng =
   degrade về visual-only, không bao giờ crash giữa trận.

@@ -157,6 +157,17 @@ def run_auto(
 
     query_dir = Path(query_dir)
     out_dir = Path(out_dir)
+
+    # The automatic track runs with NO human watching — a typo'd dir exiting 0
+    # with "Answered 0/0" forfeits the whole pack silently (round-7; mirrors
+    # run_query_folder's round-6 guard). Checked BEFORE the heavy engine build.
+    if not query_dir.is_dir():
+        raise FileNotFoundError(f"query dir not found: {query_dir}")
+    qfiles = sorted(query_dir.glob("*.txt"))
+    if not qfiles:
+        log.error("No *.txt query files directly in %s — wrong folder, or did the "
+                  "pack unzip into a SUBFOLDER?", query_dir)
+
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if engine_factory is not None:
@@ -177,7 +188,7 @@ def run_auto(
 
     report = AutoRunReport()
     top1_times: dict[str, list[float]] = {}
-    for qf in sorted(query_dir.glob("*.txt")):
+    for qf in qfiles:
         try:
             p = run_query_file(engine, qf, out_dir, vqa, top1_times=top1_times)
         except Exception as e:  # noqa: BLE001 — one bad query must not stop the pack

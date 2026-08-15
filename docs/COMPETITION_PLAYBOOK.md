@@ -153,8 +153,8 @@ trợ lý đề xuất — đó là những chi tiết nên chờ/đoán từ g�
   tự reformulate + RRF-merge. Thi tương tác để tắt (người đổi query tốt hơn).
 - **📺 Group by video (VISIONE-style)**: checkbox trong app — gom lưới kết quả
   theo video khi cần quét ngữ cảnh nhanh hoặc nghi các hit dồn về một video.
-- **Ablations 1 lệnh**: `python scripts/26_run_ablations.py --query-dir queries/dev
-  --gt queries/dev/gt.json [--only A9 A10]` — chấm bằng scorer chính thức, quyết
+- **Ablations 1 lệnh**: `python scripts/26_run_ablations.py --query-dir queries/dev-2025-finals
+  --gt queries/dev-2025-finals/gt.json [--only A9 A10]` — chấm bằng scorer chính thức, quyết
   định knob nào được bật bằng SỐ, không cảm tính.
 - Checkpoint drift: nếu app cảnh báo "index was built by X but loaded Y" → máy này
   tải fallback khác checkpoint đã build index. Đừng thi trên máy đó — rebuild hoặc đổi máy.

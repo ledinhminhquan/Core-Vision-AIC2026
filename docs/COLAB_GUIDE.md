@@ -194,15 +194,15 @@ file, search, CSV, validate, zip; không nộp gì) → tùy chọn serve Stream
 H100). Notebook 03 chạy được **ngay sau notebook 01** (zero-shot) nếu bỏ qua training.
 
 **Bộ đề dev khuyên dùng:** gói **89 câu chung kết 2025** (73 KIS / 9 QA / 7 TRAKE) —
-upload vào `MyDrive/AIC2025/queries/dev/` + `gt.json`, rồi trên laptop (hoặc cell Colab):
+upload vào `MyDrive/AIC2025/queries/dev-2025-finals/` + `gt.json`, rồi trên laptop (hoặc cell Colab):
 
 ```bash
 # một phát: chạy đề → validate → zip → chấm offline (tiết kiệm lượt nộp: 5/ngày, 20 tổng)
-python scripts/20_run_queries.py --query-dir queries/dev --zip --gt queries/dev/gt.json
+python scripts/20_run_queries.py --query-dir queries/dev-2025-finals --zip --gt queries/dev-2025-finals/gt.json
 # battery ablation A1–A10 (lane, SuperGlobal, fusion, TRAKE, VLM rerank, cross-rerank, temporal boost…)
-python scripts/26_run_ablations.py --query-dir queries/dev --gt queries/dev/gt.json [--only A9 A10]
+python scripts/26_run_ablations.py --query-dir queries/dev-2025-finals --gt queries/dev-2025-finals/gt.json [--only A9 A10]
 # latency (mục tiêu: p50 ≤ 200 ms, p95 ≤ 500 ms trên laptop)
-python scripts/50_bench_latency.py --n 200 --query-dir queries/dev
+python scripts/50_bench_latency.py --n 200 --query-dir queries/dev-2025-finals
 ```
 
 **Nền cho thể thức tự động 2026:** spec BTC chưa công bố (chắc chắn KHÔNG phải "nộp file
@@ -274,7 +274,7 @@ Quy trình chuẩn (đo trước, bật sau):
 1. Notebook 01: thêm tên lane vào `EMBED_MODELS` (vd `["siglip2", "openclip", "jina"]`)
    → Run all — chỉ lane mới bị embed, các lane cũ skip.
 2. Chấm A/B trên gói 89 câu dev bằng scorer chính thức:
-   `python scripts/20_run_queries.py --query-dir queries/dev --gt queries/dev/gt.json`
+   `python scripts/20_run_queries.py --query-dir queries/dev-2025-finals --gt queries/dev-2025-finals/gt.json`
    với `CVP_EMBEDDING__MODEL=ensemble` +
    `CVP_EMBEDDING__ENSEMBLE_MEMBERS='["siglip2","openclip","jina"]'` (so với baseline
    2 lane); hoặc chạy battery `scripts/26_run_ablations.py` (A1 = lane composition).

@@ -60,9 +60,9 @@ media-info + objects + **map-keyframes ĐỦ 873/873** — kiểm kê DATASET_IN
 gói **89 câu chung kết 2025** (73 KIS / 9 QA / 7 TRAKE). Đường tái tạo map chỉ còn là
 bảo hiểm batch sau. Drive chuẩn: `MyDrive/AIC2025/{data,artifacts}` (xem [DRIVE_SETUP](DRIVE_SETUP.md)).
 
-### 3.1 Dựng bộ đề dev chuẩn (`queries/dev/`)
+### 3.1 Dựng bộ đề dev chuẩn (`queries/dev-2025-finals/`)
 Chuyển 89 câu 2025 về định dạng batch runner (parser đã đọc được đề nguyên bản BTC: TRAKE
-header + `E1:`, QA một-dòng "Hỏi …?") + soạn `queries/dev/gt.json` (hỗ trợ nhiều cửa sổ
+header + `E1:`, QA một-dòng "Hỏi …?") + soạn `queries/dev-2025-finals/gt.json` (hỗ trợ nhiều cửa sổ
 `"ranges": [[s1,e1],…]`). Đây là **thước đo duy nhất** của mọi quyết định config từ nay đến hết giải.
 
 ### 3.2 Rehearsal end-to-end trên L28 (đường keyframes BTC) + K08 (đường tự cắt)
@@ -72,9 +72,9 @@ python scripts/05_rebuild_map_keyframes.py --stride 5        # dhash + monotone 
 python scripts/02_embed_and_index.py --model provided_clip32 # search được NGAY (features BTC)
 python scripts/02_embed_and_index.py --all-members           # siglip2 + openclip (GPU/Colab)
 python scripts/03_build_aux_indexes.py --ocr --asr --captions --text-index --objects-index
-python scripts/20_run_queries.py --query-dir queries/dev --zip --gt queries/dev/gt.json
-python scripts/25_auto_agent.py --query-dir queries/dev      # dry-run thể thức tự động
-python scripts/50_bench_latency.py --n 200 --query-dir queries/dev
+python scripts/20_run_queries.py --query-dir queries/dev-2025-finals --zip --gt queries/dev-2025-finals/gt.json
+python scripts/25_auto_agent.py --query-dir queries/dev-2025-finals      # dry-run thể thức tự động
+python scripts/50_bench_latency.py --n 200 --query-dir queries/dev-2025-finals
 cvp serve --port 8000    # smoke: /health /search/text /search/image /search/qa /search/trake /search/avs /nearest /keyframe
 ```
 K08: giải nén video K08 → `scripts/01_extract_keyframes.py` (TransNetV2 → fallback
@@ -95,7 +95,7 @@ Dựng `report/` (LaTeX kit theo template AIO): khung sẵn phần kiến trúc 
 cáo giải pháp** (FAQ), không để dồn sang tuần nộp bài.
 
 **Nghiệm thu WS-1 (chốt 25/07):**
-- [ ] `pytest` **514 tests** xanh trên máy dev (CI cài torch-cpu để đủ bộ).
+- [ ] `pytest` **526 tests** xanh trên máy dev (CI cài torch-cpu để đủ bộ).
 - [ ] L28: `scripts/05` tái tạo map csv cho **100% video** có keyframes + video gốc; `frame_idx` tăng nghiêm ngặt; đối chiếu K08 (map tự cắt exact) sai lệch ≤ stride (5 frame).
 - [ ] `scripts/20 --zip` tạo zip Codabench hợp lệ (folder trong zip tên `submission`, MANIFEST sha256) — 0 lỗi validate.
 - [ ] Đo và GHI **B0** = MEAN FINAL trên dev-89 với config mặc định (đây là baseline mọi WS sau so vào).
@@ -122,10 +122,10 @@ cáo giải pháp** (FAQ), không để dồn sang tuần nộp bài.
 
 **Tuần 1 tháng 8 — tune trên dev-89:**
 ```powershell
-python scripts/23_dump_signals.py --query-dir queries/dev
-python scripts/21_tune_weights.py --signals-dir artifacts/signal_dumps/dev --gt queries/dev/gt.json --trials 60
+python scripts/23_dump_signals.py --query-dir queries/dev-2025-finals
+python scripts/21_tune_weights.py --signals-dir artifacts/signal_dumps/dev --gt queries/dev-2025-finals/gt.json --trials 60
 # dán các dòng CVP_SEARCH__WEIGHTS__* nó in ra vào profile thi đấu
-python scripts/26_run_ablations.py --query-dir queries/dev --gt queries/dev/gt.json   # A1–A10, chọn config thi
+python scripts/26_run_ablations.py --query-dir queries/dev-2025-finals --gt queries/dev-2025-finals/gt.json   # A1–A10, chọn config thi
 ```
 Ablation trọng tâm 2026: **A9** (cross-rerank `none|blip2_itm|qwen_reranker` —
 `CVP_SEARCH__RERANKER=qwen_reranker`) và **A10** (`CVP_SEARCH__TEMPORAL_BOOST=true`,
@@ -183,7 +183,7 @@ Nền đã có: `pipeline/auto_agent.py` (đề → search/TRAKE/AVS → QA theo
 2. **Diễn tập DRES tự host**: dựng **DRES 2.0.4** (bản hiện hành 06/2026) local, cấu hình
    `CVP_SUBMISSION__DRES_BASE_URL` + env `DRES_USER`/`DRES_PASSWORD`, bật
    `submission.auto_submit: true` rồi chạy:
-   `python scripts/25_auto_agent.py --query-dir queries/dev --submit`.
+   `python scripts/25_auto_agent.py --query-dir queries/dev-2025-finals --submit`.
    Kỷ luật sắt: client **không bao giờ tự retry lệnh bị từ chối** (nộp sai bị trừ điểm).
 3. **Profile auto-track** (env, không sửa code): `CVP_SEARCH__LOW_CONFIDENCE_RETRY=true`
    (reformulate + RRF-merge khi ranking phẳng), `CVP_SEARCH__TEMPORAL_BOOST=true`
@@ -230,7 +230,7 @@ xanh vào 11/09; checklist PLAYBOOK §0 tick đủ trên cả 2 máy.
 
 | Chỉ tiêu | Đích | Lệnh đo |
 |---|---|---|
-| Test suite | 514 pass (CI, torch-cpu) | `pytest` |
+| Test suite | 526 pass (CI, torch-cpu) | `pytest` |
 | Dev-89 MEAN FINAL | ghi **B0** ở WS-1 → WS-2 ≥ B0+10% tương đối → trước freeze ≥ B0+20% (hiệu chỉnh sau khi có B0) | `scripts/20 --gt` / `scripts/26` |
 | Latency search_text | p50 ≤ 200 ms, p95 ≤ 500 ms (laptop thi) | `scripts/50_bench_latency.py` |
 | Artifacts từ drop mới | dùng được ≤48h, đủ aux ≤72h | notebook 01 + bảng WS-2 |

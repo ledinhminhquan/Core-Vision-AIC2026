@@ -171,7 +171,7 @@ End-to-end với đủ stack thật (dịch, ensemble, SuperGlobal, fusion, rera
 
 ```bash
 # một phát: chạy đề → validate → zip Codabench → chấm offline vs GT dev
-python scripts/20_run_queries.py --query-dir ./queries/dev --zip --gt ./queries/dev/gt.json
+python scripts/20_run_queries.py --query-dir ./queries/dev-2025-finals --zip --gt ./queries/dev-2025-finals/gt.json
 
 # hoặc tách rời khi cần chấm lại nhiều lần
 python scripts/20_run_queries.py --query-dir ./queries/p1 --out-dir ./artifacts/submissions/p1
@@ -203,11 +203,11 @@ phút/clip 20s.
 
 ```bash
 # 1) dump RAW score map từng tín hiệu (engine chạy 1 lần/câu)
-python scripts/23_dump_signals.py --query-dir ./queries/dev --out-dir ./artifacts/signal_dumps/dev
+python scripts/23_dump_signals.py --query-dir ./queries/dev-2025-finals --out-dir ./artifacts/signal_dumps/dev
 
 # 2) tối ưu offline trên map đã cache, chấm bằng metric vòng loại
 python scripts/21_tune_weights.py --signals-dir ./artifacts/signal_dumps/dev \
-    --gt ./queries/dev/gt.json --method random --trials 120 \
+    --gt ./queries/dev-2025-finals/gt.json --method random --trials 120 \
     --out ./artifacts/tuning/best_weights.json
 ```
 
@@ -231,7 +231,7 @@ Một lệnh chạy bộ đề một lần cho MỖI biến thể config (deep-c
 sửa code), chấm bằng scorer chính thức, in + lưu `ablation_results.json`:
 
 ```bash
-python scripts/26_run_ablations.py --query-dir queries/dev --gt queries/dev/gt.json \
+python scripts/26_run_ablations.py --query-dir queries/dev-2025-finals --gt queries/dev-2025-finals/gt.json \
     [--only A1 A9 A10] [--out artifacts/ablations]
 ```
 

@@ -115,10 +115,10 @@ python scripts/20_run_queries.py --query-dir <gói-đề> --zip
 # thể thức TỰ ĐỘNG 2026 (trọn gói, kể cả QA tự trả lời):
 python scripts/25_auto_agent.py --query-dir <gói-đề>
 # có bộ đề dev kèm đáp án? Tune trọng số tín hiệu:
-python scripts/23_dump_signals.py --query-dir queries/dev
-python scripts/21_tune_weights.py --signals-dir artifacts/signal_dumps/dev --gt queries/dev/gt.json
+python scripts/23_dump_signals.py --query-dir queries/dev-2025-finals
+python scripts/21_tune_weights.py --signals-dir artifacts/signal_dumps/dev --gt queries/dev-2025-finals/gt.json
 # chấm điểm offline đúng công thức BTC:
-python scripts/40_eval_official.py --submission-dir artifacts/submissions --gt queries/dev/gt.json
+python scripts/40_eval_official.py --submission-dir artifacts/submissions --gt queries/dev-2025-finals/gt.json
 ```
 
 Nhớ thể lệ sơ tuyển 2026: tối đa **5 lượt nộp/ngày, 20 lượt tổng** — chấm offline trước khi nộp!

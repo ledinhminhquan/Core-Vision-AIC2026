@@ -43,7 +43,7 @@ window) because the cached maps rank keyframes, not frame tuples.
 
 Example:
     python scripts/21_tune_weights.py --signals-dir ./artifacts/signal_dumps/dev \\
-        --gt ./queries/dev_gt.json --method random --trials 120 \\
+        --gt ./queries/dev-2025-finals/gt.json --method random --trials 120 \\
         --out ./artifacts/tuning/best_weights.json
 """
 

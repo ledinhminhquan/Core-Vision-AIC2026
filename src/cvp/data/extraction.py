@@ -108,11 +108,40 @@ def _pick_frames(shots: list[tuple[int, int]],
     return sorted(set(picked))
 
 
+def _map_csv_sha256(p: Path) -> str:
+    import hashlib
+
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def _is_selfmade(marker: Path, map_path: Path) -> bool:
+    """The .selfmade marker vouches ONLY for the exact csv it was written for.
+
+    The marker stores the csv's sha256 (round-7): a bare-existence check let a
+    STALE marker keep bypassing the organiser-protection guard after the
+    official csv replaced ours.
+    """
+    if not (marker.is_file() and map_path.is_file()):
+        return False
+    try:
+        return marker.read_text(encoding="utf-8").strip() == _map_csv_sha256(map_path)
+    except OSError:
+        return False
+
+
 def extract_video(video_path: Path, keyframes_dir: Path, map_dir: Path,
                   overwrite: bool = False,
+                  force_organiser: bool = False,
                   shot_positions: tuple[float, ...] | None = None,
                   dedup_mad: float | None = None) -> int:
-    """Extract keyframes + map CSV for one video. Returns keyframe count."""
+    """Extract keyframes + map CSV for one video. Returns keyframe count.
+
+    Organiser-made keyframes/map csvs (anything without OUR content-bound
+    ``.selfmade`` marker) are never destroyed — not even with ``overwrite=True``
+    — unless ``force_organiser=True`` is passed explicitly (round-7 HIGH: a
+    bare global overwrite would have replaced all 873 official Batch-1 map
+    csvs with approximate rows).
+    """
     import csv as _csv
 
     vid = video_path.stem
@@ -121,61 +150,46 @@ def extract_video(video_path: Path, keyframes_dir: Path, map_dir: Path,
     # Written while THIS extractor is mid-run; removed after the map csv lands.
     # Its absence proves existing jpgs came from somewhere else (organiser zip).
     sentinel = out_dir / ".cvp-extracting"
+    # Written next to every csv THIS extractor produces (content = csv sha256)
+    # — unlike the in-dir sentinel it SURVIVES deleting the keyframes dir, so
+    # our own csvs stay re-extractable while organiser csvs stay protected.
+    selfmade = map_dir / f"{vid}.csv.selfmade"
+    if selfmade.is_file() and not _is_selfmade(selfmade, map_path):
+        # The csv at this path is no longer the one we wrote (organiser csv
+        # landed on top, or a crash) — the marker must not vouch for it.
+        selfmade.unlink(missing_ok=True)
+
+    ours = sentinel.exists() or _is_selfmade(selfmade, map_path)
+    existing_jpgs = (len([f for f in out_dir.iterdir() if f.suffix.lower() == ".jpg"])
+                     if out_dir.is_dir() else 0)
+
     if out_dir.is_dir() and map_path.is_file() and not overwrite:
-        existing = len([f for f in out_dir.iterdir() if f.suffix.lower() == ".jpg"])
         with open(map_path, "r", encoding="utf-8-sig", newline="") as f:
             csv_rows = sum(1 for _ in _csv.DictReader(f))
-        if existing > 0 and existing == csv_rows:
+        if existing_jpgs > 0 and existing_jpgs == csv_rows:
             sentinel.unlink(missing_ok=True)
-            return existing
-        log.warning("%s: %d jpgs vs %d map rows", vid, existing, csv_rows)
-    if out_dir.is_dir() and not overwrite and not sentinel.exists():
-        existing = len([f for f in out_dir.iterdir() if f.suffix.lower() == ".jpg"])
-        if existing > 0:
-            # Organiser keyframes with a missing/mismatched map csv (e.g. the
-            # map zip not unzipped yet, or a partial unzip). Deleting them and
-            # substituting approximate self-extracted frames would desync the
-            # official clip-features/objects packs — refuse instead. Return 0:
-            # nothing was extracted and there is no usable map, so callers must
-            # not count this as fresh work (extract_missing's tally, nb01's
-            # forced catalog rebuild).
-            log.error(
-                "%s: %d existing jpgs but no matching map csv and they were NOT "
-                "written by this extractor — REFUSING to replace what may be "
-                "organiser keyframes. Unzip the official map-keyframes package "
-                "(or finish the partial unzip), or pass overwrite=True.",
-                vid, existing,
-            )
-            return 0
-    # Written next to every csv THIS extractor produces — unlike the in-dir
-    # sentinel it SURVIVES deleting the keyframes dir, so our own csvs stay
-    # re-extractable (K-batch dense re-extraction, round-6) while organiser
-    # csvs stay protected.
-    selfmade = map_dir / f"{vid}.csv.selfmade"
-    if (map_path.is_file() and not overwrite and not sentinel.exists()
-            and not selfmade.exists()):
-        # Mirror guard for the MAP side (round-5 HIGH): the organiser map csv
-        # can land BEFORE the big Keyframes zips finish uploading. With no
-        # keyframes dir the jpg guards above never fire, and self-extraction
-        # would os.replace() the official csv with approximate shot-detector
-        # rows — silently corrupting the n↔frame_idx bridge for submissions.
+            return existing_jpgs
+        log.warning("%s: %d jpgs vs %d map rows", vid, existing_jpgs, csv_rows)
+
+    organiser_data = (map_path.is_file() or existing_jpgs > 0) and not ours
+    if organiser_data and not (overwrite and force_organiser):
+        # Organiser keyframes and/or an official map csv (e.g. the map zip
+        # landed before the big Keyframes zips finished, or a partial unzip).
+        # Deleting/replacing them with approximate shot-detector output would
+        # desync the official clip-features/objects packs and corrupt the
+        # n↔frame_idx bridge — refuse, EVEN under a global overwrite. Return 0
+        # so callers never count a refusal as fresh work.
         log.error(
-            "%s: an official-looking map csv already exists but the keyframes "
-            "dir is missing/empty and the csv was NOT written by this extractor "
-            "— REFUSING to overwrite it with approximate rows. Organiser packs: "
-            "unzip the Keyframes package first. Self-extracted video: delete "
-            "the map csv too, or rerun with overwrite (scripts/01 --overwrite).",
-            vid,
+            "%s: existing keyframes/map csv were NOT written by this extractor "
+            "— REFUSING to replace what may be the organiser's official data "
+            "(jpgs=%d, map=%s). Organiser packs: unzip the missing package "
+            "instead. To force-destroy organiser data anyway: scripts/01 "
+            "--overwrite --force-organiser --video %s.",
+            vid, existing_jpgs, map_path.is_file(), vid,
         )
         return 0
 
     import cv2
-
-    # Re-extraction must not leave stale high-n jpgs from a previous run.
-    if out_dir.is_dir():
-        for f in out_dir.iterdir():
-            if f.suffix.lower() in (".jpg", ".tmp"):
-                f.unlink(missing_ok=True)
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -197,6 +211,12 @@ def extract_video(video_path: Path, keyframes_dir: Path, map_dir: Path,
 
     out_dir.mkdir(parents=True, exist_ok=True)
     sentinel.touch()
+    # Clean stale jpgs only NOW — after the video opened and its frame count
+    # read (round-7: a corrupt mp4 used to get its existing jpgs deleted
+    # BEFORE VideoCapture failed, leaving nothing behind).
+    for f in out_dir.iterdir():
+        if f.suffix.lower() in (".jpg", ".tmp"):
+            f.unlink(missing_ok=True)
     rows: list[tuple[int, float, float, int]] = []
     prev_thumb: np.ndarray | None = None
     n = 0
@@ -230,17 +250,23 @@ def extract_video(video_path: Path, keyframes_dir: Path, map_dir: Path,
         for row in rows:
             w.writerow([row[0], f"{row[1]:.2f}", row[2], row[3]])
     os.replace(tmp_csv, map_path)
-    selfmade.touch()
+    try:
+        selfmade.write_text(_map_csv_sha256(map_path), encoding="utf-8")
+    except OSError as e:  # marker is protection metadata, never a hard failure
+        log.warning("%s: could not write .selfmade marker (%s)", vid, e)
     sentinel.unlink(missing_ok=True)
     log.info("%s: wrote %d keyframes + map CSV", vid, n)
     return n
 
 
-def extract_missing(settings: Settings, overwrite: bool = False) -> int:
+def extract_missing(settings: Settings, overwrite: bool = False,
+                    only: list[str] | None = None,
+                    force_organiser: bool = False) -> int:
     """Extract every video under data/videos that has no keyframes yet.
 
-    ``overwrite=True`` (scripts/01 --overwrite) force-re-extracts everything —
-    the documented path for re-running with denser ``shot_positions``.
+    ``overwrite=True`` (scripts/01 --overwrite) force-re-extracts — scoped to
+    ``only`` video ids when given (scripts/01 --video, repeatable). Organiser
+    keyframes/map csvs stay protected even then unless ``force_organiser``.
     """
     video_root = settings.paths.data(settings.paths.videos_dir)
     keyframes_dir = settings.paths.data(settings.paths.keyframes_dir)
@@ -255,6 +281,13 @@ def extract_missing(settings: Settings, overwrite: bool = False) -> int:
     if (video_root / "video").is_dir():
         by_stem.update({vp.stem: vp for vp in (video_root / "video").glob("*.mp4")})
     by_stem.update({vp.stem: vp for vp in video_root.glob("*.mp4")})
+    if only:
+        wanted = set(only)
+        missing = wanted - set(by_stem)
+        if missing:
+            log.error("--video ids with no matching mp4 under %s: %s",
+                      video_root, sorted(missing))
+        by_stem = {v: p for v, p in by_stem.items() if v in wanted}
     for vid in sorted(by_stem):
         vp = by_stem[vid]
         try:
@@ -265,6 +298,7 @@ def extract_missing(settings: Settings, overwrite: bool = False) -> int:
             ex_cfg = getattr(settings, "extraction", None)
             n = extract_video(
                 vp, keyframes_dir, map_dir, overwrite=overwrite,
+                force_organiser=force_organiser,
                 shot_positions=tuple(ex_cfg.shot_positions) if ex_cfg else None,
                 dedup_mad=ex_cfg.dedup_mad_threshold if ex_cfg else None,
             )

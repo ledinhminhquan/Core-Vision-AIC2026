@@ -270,10 +270,10 @@ python scripts/20_run_queries.py --query-dir <thư-mục-đề> --zip --gt <gt.j
 - Có bộ đề dev kèm đáp án? Tune trọng số tín hiệu trước khi nộp:
 
   ```bash
-  python scripts/23_dump_signals.py --query-dir queries/dev
-  python scripts/21_tune_weights.py --signals-dir artifacts/signal_dumps/dev --gt queries/dev/gt.json
+  python scripts/23_dump_signals.py --query-dir queries/dev-2025-finals
+  python scripts/21_tune_weights.py --signals-dir artifacts/signal_dumps/dev --gt queries/dev-2025-finals/gt.json
   # muốn biết từng nâng cấp đóng góp bao nhiêu:
-  python scripts/26_run_ablations.py --query-dir queries/dev --gt queries/dev/gt.json
+  python scripts/26_run_ablations.py --query-dir queries/dev-2025-finals --gt queries/dev-2025-finals/gt.json
   ```
 
 - **Đừng quên báo cáo giải pháp** — sơ tuyển yêu cầu nộp kèm bài viết mô tả hệ
@@ -364,7 +364,7 @@ Không cần embed lại ảnh trong mọi trường hợp — LiT giữ nguyên
 | Chung kết được xem clip mấy lần, có tiếng không? | Clip chỉ được XEM trên màn hình (cấm quay/chụp/capture — nhưng được mô tả lại/vẽ/sinh ảnh để đưa vào hệ); âm thanh CÓ THỂ bị tắt. 2025: KIS 5 phút với 5 hint nhỏ giọt mỗi phút; V-KIS 4 phút/clip 20s; server kiểu DRES — nộp sớm điểm cao, nộp sai bị trừ (xem `docs/COMPETITION_PLAYBOOK.md`). |
 | Làm sao biết train có "lãi" để bật vào ensemble? | `python scripts/eval_model.py` (Bước 8). Delta R@1/R@5 dương rõ → bật; lằng nhằng → thi bằng zero-shot ensemble mặc định `[siglip2, openclip]` 0.55/0.45 (công thức các đội top). |
 | Objects boost đọc chậm trên Drive? | Chạy `python scripts/03_build_aux_indexes.py --objects-index` — gộp hàng trăm nghìn JSON thành 1 parquet, ObjectBooster tự ưu tiên dùng. |
-| Kiểm tra tổng thể hệ đang thiếu gì? | `python scripts/doctor.py` — in coverage từng artifact + cảnh báo index stale. Test suite: `pytest` (514 tests, thuần CPU, không cần data thật). |
+| Kiểm tra tổng thể hệ đang thiếu gì? | `python scripts/doctor.py` — in coverage từng artifact + cảnh báo index stale. Test suite: `pytest` (526 tests, thuần CPU, không cần data thật). |
 
 ---
 

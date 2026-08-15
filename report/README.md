@@ -70,7 +70,7 @@ Tìm chuỗi `TODO` trong `main.tex` (11 chỗ). Cụ thể:
 |---|---|
 | Tên đội + thành viên (`\author`) | đăng ký với BTC |
 | Hình 1 — sơ đồ pipeline | vẽ từ `docs/PROJECT_CONTEXT.md` mục 2 → `figures/pipeline.pdf`, thay khối `\fbox` bằng `\includegraphics[width=\linewidth]{figures/pipeline.pdf}` |
-| Bảng ablation A1–A10 (mục V) | `python scripts/26_run_ablations.py --query-dir queries/dev --gt queries/dev/gt.json` → bảng in ra + `artifacts/ablations/` (A5 lấy từ bảng của notebook 02; quét trọng số đầy đủ A3 từ `scripts/21_tune_weights.py`) |
+| Bảng ablation A1–A10 (mục V) | `python scripts/26_run_ablations.py --query-dir queries/dev-2025-finals --gt queries/dev-2025-finals/gt.json` → bảng in ra + `artifacts/ablations/` (A5 lấy từ bảng của notebook 02; quét trọng số đầy đủ A3 từ `scripts/21_tune_weights.py`) |
 | Kết quả train LoRA-LiT + WiSE-FT (mục IV) | notebook 02 (winner α + val R@5 vs baseline từ `scripts/eval_model.py`) |
 | Bảng latency p50/p95/p99 (mục V) | `python scripts/50_bench_latency.py --n 200` trên laptop thi đấu, sau khi build artifacts thật |
 | Bài học thực chiến + kết quả sơ tuyển (mục VI, VII, Tóm tắt) | sau các lượt nộp Codabench tháng 8/2026 |

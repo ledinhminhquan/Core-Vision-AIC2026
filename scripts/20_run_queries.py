@@ -3,7 +3,7 @@
 Examples:
     python scripts/20_run_queries.py --query-dir ./queries/p1 --out-dir ./artifacts/submissions/p1
     # one-stop prelim command: run + validate + zip + score offline vs dev GT
-    python scripts/20_run_queries.py --query-dir ./queries/dev --zip --gt ./queries/dev/gt.json
+    python scripts/20_run_queries.py --query-dir ./queries/dev-2025-finals --zip --gt ./queries/dev-2025-finals/gt.json
 """
 
 import argparse

@@ -66,11 +66,12 @@ def make_gemini_client(settings: Settings):
         raise RuntimeError("GEMINI_API_KEY not set")
     from google import genai
 
-    timeout_s = float(getattr(settings.query, "timeout_s", 8.0))
+    # Same budget as the wall cap (round-7): a smaller HTTP timeout would kill
+    # legitimate 24–30s image calls before the 30s floor could ever apply.
     try:
         # google-genai HttpOptions.timeout is in MILLISECONDS.
         return genai.Client(api_key=api_key,
-                            http_options={"timeout": int(timeout_s * 1000 * 3)})
+                            http_options={"timeout": int(gemini_wall_timeout(settings) * 1000)})
     except TypeError:  # older google-genai without http_options
         return genai.Client(api_key=api_key)
 
