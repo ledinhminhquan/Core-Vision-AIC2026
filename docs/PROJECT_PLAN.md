@@ -54,11 +54,11 @@ frame, temporal boost, retry khi tự tin thấp, FastAPI service + `cvp` CLI, 3
 
 ## 3. WS-1 · Tổng duyệt trước giờ G (14/07 → 25/07)
 
-Dữ liệu local hiện có (kiểm kê 07/2026): keyframes L25–L30 (zip trên Drive, **L28 đã giải nén
-local**); `clip-features-32` / `media-info` / `objects` cho **873 video L21–L30**; videos
-L21–L30 + K01–K20 (zip trên Drive); gói **89 câu chung kết 2025** (73 KIS / 9 QA / 7 TRAKE).
-**KHÔNG có bất kỳ map-keyframes csv nào** → mọi rehearsal bắt buộc đi qua đường tái tạo.
-Drive chuẩn: `MyDrive/AIC2025/{data,artifacts}` (xem [DRIVE_SETUP](DRIVE_SETUP.md)).
+Dữ liệu local hiện có (cập nhật 15/08/2026): **Batch 1 chính thức — 32 zip / 873 video
+L21–L30** trong `AIC2026-Info/Datasets1/` (keyframes + videos + clip-features-32 +
+media-info + objects + **map-keyframes ĐỦ 873/873** — kiểm kê DATASET_INGESTION §1b);
+gói **89 câu chung kết 2025** (73 KIS / 9 QA / 7 TRAKE). Đường tái tạo map chỉ còn là
+bảo hiểm batch sau. Drive chuẩn: `MyDrive/AIC2025/{data,artifacts}` (xem [DRIVE_SETUP](DRIVE_SETUP.md)).
 
 ### 3.1 Dựng bộ đề dev chuẩn (`queries/dev/`)
 Chuyển 89 câu 2025 về định dạng batch runner (parser đã đọc được đề nguyên bản BTC: TRAKE
@@ -86,7 +86,7 @@ tái tạo của scripts/05 trên L28.
 2. **AVS có thi năm 2026 không?** (giảng viên buổi 2 nhớ là không — cần xác nhận chính thức).
 3. **Audio ở chung kết**: clip KIS-V có bị tắt tiếng không? ASR có còn là tín hiệu hợp lệ với đề thi?
 4. Spec + giao thức **thể thức tự động** (endpoint? DRES? định dạng đề máy-đọc-được?).
-5. Gói dữ liệu chính thức **có kèm map-keyframes không** (bản local đang thiếu hoàn toàn).
+5. ~~Gói dữ liệu chính thức **có kèm map-keyframes không**~~ → **ĐÃ TRẢ LỜI 15/08/2026: CÓ, đủ 873/873** (Batch 1).
 6. Chế độ **khung giờ nộp** Codabench 2026 (2025 từng giới hạn 9:00–11:59 sáng).
 
 ### 3.4 Khung báo cáo sơ tuyển
@@ -95,7 +95,7 @@ Dựng `report/` (LaTeX kit theo template AIO): khung sẵn phần kiến trúc 
 cáo giải pháp** (FAQ), không để dồn sang tuần nộp bài.
 
 **Nghiệm thu WS-1 (chốt 25/07):**
-- [ ] `pytest` **466 tests** xanh trên máy dev (CI cài torch-cpu để đủ bộ).
+- [ ] `pytest` **483 tests** xanh trên máy dev (CI cài torch-cpu để đủ bộ).
 - [ ] L28: `scripts/05` tái tạo map csv cho **100% video** có keyframes + video gốc; `frame_idx` tăng nghiêm ngặt; đối chiếu K08 (map tự cắt exact) sai lệch ≤ stride (5 frame).
 - [ ] `scripts/20 --zip` tạo zip Codabench hợp lệ (folder trong zip tên `submission`, MANIFEST sha256) — 0 lỗi validate.
 - [ ] Đo và GHI **B0** = MEAN FINAL trên dev-89 với config mặc định (đây là baseline mọi WS sau so vào).
@@ -230,7 +230,7 @@ xanh vào 11/09; checklist PLAYBOOK §0 tick đủ trên cả 2 máy.
 
 | Chỉ tiêu | Đích | Lệnh đo |
 |---|---|---|
-| Test suite | 466 pass (CI, torch-cpu) | `pytest` |
+| Test suite | 483 pass (CI, torch-cpu) | `pytest` |
 | Dev-89 MEAN FINAL | ghi **B0** ở WS-1 → WS-2 ≥ B0+10% tương đối → trước freeze ≥ B0+20% (hiệu chỉnh sau khi có B0) | `scripts/20 --gt` / `scripts/26` |
 | Latency search_text | p50 ≤ 200 ms, p95 ≤ 500 ms (laptop thi) | `scripts/50_bench_latency.py` |
 | Artifacts từ drop mới | dùng được ≤48h, đủ aux ≤72h | notebook 01 + bảng WS-2 |
@@ -242,7 +242,7 @@ xanh vào 11/09; checklist PLAYBOOK §0 tick đủ trên cả 2 máy.
 
 | # | Rủi ro | Phát hiện | Đối sách |
 |---|---|---|---|
-| R1 | **Drop chính thức không có map-keyframes** (bản local 2025 đã thiếu 100%) | kiểm kê ngày-1 WS-2 | `scripts/05_rebuild_map_keyframes.py` (dhash + monotone DP, resumable, đã tổng duyệt ở WS-1); video nào thiếu cả raw video → `scripts/01` tự cắt; đã đăng ký hỏi BTC (WS-1.3) |
+| R1 | **Drop không có map-keyframes** (~~đã hóa giải cho Batch 1: BTC phát đủ 873/873~~ — còn áp dụng cho batch sau) | kiểm kê ngày-1 mỗi batch | `scripts/05_rebuild_map_keyframes.py` (dhash + monotone DP, resumable, đã tổng duyệt ở WS-1); video nào thiếu cả raw video → `scripts/01` tự cắt |
 | R2 | **Lifelog/egocentric metadata schema lạ** (chủ đề 2026, khác media-info HTV) | soi schema ngày-1 | kênh metadata là BM25 tổng quát — nạp field text bất kỳ; nếu có timestamp/GPS đặc thù: chỉ thêm parser mỏng ở `data/metadata.py` TRƯỚC freeze, có test |
 | R3 | **Chế độ khung giờ Codabench** (2025: 9:00–11:59 sáng, 2026 chưa rõ) | đọc rules khi trang mở (đầu–giữa T8) | quy trình "chuẩn bị tối hôm trước, nộp đầu giờ sáng" là mặc định của WS-3 — đúng cho CẢ hai chế độ |
 | R4 | **Không thuê được H100** cho train | lịch Colab tuần cuối T7 | train là kênh phụ: zero-shot ensemble là config thi mặc định; notebook 02 tự hạ batch cho A100/L4/T4, resume chính xác giữa epoch |

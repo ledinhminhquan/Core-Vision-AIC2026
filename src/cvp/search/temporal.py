@@ -276,6 +276,25 @@ def _cosine_sim(vecs: np.ndarray, event_vecs: np.ndarray) -> np.ndarray:
     return (vecs / norms) @ np.asarray(event_vecs, dtype=np.float32).T
 
 
+def monotonize_frame_idxs(frame_idxs: list[int]) -> list[int] | None:
+    """Make a DP chain's frame_idx sequence strictly increasing, or reject it.
+
+    The official map csvs contain adjacent keyframes with EQUAL frame_idx
+    (2026 Batch-1: 614 tied pairs across 192/873 fully-mapped videos), so a
+    valid chain may carry ties — bump each tied frame to predecessor+1 (GT
+    windows span ~10 frames, so +1 stays inside the answer window). A genuine
+    DECREASE only arises from fallback estimates mixed with real map values;
+    that chain is garbage → return None.
+    """
+    if any(b < a for a, b in zip(frame_idxs, frame_idxs[1:])):
+        return None
+    out = list(frame_idxs)
+    for i in range(1, len(out)):
+        if out[i] <= out[i - 1]:
+            out[i] = out[i - 1] + 1
+    return out
+
+
 def _minmax_1d(a: np.ndarray) -> np.ndarray:
     """Min-max normalize a 1-D array; degenerate ranges map to a neutral 0.5."""
     if a.size == 0:
@@ -532,12 +551,15 @@ def trake_search(
                 )
                 seqs = dp_best_sequences(sim, pts, settings)
         for rows, mean_score, per_event in seqs:
-            frame_idxs = [int(fidx[r]) for r in rows]
-            # DP guarantees increasing keyframe rows/times, but frame_idx can
-            # regress on partially-mapped videos (fallback frame_idx = n-1
-            # mixed with real values) — such a row would be rejected by DRES.
-            if any(b <= a for a, b in zip(frame_idxs, frame_idxs[1:])):
-                log.warning("TRAKE: dropped non-increasing frame_idx sequence in %s: %s", vid, frame_idxs)
+            frame_idxs = monotonize_frame_idxs([int(fidx[r]) for r in rows])
+            # A genuine DECREASE means garbage frame_idx (fallback n-1 mixed
+            # with real map values on partially-mapped videos) — drop; but
+            # EQUAL neighbours are real: the official Batch-1 map csvs contain
+            # 614 tied adjacent frame_idx pairs across 192/873 videos, and a
+            # legal DP chain may land on one. monotonize bumps ties by +1
+            # (GT windows span ~10 frames) instead of losing the candidate.
+            if frame_idxs is None:
+                log.warning("TRAKE: dropped decreasing frame_idx sequence in %s", vid)
                 continue
             results.append(
                 TrakeCandidate(

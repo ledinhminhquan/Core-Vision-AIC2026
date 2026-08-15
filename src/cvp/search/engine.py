@@ -538,6 +538,12 @@ class SearchEngine:
         (min-max normalized per event), so an event only one lane understands
         still anchors the chain.
         """
+        # Blank/whitespace events (e.g. a query file with bare "E1:" markers)
+        # would reach np.concatenate([]) inside encode_text and crash the call.
+        event_queries = [q for q in event_queries if q and q.strip()]
+        if not event_queries:
+            log.warning("search_trake called with no usable events — returning [].")
+            return []
         processed = [self.query_processor.process(q) for q in event_queries]
 
         def _texts_for(model) -> list[str]:

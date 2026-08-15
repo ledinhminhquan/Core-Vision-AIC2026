@@ -95,18 +95,18 @@ sẽ là vài lần con số này):
 | OCR / ASR (mỗi cái) | ~1–2 h | ~2–3 h | chậm — qua đêm hoặc chạy sau | chậm |
 | BM25 text index + doctor | phút | phút | phút | phút |
 
-### 1b. ⚠ map-keyframes — các bản download hiện tại KHÔNG có
+### 1b. ✅ map-keyframes — Batch 1 (15/08/2026) ĐÃ PHÁT ĐỦ
 
-Thực tế data đang có trên Drive/máy: keyframes (L25–L30 zip; L28 đã giải nén local),
-clip-features-32 / media-info / objects cho 873 video L21–L30, videos L21–L30 + K01–K20
-— nhưng **KHÔNG có bất kỳ csv map-keyframes nào**. Không có nó thì `frame_idx` khi nộp
-là SAI (thể lệ yêu cầu số frame trong video GỐC, không phải thứ tự keyframe).
+Batch 1 chính thức gồm 32 zip cho 873 video L21–L30, **TRONG ĐÓ CÓ
+`map-keyframes-aic25-b1.zip` với đủ 873/873 csv** (kiểm kê từng file:
+`DATASET_INGESTION.md` §1b). Upload zip đó cùng các zip khác vào `data/` —
+notebook 01 tự giải nén, `frame_idx` nộp bài là số CHÍNH XÁC của BTC.
 
-Hai đường thoát, cả hai đã có sẵn trong repo:
+Bảo hiểm cho batch tương lai (chỉ khi thiếu csv), cả hai đã có sẵn trong repo:
 
-- **K-batch / video tự cắt:** `extract_missing` của notebook 01 tự sinh map-keyframes
-  khi cắt — không phải làm gì thêm.
-- **L-batch có keyframes BTC nhưng thiếu csv:** rebuild bằng dhash + monotone DP
+- **Video tự cắt (kiểu K-batch):** `extract_missing` của notebook 01 tự sinh
+  map-keyframes CHÍNH XÁC khi cắt — không phải làm gì thêm.
+- **Keyframes BTC nhưng thiếu csv:** rebuild XẤP XỈ bằng dhash + monotone DP
   (cần có video gốc):
 
   ```bash
@@ -115,9 +115,8 @@ Hai đường thoát, cả hai đã có sẵn trong repo:
       --out-dir <data>/map-keyframes [--stride 5] [--overwrite]
   ```
 
-  Chạy được cả trong một cell Colab sau khi stage videos, hoặc trên laptop. Kết quả là
-  XẤP XỈ — khi BTC phát hành map-keyframes chính thức (dataset 2026 ra ≤ 25/07/2026)
-  thì ưu tiên bản chính thức, xóa csv rebuild đi.
+  Chạy được cả trong một cell Colab sau khi stage videos, hoặc trên laptop.
+  Khi BTC phát bản chính thức thì ưu tiên bản chính thức, xóa csv rebuild đi.
 
 ### 1c. Tùy chọn sau nb01: objects parquet nén
 

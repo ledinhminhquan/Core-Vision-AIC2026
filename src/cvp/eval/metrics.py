@@ -1,10 +1,14 @@
 """Evaluation metrics.
 
-* ``qualifier_score`` — the official AIC preliminary metric: Mean of Top-k
-  R-Scores over k ∈ {1, 5, 20, 50, 100}. Per query you earn 0.2 for every
-  cutoff k whose top-k contains a correct row; a hit at rank 1 → 1.0, a hit
-  at rank 80 → 0.2. This is what practice submissions should be tuned on.
+* ``qualifier_score`` — Mean of Top-k R-Scores over k ∈ {1, 5, 20, 50, 100}
+  for BINARY-hit tasks (KIS/QA): a hit at rank 1 → 1.0, at rank 80 → 0.2.
+* ``qualifier_score_fractional`` — same cutoffs over FRACTIONAL per-row
+  R-Scores (TRAKE partial credit: 3/4 events in-window = 0.75).
 * retrieval metrics (R@K / MRR / median rank) for encoder training eval.
+
+The canonical, full-fidelity scorer is ``cvp.eval.official`` — these helpers
+are the lightweight notebook-friendly subset and agree with it on both the
+binary and the TRAKE partial-credit formulas.
 """
 
 from __future__ import annotations
@@ -26,6 +30,20 @@ def qualifier_score(is_correct: Sequence[bool], cutoffs: Sequence[int] = QUALIFI
     return sum(1.0 for k in cutoffs if first_hit <= k) / len(cutoffs)
 
 
+def qualifier_score_fractional(r_scores: Sequence[float],
+                               cutoffs: Sequence[int] = QUALIFIER_CUTOFFS) -> float:
+    """Mean over cutoffs of max R-Score in the top-k, for fractional row scores."""
+    scores = list(r_scores)
+    if not scores:
+        return 0.0
+    prefix_max: list[float] = []
+    run = 0.0
+    for s in scores:
+        run = max(run, float(s))
+        prefix_max.append(run)
+    return sum(prefix_max[min(k, len(prefix_max)) - 1] for k in cutoffs) / len(cutoffs)
+
+
 @dataclass
 class KisGroundTruth:
     """A KIS/QA answer: a contiguous frame segment inside one video."""
@@ -44,14 +62,17 @@ def score_kis_submission(rows: list[tuple[str, int]], gt: KisGroundTruth) -> flo
 
 def score_trake_submission(rows: list[tuple[str, list[int]]],
                            gt_video: str, gt_segments: list[tuple[int, int]]) -> float:
-    """A TRAKE row is correct iff every frame falls inside its event's segment."""
+    """Official TRAKE partial credit: wrong video → 0; right video → the
+    fraction of events whose frame lands inside its window (missing or extra
+    frames count as misses — the denominator is always the GT event count)."""
 
-    def row_ok(video_id: str, frames: list[int]) -> bool:
-        if video_id != gt_video or len(frames) != len(gt_segments):
-            return False
-        return all(a <= f <= b for f, (a, b) in zip(frames, gt_segments))
+    def row_score(video_id: str, frames: list[int]) -> float:
+        if video_id != gt_video or not gt_segments:
+            return 0.0
+        hits = sum(1 for f, (a, b) in zip(frames, gt_segments) if a <= f <= b)
+        return hits / len(gt_segments)
 
-    return qualifier_score([row_ok(v, fs) for v, fs in rows])
+    return qualifier_score_fractional([row_score(v, fs) for v, fs in rows])
 
 
 # ── encoder-training retrieval eval ──────────────────────────────────────────

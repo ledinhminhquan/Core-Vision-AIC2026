@@ -38,7 +38,7 @@ media-info · objects (Open Images→parquet)  ─┘     ─► [cross-encoder]
 
 ```bash
 pip install -e ".[search,app,dev]"
-pytest                                   # 466 tests, pure CPU
+pytest                                   # 483 tests, pure CPU
 
 # with the AIC dataset in ./data (see docs/DRIVE_SETUP.md):
 pip install -e ".[ml]"                        # query text encoder needs torch+open_clip

@@ -99,17 +99,18 @@ unzip -q -o /path/Keyframes_L28.zip -d .            # chứa keyframes/L28_V*/..
 unzip -q -o /path/clip-features-32-aic25-b1.zip -d .   # -> clip-features-32/
 unzip -q -o /path/objects-aic25-b1.zip -d .            # -> objects/
 unzip -q -o /path/media-info-aic25-b1.zip -d .         # -> media-info/
-unzip -q -o /path/map-keyframes-aic25-b1.zip -d .      # -> map-keyframes/ (nếu BTC phát)
-# videos (cả hai batch)                              -> data/videos/
-unzip -q -o /path/Videos_L28_a.zip -d videos/
-unzip -q -o /path/Videos_K08.zip   -d videos/
+unzip -q -o /path/map-keyframes-aic25-b1.zip -d .      # -> map-keyframes/ (✅ có trong Batch 1)
+# videos: MỌI Videos zip Batch 1 bọc mp4 trong thư mục video/ (số ít — §1b) →
+# giải nén ra chỗ tạm rồi dồn phẳng .mp4 vào data/videos/
+unzip -q -o /path/Videos_L28_a.zip -d /tmp/vid_unzip
+mv /tmp/vid_unzip/video/*.mp4 videos/
 ```
 
 (PowerShell: `Expand-Archive -Path <zip> -DestinationPath . -Force` tương đương.)
 
-Nếu zip lồng thêm một thư mục (vd `Videos_L28_a/video/*.mp4`) thì dồn phẳng các
-`.mp4` vào `data/videos/`. Layout bên trong mỗi gói có thể khác nhau — quy tắc
-duy nhất là đích cuối `data/<artifact>/{vid}...` như trên.
+Quên dồn phẳng cũng không chết: ASR và self-extraction có fallback tự dò thêm
+`data/videos/video/` — nhưng layout phẳng vẫn là chuẩn. Mọi gói khác (keyframes/
+map/objects/…) cũng có wrapper 1 lớp — đích cuối luôn là `data/<artifact>/{vid}...`.
 
 ## 3. QUY TRÌNH CHUẨN sau mỗi đợt data
 
@@ -269,14 +270,12 @@ sau data drop đều quý). Chuẩn bị sẵn để chạy ingest NGAY trong ng
       `python scripts/20_run_queries.py --query-dir <đề> --zip` (+`--gt` nếu có
       đáp án) — zip phải chứa folder `submission`, validate pass.
 
-## 8. Hiện trạng dữ liệu local (kiểm kê 07/2026 — dữ liệu 2025 để tập dượt)
+## 8. Hiện trạng dữ liệu local (cập nhật 15/08/2026 — Batch 1 chính thức đã về)
 
 | Gói | Ở đâu | Ghi chú |
 |---|---|---|
-| `Keyframes_L25…L30.zip` | Drive | L28 đã giải nén local |
-| `clip-features-32` / `media-info` / `objects` | đã có, 873 video L21–L30 | đủ batch-1 |
-| `Videos_L21–L30` + `Videos_K01–K20` (zip) | Drive | cần cho ASR + §4 + K self-extract |
-| **map-keyframes** | **KHÔNG CÓ Ở BẤT KỲ ĐÂU** | → §4 là bắt buộc trước khi nộp thử |
+| 32 zip Batch 1 (Keyframes/Videos L21–L30 + 4 gói aux) | `AIC2026-Info/Datasets1/` local | kiểm kê đầy đủ: §1b |
+| **map-keyframes-aic25-b1.zip** | **✅ TRONG BATCH 1 — đủ 873/873 csv** | §4 chỉ còn là bảo hiểm batch sau |
 | Gói đề chung kết 2025: 89 câu (73 KIS / 9 QA / 7 TRAKE) | local | bộ dev thật cho `scripts/40_eval_official.py` + `scripts/21_tune_weights.py` |
 
 Drive mặc định: `MyDrive/AIC2025/{data,artifacts}` (đổi bằng `DRIVE_PROJECT_DIR`

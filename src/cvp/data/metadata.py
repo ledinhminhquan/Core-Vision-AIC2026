@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -41,7 +43,17 @@ class MediaInfoStore:
         info = self.get(video_id)
         parts = [str(info.get("title", "")), str(info.get("description", ""))]
         kw = info.get("keywords") or []
-        if isinstance(kw, list):
+        if isinstance(kw, str):
+            # The organiser's real media-info stores keywords as a STRING that
+            # merely looks like a Python list ("['a', 'b']") — verified on the
+            # 2026 Batch-1 drop. Parse it; a bare comma-separated string is
+            # accepted too so future format drifts still index something.
+            try:
+                parsed = ast.literal_eval(kw)
+            except (ValueError, SyntaxError):
+                parsed = [t.strip(" '\"") for t in re.split(r"[,;]", kw.strip("[]")) if t.strip(" '\"")]
+            kw = parsed if isinstance(parsed, (list, tuple)) else [parsed]
+        if isinstance(kw, (list, tuple)):
             parts.append(" ".join(str(k) for k in kw))
         return "\n".join(p for p in parts if p)
 

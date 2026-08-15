@@ -64,10 +64,10 @@ Cài đặt: `r_score_kis` / `r_score_qa` / `r_score_trake`, `r_at_k`, `final_sc
   `sanitize_answer` (hằng `MAX_QA_ANSWER_CHARS`) tự cắt + cảnh báo ở writer/
   packager/VQA/run_queries.
 - **`frame_idx` là số frame trong video GỐC** (tra qua `map-keyframes`), *không phải*
-  thứ tự keyframe. Các gói data tải về local **KHÔNG có map-keyframes csv** —
-  bắt buộc chạy `python scripts/05_rebuild_map_keyframes.py` (dhash + monotone DP,
-  `--stride 5` mặc định, `--overwrite` để build lại) trước khi tin bất kỳ điểm
-  offline nào. Sai `frame_idx` = 0 điểm dù tìm đúng khoảnh khắc.
+  thứ tự keyframe. **Batch 1 (15/08/2026) ĐÃ PHÁT đủ 873/873 map-keyframes csv**
+  (DATASET_INGESTION §1b) — unzip là điểm offline đáng tin ngay. Chỉ batch tương
+  lai thiếu csv mới cần `python scripts/05_rebuild_map_keyframes.py` (dhash +
+  monotone DP, XẤP XỈ). Sai `frame_idx` = 0 điểm dù tìm đúng khoảnh khắc.
 - **AVS/KIS-C/KIS-V chấm local theo công thức KIS** (alias trong `_TASK_ALIASES`:
   `avs`/`kis-v`/`kisv`/`vkis`/`video-kis`/`kis-c`/`tkis`/`vqa`…) — TRỪ KHI entry
   GT mang **`targets`** (vòng 3): `"targets": [{"video_id":..., "range":[s,e]},…]`

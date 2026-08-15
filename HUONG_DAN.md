@@ -88,15 +88,13 @@ và bung đúng chỗ (có marker chống bung lại lần sau):
 
 ```
 MyDrive/AIC2025/
-├── data/                  ← ⭐ NÉM CÁC ZIP VÀO ĐÂY, giữ nguyên tên gốc
-│   ├── Keyframes_L25.zip … Keyframes_L30.zip     (bạn đã có)
-│   ├── Keyframes_L26_c.zip / _d.zip / _e.zip      (bạn đã có)
-│   ├── clip-features-32-aic25-b1.zip              (bạn đã có)
-│   ├── media-info-aic25-b1.zip                    (bạn đã có)
-│   ├── objects-aic25-b1.zip                       (bạn đã có)
-│   ├── Videos_L21_a.zip … Videos_L30_a.zip        (bạn đã có — cần cho ASR + dựng lại map-keyframes)
-│   ├── Videos_K01.zip … Videos_K20.zip            (bạn đã có — K-batch BẮT BUỘC có video)
-│   └── map-keyframes-aic25-b1.zip                 (⚠️ BẠN CHƯA CÓ — xem cảnh báo bên dưới)
+├── data/                  ← ⭐ NÉM NGUYÊN 32 ZIP BATCH-1 VÀO ĐÂY, giữ nguyên tên gốc
+│   ├── Keyframes_L21.zip … Keyframes_L30.zip      (+ L26_a…_e — 14 zip keyframes)
+│   ├── Videos_L21_a.zip … Videos_L30_a.zip        (+ L26_a…_e — 14 zip video; cần cho ASR)
+│   ├── map-keyframes-aic25-b1.zip                 (✅ BTC ĐÃ PHÁT trong Batch 1 — QUAN TRỌNG NHẤT)
+│   ├── clip-features-32-aic25-b1.zip
+│   ├── media-info-aic25-b1.zip
+│   └── objects-aic25-b1.zip
 └── artifacts/             ← notebook TỰ TẠO — đừng đụng vào
 ```
 
@@ -110,33 +108,24 @@ hai cách sống chung hòa bình.
 Drive* cũng không đủ để notebook ghi/merge. Hãy **copy về My Drive của bạn**
 (mở từng file → Make a copy → move vào `AIC2025/data/`) hoặc tải về máy rồi upload lại.
 
-### 🔴 LƯU Ý ĐẶC BIỆT: bộ data hiện tại KHÔNG có map-keyframes
+### ✅ map-keyframes: Batch 1 (15/08/2026) ĐÃ PHÁT ĐỦ — cứ upload zip là xong
 
 `map-keyframes/{video}.csv` là **cây cầu nộp bài**: nó đổi số thứ tự keyframe
 (`001.jpg`) thành **`frame_idx` thật trong video gốc** — thứ BẮT BUỘC phải nộp.
-Trong toàn bộ các gói bạn đã tải **không hề có** file này. Hai lựa chọn:
+**Batch 1 chính thức CÓ `map-keyframes-aic25-b1.zip` với ĐỦ 873/873 csv** (đã
+kiểm kê từng file — `docs/DATASET_INGESTION.md` §1b): upload zip đó cùng các zip
+khác là hết chuyện, KHÔNG cần làm gì thêm.
 
-1. **Chờ BTC phát (tốt nhất).** 2025 từng có `map-keyframes-aic25-b1.zip`; khi
-   2026 phát gói tương tự, chỉ cần ném zip vào `data/` rồi Run all lại nb01.
-2. **Tự dựng từ video** bằng công cụ trong repo (đây là lý do bạn nên upload đủ
-   `Videos_*.zip`):
+**Bảo hiểm cho batch sau** (nếu BTC phát gói chỉ-có-video hoặc thiếu csv):
+`python scripts/05_rebuild_map_keyframes.py` tái dựng XẤP XỈ từ video bằng
+dhash + DP đơn điệu (cần `Videos_*.zip` tương ứng; resumable; khi có bản chính
+thức thì ưu tiên bản chính thức). Video tự cắt keyframe (kiểu K-batch) thì map
+được sinh kèm CHÍNH XÁC, không cần script này.
 
-   ```bash
-   # trong 1 cell Colab (sau khi nb01 đã mount Drive + clone repo), hoặc trên máy:
-   python scripts/05_rebuild_map_keyframes.py            # --stride 5 mặc định
-   # dựng lại cả các csv đã có: thêm --overwrite
-   ```
-
-   Thuật toán: dhash từng keyframe của BTC → quét video theo bước nhảy → khớp
-   bằng DP đơn điệu (keyframe có thứ tự thời gian) → tinh chỉnh ±stride frame.
-   Kết quả là **XẤP XỈ** — khi BTC phát bản chính thức thì ưu tiên bản chính thức.
-   Script resumable: csv đã có sẽ được bỏ qua.
-
-**Cách biết mình đang thiếu:** ô Catalog của notebook 01 in dòng
-`catalog: … keyframes / … videos (N frames with map-keyframes)` — nếu **N = 0**
-(hoặc nhỏ hơn hẳn tổng số keyframe) thì `frame_idx` khi nộp sẽ SAI → phải làm
-một trong hai lựa chọn trên **trước khi nộp bất cứ thứ gì**. Riêng video K-batch
-tự cắt keyframe thì map-keyframes được sinh kèm tự động, không cần lo.
+**Cách tự kiểm:** ô Catalog của notebook 01 in dòng
+`catalog: … keyframes / … videos (N frames with map-keyframes)` — N phải bằng
+tổng số keyframe. Nếu N nhỏ hơn hẳn → thiếu map (batch mới chưa unzip đủ?) →
+xử lý xong mới được nộp bài.
 
 ---
 
@@ -375,7 +364,7 @@ Không cần embed lại ảnh trong mọi trường hợp — LiT giữ nguyên
 | Chung kết được xem clip mấy lần, có tiếng không? | Clip chỉ được XEM trên màn hình (cấm quay/chụp/capture — nhưng được mô tả lại/vẽ/sinh ảnh để đưa vào hệ); âm thanh CÓ THỂ bị tắt. 2025: KIS 5 phút với 5 hint nhỏ giọt mỗi phút; V-KIS 4 phút/clip 20s; server kiểu DRES — nộp sớm điểm cao, nộp sai bị trừ (xem `docs/COMPETITION_PLAYBOOK.md`). |
 | Làm sao biết train có "lãi" để bật vào ensemble? | `python scripts/eval_model.py` (Bước 8). Delta R@1/R@5 dương rõ → bật; lằng nhằng → thi bằng zero-shot ensemble mặc định `[siglip2, openclip]` 0.55/0.45 (công thức các đội top). |
 | Objects boost đọc chậm trên Drive? | Chạy `python scripts/03_build_aux_indexes.py --objects-index` — gộp hàng trăm nghìn JSON thành 1 parquet, ObjectBooster tự ưu tiên dùng. |
-| Kiểm tra tổng thể hệ đang thiếu gì? | `python scripts/doctor.py` — in coverage từng artifact + cảnh báo index stale. Test suite: `pytest` (466 tests, thuần CPU, không cần data thật). |
+| Kiểm tra tổng thể hệ đang thiếu gì? | `python scripts/doctor.py` — in coverage từng artifact + cảnh báo index stale. Test suite: `pytest` (483 tests, thuần CPU, không cần data thật). |
 
 ---
 

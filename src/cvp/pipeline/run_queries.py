@@ -410,10 +410,16 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
         prepend = getattr(temporal_cfg, "event_context", "none") == "prepend"
         events = parse_trake_events(lines, prepend_context=prepend)
         candidates = engine.search_trake(events)
-        if candidates:
-            record(getattr(candidates[0], "pts_times", None),
-                   (candidates[0].video_id, int(candidates[0].frame_idxs[0]))
-                   if getattr(candidates[0], "frame_idxs", None) else None)
+        if not candidates:
+            # A 0-byte CSV would fail validation and veto packaging of the
+            # WHOLE pack — return None so callers route this one query into
+            # their "no submission produced" bucket instead.
+            log.error("Query %s: engine returned ZERO candidates — no CSV written "
+                      "(this query scores 0 unless re-run).", path.name)
+            return None
+        record(getattr(candidates[0], "pts_times", None),
+               (candidates[0].video_id, int(candidates[0].frame_idxs[0]))
+               if getattr(candidates[0], "frame_idxs", None) else None)
         return _reconcile_times(
             write_trake(out_path, [(c.video_id, c.frame_idxs) for c in candidates]))
 
@@ -426,10 +432,13 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
         results = engine.search_text(retrieval_text)
         results = maybe_retry_low_confidence(engine, retrieval_text, results)
 
-    if results:
-        t = _time_of(results[0])
-        record([t] if t is not None else None,
-               (results[0].video_id, int(results[0].frame_idx)))
+    if not results:
+        log.error("Query %s: engine returned ZERO results — no CSV written "
+                  "(this query scores 0 unless re-run).", path.name)
+        return None
+    t = _time_of(results[0])
+    record([t] if t is not None else None,
+           (results[0].video_id, int(results[0].frame_idx)))
     if task == "qa":
         answers = compute_qa_answers(results, question, vqa, getattr(engine, "settings", None))
         return _reconcile_times(write_qa(

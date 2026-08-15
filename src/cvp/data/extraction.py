@@ -113,20 +113,39 @@ def extract_video(video_path: Path, keyframes_dir: Path, map_dir: Path,
                   shot_positions: tuple[float, ...] | None = None,
                   dedup_mad: float | None = None) -> int:
     """Extract keyframes + map CSV for one video. Returns keyframe count."""
-    import cv2
-
     import csv as _csv
 
     vid = video_path.stem
     out_dir = keyframes_dir / vid
     map_path = map_dir / f"{vid}.csv"
+    # Written while THIS extractor is mid-run; removed after the map csv lands.
+    # Its absence proves existing jpgs came from somewhere else (organiser zip).
+    sentinel = out_dir / ".cvp-extracting"
     if out_dir.is_dir() and map_path.is_file() and not overwrite:
         existing = len([f for f in out_dir.iterdir() if f.suffix.lower() == ".jpg"])
         with open(map_path, "r", encoding="utf-8-sig", newline="") as f:
             csv_rows = sum(1 for _ in _csv.DictReader(f))
         if existing > 0 and existing == csv_rows:
+            sentinel.unlink(missing_ok=True)
             return existing
-        log.warning("%s: %d jpgs vs %d map rows — re-extracting cleanly", vid, existing, csv_rows)
+        log.warning("%s: %d jpgs vs %d map rows", vid, existing, csv_rows)
+    if out_dir.is_dir() and not overwrite and not sentinel.exists():
+        existing = len([f for f in out_dir.iterdir() if f.suffix.lower() == ".jpg"])
+        if existing > 0:
+            # Organiser keyframes with a missing/mismatched map csv (e.g. the
+            # map zip not unzipped yet, or a partial unzip). Deleting them and
+            # substituting approximate self-extracted frames would desync the
+            # official clip-features/objects packs — refuse instead.
+            log.error(
+                "%s: %d existing jpgs but no matching map csv and they were NOT "
+                "written by this extractor — REFUSING to replace what may be "
+                "organiser keyframes. Unzip the official map-keyframes package "
+                "(or finish the partial unzip), or pass overwrite=True.",
+                vid, existing,
+            )
+            return existing
+
+    import cv2
 
     # Re-extraction must not leave stale high-n jpgs from a previous run.
     if out_dir.is_dir():
@@ -153,6 +172,7 @@ def extract_video(video_path: Path, keyframes_dir: Path, map_dir: Path,
              vid, len(shots), len(frame_ids), fps, total)
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    sentinel.touch()
     rows: list[tuple[int, float, float, int]] = []
     prev_thumb: np.ndarray | None = None
     n = 0
@@ -186,6 +206,7 @@ def extract_video(video_path: Path, keyframes_dir: Path, map_dir: Path,
         for row in rows:
             w.writerow([row[0], f"{row[1]:.2f}", row[2], row[3]])
     os.replace(tmp_csv, map_path)
+    sentinel.unlink(missing_ok=True)
     log.info("%s: wrote %d keyframes + map CSV", vid, n)
     return n
 
@@ -199,8 +220,14 @@ def extract_missing(settings: Settings) -> int:
         log.info("No raw videos folder (%s) — nothing to extract", video_root)
         return 0
     count = 0
-    for vp in sorted(video_root.glob("*.mp4")):
-        vid = vp.stem
+    # The organiser Videos zips wrap mp4s in a `video/` (singular) dir — accept
+    # both the flat layout and an unflattened unzip; flat wins on collision.
+    by_stem: dict[str, Path] = {}
+    if (video_root / "video").is_dir():
+        by_stem.update({vp.stem: vp for vp in (video_root / "video").glob("*.mp4")})
+    by_stem.update({vp.stem: vp for vp in video_root.glob("*.mp4")})
+    for vid in sorted(by_stem):
+        vp = by_stem[vid]
         try:
             # extract_video itself decides whether existing output is complete
             # (jpg count must reconcile with the map CSV) — a bare folder check

@@ -29,12 +29,19 @@ def test_kis_segment_scoring():
     assert abs(score_kis_submission(rows, gt) - 0.8) < 1e-9
 
 
-def test_trake_all_events_must_hit():
+def test_trake_partial_credit_matches_official_formula():
     gt_segments = [(10, 20), (30, 40)]
     ok_row = ("K01_V001", [15, 35])
-    bad_row = ("K01_V001", [15, 99])
+    half_row = ("K01_V001", [15, 99])     # 1/2 events hit → row R-Score 0.5
+    wrong_vid = ("K02_V001", [15, 35])    # wrong video → 0 regardless of frames
     assert score_trake_submission([ok_row], "K01_V001", gt_segments) == 1.0
-    assert score_trake_submission([bad_row], "K01_V001", gt_segments) == 0.0
+    assert abs(score_trake_submission([half_row], "K01_V001", gt_segments) - 0.5) < 1e-9
+    assert score_trake_submission([wrong_vid], "K01_V001", gt_segments) == 0.0
+    # Missing frames count as misses (denominator stays the GT event count).
+    assert abs(score_trake_submission([("K01_V001", [15])], "K01_V001", gt_segments) - 0.5) < 1e-9
+    # Ranked list: half-credit at rank 1, full hit at rank 2 →
+    # R@1=0.5, R@5..100=1.0 → final (0.5+4)/5 = 0.9.
+    assert abs(score_trake_submission([half_row, ok_row], "K01_V001", gt_segments) - 0.9) < 1e-9
 
 
 def test_retrieval_metrics_perfect_alignment():

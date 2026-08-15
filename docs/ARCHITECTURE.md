@@ -49,7 +49,7 @@ auxindex ─────── ocr (EasyOCR) · asr (PhoWhisper) · captioner (V
 ```
 
 Quy ước chung: import nặng (torch/transformers/faiss) luôn **lazy** bên trong
-constructor/hàm — mọi module import sạch trên máy không GPU; suite **466 test CPU**
+constructor/hàm — mọi module import sạch trên máy không GPU; suite **483 test CPU**
 chạy không cần model/mạng/data thật.
 
 ## 2. Bất biến trung tâm: `global_id == dòng manifest == dòng FAISS`
@@ -158,8 +158,8 @@ videos ─► scripts/01_extract_keyframes.py     # K-batch không có keyframes
  │          TransNetV2 → PySceneDetect → cửa sổ 2s; 3 kf/shot tại extraction.shot_positions
  │          (mặc định [0.15,0.5,0.85]); dedup MAD; GHI LUÔN map-keyframes/{vid}.csv đúng
  │
- ├─► scripts/05_rebuild_map_keyframes.py      # ⚠ BẢO HIỂM: các bản data drop hiện có
- │          keyframes BTC nhưng KHÔNG có map-keyframes csv — không có nó thì không
+ ├─► scripts/05_rebuild_map_keyframes.py      # BẢO HIỂM batch sau (Batch 1 2026 ĐÃ
+ │          kèm đủ 873/873 map csv — DATASET_INGESTION §1b); thiếu map là không
  │          nộp nổi frame_idx. dhash mọi keyframe → dhash video theo stride 5 →
  │          monotone DP align → refine ±stride. XẤP XỈ — ưu tiên bản BTC khi phát hành.
  │

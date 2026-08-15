@@ -126,8 +126,11 @@ def asr_all_videos(settings: Settings, catalog: KeyframeCatalog,
 
 
 def _find_video_file(video_root: Path, video_id: str) -> Path | None:
-    for ext in (".mp4", ".mkv", ".webm", ".avi"):
-        p = video_root / f"{video_id}{ext}"
-        if p.is_file():
-            return p
+    # Accept both the flat layout and the organiser zips' `video/` wrapper dir
+    # (every 2026 Batch-1 Videos zip nests its mp4s under video/).
+    for base in (video_root, video_root / "video"):
+        for ext in (".mp4", ".mkv", ".webm", ".avi"):
+            p = base / f"{video_id}{ext}"
+            if p.is_file():
+                return p
     return None

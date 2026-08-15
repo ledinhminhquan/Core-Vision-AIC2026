@@ -72,6 +72,9 @@ where = ["src"]
 [tool.ruff]
 line-length = 110
 target-version = "py310"
+# The .ipynb are GENERATED from notebooks/_build_notebooks.py (which IS
+# linted); ruff >=0.6 lints notebooks by default and flags cell-style code.
+extend-exclude = ["*.ipynb"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

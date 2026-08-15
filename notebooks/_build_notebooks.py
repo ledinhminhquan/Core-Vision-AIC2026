@@ -499,15 +499,22 @@ if COPY_KEYFRAMES_LOCAL and (DATA_DIR / "keyframes").exists():
         # Local dir already exists: MERGE any children Drive has that local
         # lacks — a batch added mid-session (unzip cell re-run, manual upload)
         # must reach local instead of being silently skipped (review R3-C15).
+        # Same tmp+rename discipline as the first copy: an interrupted merge
+        # must not leave a partial video dir that the next run would accept
+        # and the catalog would silently index half-empty (review R4).
+        for stale in dst.glob("*.__tmp"):
+            shutil.rmtree(stale, ignore_errors=True) if stale.is_dir() else stale.unlink()
         added = 0
         for item in src.iterdir():
             target = dst / item.name
             if target.exists():
                 continue
+            tmp_target = dst / (item.name + ".__tmp")
             if item.is_dir():
-                shutil.copytree(item, target)
+                shutil.copytree(item, tmp_target)
             else:
-                shutil.copy2(item, target)
+                shutil.copy2(item, tmp_target)
+            tmp_target.rename(target)
             added += 1
         if added:
             print(f"merged {added} new item(s) from Drive into local {sub}/")
@@ -878,17 +885,25 @@ train_dir = settings.paths.art("train_data")
 public_dir = settings.paths.art("train_data", "public")
 _pub = sorted(public_dir.glob("*.parquet")) if public_dir.is_dir() else []
 meta_p, emb_p = train_dir / "meta.parquet", train_dir / "embeds.npy"
-# stale when a public parquet (cell 7) is newer than the merged train_data
-_stale = (meta_p.exists() and _pub
-          and max(p.stat().st_mtime for p in _pub) > meta_p.stat().st_mtime)
+# stale when a public parquet (cell 7) OR a corpus caption (nb01 — grows when
+# a new data batch lands) is newer than the merged train_data
+cap_dir = settings.paths.art("captions")
+_caps = sorted(cap_dir.glob("*.json")) if cap_dir.is_dir() else []
+_stale_pub = (meta_p.exists() and _pub
+              and max(p.stat().st_mtime for p in _pub) > meta_p.stat().st_mtime)
+_stale_caps = (meta_p.exists() and _caps
+               and max(p.stat().st_mtime for p in _caps) > meta_p.stat().st_mtime)
+_stale = _stale_pub or _stale_caps
 if meta_p.exists() and emb_p.exists() and not _stale:
     import pandas as pd
     meta = pd.read_parquet(meta_p)
     print(f"train_data exists: {len(meta):,} pairs "
           f"({(meta.split=='train').sum():,} train / {(meta.split=='val').sum():,} val) — skipping build")
 else:
-    if _stale:
+    if _stale_pub:
         print("public parquets newer than train_data → rebuilding to merge them")
+    if _stale_caps:
+        print("corpus captions newer than train_data (new batch?) → rebuilding to include them")
     n_train, n_val = build_training_set(settings, model_key="siglip2")
     print(f"built: {n_train:,} train / {n_val:,} val pairs")
 '''
@@ -1201,28 +1216,34 @@ p = write_kis(settings.paths.art("submissions", "demo-kis.csv"),
               [(r.video_id, r.frame_idx) for r in results])
 print(p, "\n" + p.read_text(encoding="utf-8")[:300])
 
+nb03_files = [p]   # ONLY the CSVs this notebook run writes get packaged (cell 9)
 if seqs:
     p2 = write_trake(settings.paths.art("submissions", "demo-trake.csv"),
                      [(c.video_id, c.frame_idxs) for c in seqs])
+    nb03_files.append(p2)
     print(p2, "\n" + p2.read_text(encoding="utf-8")[:300])
 '''
 
 NB3_PACKAGE = r'''
 # ── 9 · Validate + package (Codabench) ──
 # The organiser contract is re-checked on the finished CSVs (a wrong row
-# silently costs a submission slot); errors BLOCK the zip.
+# silently costs a submission slot); errors BLOCK the zip. Validate and zip
+# ONLY the CSVs cell 8 just wrote (nb03_files) — artifacts/submissions is
+# shared with the UI's real exports, and stale/demo files must never mix
+# into a contest zip (packager docstring contract).
 import json
-from cvp.submission.packager import has_errors, package_codabench, validate_submission_dir
+from cvp.submission.packager import has_errors, package_codabench, validate_file
 
 sub_dir = settings.paths.art("submissions")
-issues = validate_submission_dir(sub_dir, strict=True)
+issues = [i for f in nb03_files for i in validate_file(f, strict=True)]
 for i in issues:
     print(" ", i)
 if has_errors(issues):
     print("❌ Còn lỗi chặn — sửa CSV rồi chạy lại ô này (zip KHÔNG được tạo).")
 else:
     zip_path = settings.paths.art("submissions", "codabench.zip")
-    package_codabench(sub_dir, zip_path, package_name=settings.submission.package_name)
+    package_codabench(sub_dir, zip_path, package_name=settings.submission.package_name,
+                      files=nb03_files)
     manifest = json.loads((zip_path.parent / "MANIFEST.json").read_text(encoding="utf-8"))
     print(f"\n📦 {zip_path.name}  sha256={manifest['zip_sha256'][:12]}…")
     for f in manifest["files"]:

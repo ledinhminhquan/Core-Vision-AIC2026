@@ -271,7 +271,9 @@ def _entry_events(gt: Mapping[str, Any]) -> list[tuple[int, int] | None]:
     Unparseable moments stay in the list as None so the denominator is always
     the number of GT moments (they can only ever be misses).
     """
-    raw = gt.get("events") or gt.get("moments")
+    # "segments" is the spelling scripts/21_tune_weights.py documents as an
+    # accepted alias — the two scorers must agree on the GT dialect.
+    raw = gt.get("events") or gt.get("moments") or gt.get("segments")
     if raw is None and gt.get("centers") is not None and gt.get("epsilon") is not None:
         try:
             eps = int(gt["epsilon"])
@@ -407,6 +409,13 @@ def load_ground_truth(path: str | Path) -> dict[str, dict[str, Any]]:
             raise ValueError(
                 f"GT entry {stem!r} has no usable frame window — need 'range', 'ranges', "
                 "'frame_start'/'frame_end' or 'center'/'epsilon' (or AVS 'targets')"
+            )
+        if _task_for(str(stem), canonical) == TASK_TRAKE and not _entry_events(canonical):
+            # Without this a TRAKE entry under an unknown key would load fine
+            # and score EVERY submission 0.0 — malformed GT must be loud.
+            raise ValueError(
+                f"GT entry {stem!r} is TRAKE but has no usable events — need 'events', "
+                "'moments', 'segments' or 'centers'+'epsilon'"
             )
         out[str(stem)] = canonical
     return out
@@ -781,7 +790,14 @@ def score_submission_csv(csv_path: str | Path, gt_entry: Mapping[str, Any]) -> d
             stripping/case-folding and the usual aliases) or when a QA entry
             lacks a non-empty answer — both would otherwise mis-score silently.
     """
-    qs = score_csv(csv_path, gt_entry.get("task", TASK_KIS), dict(gt_entry))
+    # Task-less entries are inferred from the CSV stem (module docstring),
+    # exactly like score_run — defaulting to KIS here scored wrong-answer QA
+    # rows as hits and every TRAKE entry as 0. An EXPLICIT but unrecognisable
+    # task still fails loud inside score_csv.
+    raw_task = gt_entry.get("task")
+    if raw_task is None or not str(raw_task).strip():
+        raw_task = normalize_task(infer_task(Path(csv_path).name)) or TASK_KIS
+    qs = score_csv(csv_path, raw_task, dict(gt_entry))
     return {
         "final": qs.final,
         "r_at_k": {str(k): v for k, v in qs.r_at.items()},
@@ -816,9 +832,9 @@ def score_submission_dir(
     if isinstance(gt, Mapping):
         gt_map = gt
     else:
-        from cvp.utils.io import read_json
-
-        gt_map = read_json(gt)
+        # Same loud canonicalization as score_run — a raw read here used to
+        # skip the no-usable-window/no-events validation entirely.
+        gt_map = load_ground_truth(Path(gt))
     csv_paths = sorted(submissions_dir.glob("*.csv"))
     if not csv_paths and gt_map:
         log.warning("No *.csv in %s but GT has %d entries.", submissions_dir, len(gt_map))
@@ -830,7 +846,7 @@ def score_submission_dir(
         if not isinstance(entry, Mapping):
             per_query[stem] = {"status": "unscored", "reason": "no ground-truth entry"}
             continue
-        task = normalize_task(entry.get("task", TASK_KIS))
+        task = _task_for(stem, entry)
         if task is None:
             per_query[stem] = {"status": "unscored",
                                "reason": f"unknown task {entry.get('task')!r}"}

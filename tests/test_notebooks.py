@@ -176,7 +176,8 @@ NB_MARKERS = {
     ),
     NB3: (
         "package_codabench",            # validate + package cell
-        "validate_submission_dir",
+        "files=nb03_files",             # ONLY this run's CSVs — the submissions
+        "validate_file",                # dir is shared with real UI exports (R4)
         "score_run",                    # official GT scoring cell
         "RUN_AUTO_AGENT",               # automatic-track dry-run toggle
         "run_auto",

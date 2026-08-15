@@ -33,7 +33,8 @@ class ImageQuery(BaseModel):
 
 
 class TrakeQuery(BaseModel):
-    events: list[str] = Field(..., description="Ordered event descriptions E1..Ek")
+    events: list[str] = Field(..., min_length=1,
+                              description="Ordered event descriptions E1..Ek")
     max_results: int = 100
 
 

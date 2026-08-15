@@ -123,23 +123,20 @@ python scripts/40_eval_official.py --submission-dir artifacts/submissions --gt q
 
 Nhớ thể lệ sơ tuyển 2026: tối đa **5 lượt nộp/ngày, 20 lượt tổng** — chấm offline trước khi nộp!
 
-## 5c. THIẾU map-keyframes? (tình trạng hiện tại của bộ data đã tải)
+## 5c. map-keyframes: ✅ Batch 1 (15/08/2026) ĐÃ PHÁT ĐỦ 873/873 csv
 
-Gói dữ liệu AIC25 đang có trên Drive của bạn **KHÔNG kèm map-keyframes zip** —
-mà `frame_idx` để nộp bài lấy từ đúng các CSV đó. Hai lối thoát, theo thứ tự ưu tiên:
+`map-keyframes-aic25-b1.zip` nằm trong 32 zip Batch 1 chính thức (kiểm kê:
+`DATASET_INGESTION.md` §1b) — ném vào `data/` như mọi gói khác là xong;
+`frame_idx` nộp bài lấy từ đúng các CSV này.
 
-1. **Chờ/tìm gói map-keyframes chính thức của BTC** (chính xác tuyệt đối) — khi có,
-   ném zip vào `data/` như mọi gói khác rồi chạy lại `scripts/30_ingest.py`.
-2. **Tự tái dựng từ video gốc** (xấp xỉ, đủ tốt khi đáp án là ĐOẠN frame):
+**Chỉ khi một batch TƯƠNG LAI thiếu csv** (gói chỉ-có-video): tái dựng XẤP XỈ
+từ video gốc rồi thay bằng bản chính thức ngay khi BTC phát:
 
 ```bash
 # cần videos/*.mp4 của các video tương ứng (Videos_L*.zip đã có trên Drive)
 python scripts/05_rebuild_map_keyframes.py            # resumable, bỏ qua csv đã có
 # dhash từng keyframe ↔ quét video strided ↔ khớp DP đơn điệu ↔ tinh chỉnh ±stride
 ```
-
-⚠️ Kết quả tái dựng là XẤP XỈ — khi BTC phát bản chính thức, xoá các csv tự dựng và
-thay bằng bản BTC rồi `scripts/30_ingest.py` lại.
 
 **Objects chậm trên Drive?** Gộp 178k JSON thành MỘT parquet (ObjectBooster tự ưu tiên):
 
