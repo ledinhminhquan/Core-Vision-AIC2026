@@ -27,8 +27,9 @@ tách theo ranh giới câu cho QA không marker); lệnh cài TransNetV2 local 
    gộp ~178k JSON per-keyframe thành MỘT file zstd; `ObjectBooster` tự ưu tiên khi có
    (IO trên Drive nhanh hơn hàng trăm lần).
 3. **Tái dựng map-keyframes** (`scripts/05_rebuild_map_keyframes.py` + `data/keyframe_align.py`)
-   — dhash + DP đơn điệu + tinh chỉnh cửa sổ. **BẢO HIỂM SỐNG CÒN:** bộ data đang tải
-   về KHÔNG có map-keyframes; thiếu nó là không nộp được `frame_idx` thật.
+   — dhash + DP đơn điệu + tinh chỉnh cửa sổ. **Cập nhật 15/08/2026: Batch 1 sơ tuyển
+   CÓ ĐỦ 873/873 map-keyframes csv (đã xác minh, DATASET_INGESTION §1b)** — script này
+   giờ là BẢO HIỂM cho batch sau/gói chỉ-có-video; thiếu map là không nộp được `frame_idx` thật.
 4. **HTTP service** (`cvp serve`, `service/app.py`): /health · /search/{text,image,qa,trake,avs}
    · /nearest · /keyframe — bộ mặt máy-gọi-máy cho **thể thức tự động 2026**; test bằng
    stub engine thuần CPU. + CLI `cvp` (serve/search/eval/version).

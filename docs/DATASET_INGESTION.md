@@ -2,8 +2,8 @@
 
 > Dữ liệu AIC **lớn và về theo từng đợt** (batch/zip tải dần). Đây là quy trình DUY NHẤT
 > cần theo mỗi lần thêm dữ liệu — mọi bước đều idempotent + resumable, chạy lại không hỏng gì.
-> BTC 2026 phát hành dataset + đề + baseline + metrics **chậm nhất 25/07/2026** — checklist
-> ngày đó ở §7. Định dạng chi tiết từng file: [DATA_FORMAT.md](DATA_FORMAT.md).
+> **Batch 1 vòng sơ tuyển 2026 ĐÃ PHÁT (08/2026)** — kiểm kê xác minh ở §1b; BTC xác nhận
+> sẽ phát thêm **batch 2** sau. Định dạng chi tiết từng file: [DATA_FORMAT.md](DATA_FORMAT.md).
 > Tổ chức Drive/Colab: [DRIVE_SETUP.md](DRIVE_SETUP.md).
 
 ## TL;DR — 3 lệnh sau mỗi đợt data
@@ -29,7 +29,7 @@ AIC2025/                                       (dataset gốc BTC)
 │   ├── clip-features-32-aic25-b1.zip               features CLIP ViT-B/32 (L-batch)
 │   ├── media-info-aic25-b1.zip                     metadata YouTube       (L-batch)
 │   ├── objects-aic25-b1.zip                        detections Open Images (L-batch)
-│   ├── map-keyframes-aic25-b1.zip                  cầu nối frame_idx — NẾU CÓ (§4!)
+│   ├── map-keyframes-aic25-b1.zip                  cầu nối frame_idx — ✅ CÓ trong batch 1 2026 (§1b)
 │   └── Videos_L21_a.zip … Videos_L30_a.zip         video gốc              (L-batch)
 ├── video_batch_2/
 │   └── Videos_K01.zip … Videos_K20.zip             CHỈ video gốc          (K-batch)
@@ -45,6 +45,27 @@ AIC2025/                                       (dataset gốc BTC)
 
 > BTC có thể phát bổ sung keyframes/features cho K-batch (dạng `*-aic25-b2`) —
 > khi đó giải nén như L-batch và ingest với `--no-extract`.
+
+## 1b. ✅ Batch 1 sơ tuyển 2026 — KIỂM KÊ ĐÃ XÁC MINH (soi từng zip, 15/08/2026)
+
+BTC phát **32 zip, 106.7 GiB** (mirror `https://aic-data.ledo.io.vn/<tên-file>.zip`,
+danh sách chính thức trong Google Sheet của BTC). PDF BTC xác nhận nguyên văn: *"Đây
+cũng là dữ liệu batch 1 của AIC 2025"* — tức đúng layout L-batch ở §1, **VÀ CÓ
+map-keyframes** (lỗ hổng §4 KHÔNG xảy ra với batch này):
+
+| Gói | Nội dung đã xác minh |
+|---|---|
+| `Keyframes_L21..L30` (+`L26_a..e`) | 177.321 jpg, `keyframes/{vid}/{nnn}.jpg` 3 chữ số, 1-based, liên tục, khớp `n` |
+| `Videos_L21_a..L30_a` (+`L26_a..e`) | 873 mp4, wrapper `video/` |
+| `map-keyframes-aic25-b1` | **873 csv ĐỦ**, đúng 4 cột `n,pts_time,fps,frame_idx`, frame_idx tăng nghiêm ngặt |
+| `clip-features-32-aic25-b1` | 873 npy `{vid}.npy`, shape (số keyframe, 512), float16, đã L2-normalize |
+| `objects-aic25-b1` | 177.321 json `objects/{vid}/{nnn}.json`, keys `detection_*` (giá trị dạng CHUỖI — parser đã float-hóa) |
+| `media-info-aic25-b1` | 873 json YouTube (`title/description/keywords/…`) |
+
+Phủ chéo **873/873 video trùng khớp cả 6 thành phần** (L21–L30; L24 bắt đầu từ
+V002 — không phải lỗi); mẫu ngẫu nhiên 12 video: số keyframe = số dòng map csv =
+số hàng npy. Tên zip route đúng 32/32 qua `guess_dest` của notebook 01 — **ném
+nguyên zip vào `MyDrive/AIC2025/data/` là đủ**. KHÔNG có K-batch trong batch 1.
 > **2026 lưu ý:** chủ đề năm nay có thể thêm video sousveillance/egocentric, tổng
 > có thể 1000+ giờ (FAQ) — đường tự-cắt-keyframes kiểu K-batch chính là bảo hiểm
 > cho mọi gói "chỉ có video"; artifact lạ (metadata lifelog…) thì coi như kênh
@@ -152,10 +173,11 @@ Smoke test sau ingest: `cvp search "người đàn ông áo trắng" --k 5`
 
 ## 4. LỖ HỔNG map-keyframes + tái tạo bằng `scripts/05_rebuild_map_keyframes.py`
 
-**Thực tế đã kiểm chứng (07/2026): các bản download hiện có KHÔNG kèm bất kỳ
-map-keyframes csv nào** — trong khi `frame_idx` nộp bài lấy từ chính file đó
-(nộp sai frame_idx = 0 điểm). Thiếu map, catalog vẫn build nhưng `has_map=False`
-và `frame_idx` chỉ là ước lượng `n-1` @25fps — **không dùng để nộp được**.
+**Cập nhật 15/08/2026: Batch 1 chính thức CÓ ĐỦ 873/873 map-keyframes csv (§1b)
+— mục này KHÔNG cần cho batch 1.** Giữ lại làm BẢO HIỂM cho batch sau / gói
+"chỉ có video": `frame_idx` nộp bài lấy từ chính file map (nộp sai frame_idx =
+0 điểm). Thiếu map, catalog vẫn build nhưng `has_map=False` và `frame_idx` chỉ
+là ước lượng `n-1` @25fps — **không dùng để nộp được**.
 
 Tái tạo xấp xỉ từ video gốc (cần cả `keyframes/{vid}/` LẪN `videos/{vid}.mp4`):
 

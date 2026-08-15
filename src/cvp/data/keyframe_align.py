@@ -1,8 +1,9 @@
 """Visual keyframe↔video alignment: the map-keyframes reconstruction core.
 
 WHY THIS EXISTS: submissions must carry the ORIGINAL-video ``frame_idx``, and
-the bridge is ``map-keyframes/{vid}.csv`` — but the user's AIC data drops (and
-possibly early 2026 batches) ship organiser keyframes WITHOUT the map csvs.
+the bridge is ``map-keyframes/{vid}.csv``. The 2026 prelim Batch 1 DOES ship
+the official map csvs (verified 2026-08-15, 873/873 — always prefer those),
+but future batches or video-only drops may not.
 ``scripts/05_rebuild_map_keyframes.py`` reconstructs them by perceptual-hash
 matching; every pure-logic piece lives here so it is importable and testable
 without video IO (script module names start with a digit and cannot be
