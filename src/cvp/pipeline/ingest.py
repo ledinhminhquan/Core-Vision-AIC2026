@@ -122,6 +122,14 @@ def doctor(settings: Settings) -> dict:
             "index_stale": store.is_stale(catalog) if store.index_path.exists() else None,
             "index_count": store.count(),
         }
+    try:
+        from cvp.index.text_store import TextIndexStore
+
+        report["text_index_fresh"] = TextIndexStore.signature_matches(
+            settings.paths.artifacts_root, catalog.signature()
+        )
+    except Exception:  # noqa: BLE001 — health report must never crash on a probe
+        report["text_index_fresh"] = False
     no_map = counts.index.difference(df[df["has_map"]]["video_id"].unique()).tolist()
     if no_map:
         report["videos_without_map"] = no_map[:20]

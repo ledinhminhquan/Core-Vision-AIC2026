@@ -44,10 +44,10 @@ class MediaInfoStore:
         parts = [str(info.get("title", "")), str(info.get("description", ""))]
         kw = info.get("keywords") or []
         if isinstance(kw, str):
-            # The organiser's real media-info stores keywords as a STRING that
-            # merely looks like a Python list ("['a', 'b']") — verified on the
-            # 2026 Batch-1 drop. Parse it; a bare comma-separated string is
-            # accepted too so future format drifts still index something.
+            # Defensive fallback for format drift: 2026 Batch-1 media-info
+            # stores keywords as a real JSON list (verified across all 873
+            # files), but a stringified list ("['a', 'b']") or a bare
+            # comma-separated string from a future drop must still index.
             try:
                 parsed = ast.literal_eval(kw)
             except (ValueError, SyntaxError):

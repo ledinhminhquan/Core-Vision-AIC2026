@@ -161,6 +161,17 @@ class SearchEngine:
         member_maps: list[dict[int, float]] = []
         weights: list[float] = []
         for (model, store), w in zip(self.members, self.member_weights):
+            if (not model.multilingual and not processed.has_english()
+                    and len(self.members) > 1):
+                # No translation available (Gemini + Google Translate both
+                # down): an English-only tower would rank near-randomly on raw
+                # Vietnamese and fuse that noise at full weight. Degrade to the
+                # multilingual lanes — same policy as a runtime lane failure.
+                log.warning(
+                    "Lane %r is English-only but the query has no English "
+                    "variant — SKIPPING this lane (translation unavailable)",
+                    getattr(model, "key", "?"))
+                continue
             try:
                 texts = processed.texts_for_search(model.multilingual)
                 vecs = model.encode_text(texts)
@@ -508,6 +519,11 @@ class SearchEngine:
         member_maps: list[dict[int, float]] = []
         map_weights: list[float] = []
         for (model, store), weight in zip(self.members, self.member_weights):
+            if (not model.multilingual and not processed.has_english()
+                    and len(self.members) > 1):
+                log.warning("Feedback: skipping English-only lane %r — query has "
+                            "no English variant", getattr(model, "key", "?"))
+                continue
             try:
                 texts = processed.texts_for_search(model.multilingual)
                 qvec = model.encode_text(texts[:1])[0]
@@ -552,12 +568,27 @@ class SearchEngine:
                 for p in processed
             ]
 
+        def _lane_usable(model) -> bool:
+            # An English-only tower fed raw Vietnamese for ANY event would fold
+            # near-random similarities into that event's ensemble row — skip
+            # the lane unless every event has an English variant. The primary
+            # (multilingual by default) is exempt: some ranking beats none.
+            return model.multilingual or all(p.has_english() for p in processed)
+
         event_vecs = self.primary_model.encode_text(_texts_for(self.primary_model))
+        if not _lane_usable(self.primary_model):
+            log.warning("TRAKE: primary lane %r is English-only but some events have "
+                        "no English variant — rankings may be degraded",
+                        getattr(self.primary_model, "key", "?"))
         ensemble_kwargs: dict = {}
         if self.settings.temporal.use_ensemble and len(self.members) > 1:
             event_vecs_by_member: dict[str, np.ndarray] = {}
             stores_by_member: dict[str, IndexStore] = {}
             for name, (model, store) in zip(self.member_names, self.members):
+                if model is not self.primary_model and not _lane_usable(model):
+                    log.warning("TRAKE ensemble: member %s skipped — English-only "
+                                "lane with no English variant for some events", name)
+                    continue
                 try:
                     event_vecs_by_member[name] = (
                         event_vecs if model is self.primary_model

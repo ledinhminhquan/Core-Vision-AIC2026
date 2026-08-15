@@ -83,8 +83,10 @@ def test_extract_video_refuses_to_delete_unmarked_keyframes(tmp_path):
     for i in (1, 2, 3):
         (vdir / f"{i:03d}.jpg").write_bytes(b"organiser-jpg")
     # No map csv, no sentinel: these are organiser files → refuse, keep them.
+    # Returns 0 (round-5): nothing extracted, no usable map — callers must not
+    # count a refusal as fresh work.
     n = extract_video(tmp_path / "L21_V001.mp4", kf, mp, overwrite=False)
-    assert n == 3
+    assert n == 0
     assert sorted(p.name for p in vdir.iterdir()) == ["001.jpg", "002.jpg", "003.jpg"]
     assert (vdir / "001.jpg").read_bytes() == b"organiser-jpg"
 

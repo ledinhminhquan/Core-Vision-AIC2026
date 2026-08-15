@@ -135,7 +135,10 @@ def extract_video(video_path: Path, keyframes_dir: Path, map_dir: Path,
             # Organiser keyframes with a missing/mismatched map csv (e.g. the
             # map zip not unzipped yet, or a partial unzip). Deleting them and
             # substituting approximate self-extracted frames would desync the
-            # official clip-features/objects packs — refuse instead.
+            # official clip-features/objects packs — refuse instead. Return 0:
+            # nothing was extracted and there is no usable map, so callers must
+            # not count this as fresh work (extract_missing's tally, nb01's
+            # forced catalog rebuild).
             log.error(
                 "%s: %d existing jpgs but no matching map csv and they were NOT "
                 "written by this extractor — REFUSING to replace what may be "
@@ -143,7 +146,21 @@ def extract_video(video_path: Path, keyframes_dir: Path, map_dir: Path,
                 "(or finish the partial unzip), or pass overwrite=True.",
                 vid, existing,
             )
-            return existing
+            return 0
+    if map_path.is_file() and not overwrite and not sentinel.exists():
+        # Mirror guard for the MAP side (round-5 HIGH): the organiser map csv
+        # can land BEFORE the big Keyframes zips finish uploading. With no
+        # keyframes dir the jpg guards above never fire, and self-extraction
+        # would os.replace() the official csv with approximate shot-detector
+        # rows — silently corrupting the n↔frame_idx bridge for submissions.
+        log.error(
+            "%s: an official-looking map csv already exists but the keyframes "
+            "dir is missing/empty and the csv was NOT written by this extractor "
+            "— REFUSING to overwrite it with approximate rows. Unzip the "
+            "Keyframes package first, or pass overwrite=True.",
+            vid,
+        )
+        return 0
 
     import cv2
 

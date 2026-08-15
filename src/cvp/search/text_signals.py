@@ -214,6 +214,14 @@ class TextSignals:
                 self._persisted_ok = False
             if self._persisted_ok:
                 log.info("TextSignals: persisted text_index matches catalog — candidate-restricted scoring")
+            else:
+                # Silent degradation here cost seconds/query + GBs of RAM at
+                # the 177k-frame Batch-1 shape — the operator must know.
+                log.warning(
+                    "TextSignals: persisted text_index is ABSENT or STALE for this "
+                    "catalog — falling back to slow in-memory BM25 (full-corpus "
+                    "scan per query). Rerun scripts/03_build_aux_indexes.py "
+                    "--text-index after ingest.")
         return self._persisted_ok
 
     # ── in-memory fallback construction ──────────────────────────────────

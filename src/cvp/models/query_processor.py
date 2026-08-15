@@ -62,6 +62,13 @@ class ProcessedQuery:
     expansions: list[str] = field(default_factory=list)
     provider_used: str = "none"
 
+    def has_english(self) -> bool:
+        """True when at least one English-usable variant exists (translation,
+        enhancement or expansions). An English-only tower fed only ``original``
+        Vietnamese produces near-random rankings — callers with more than one
+        lane should skip such a lane instead of fusing noise."""
+        return bool(self.enhanced or self.translation or self.expansions)
+
     def texts_for_search(self, multilingual_model: bool) -> list[str]:
         """Query variants worth encoding, deduped, original first when useful."""
         texts: list[str] = []

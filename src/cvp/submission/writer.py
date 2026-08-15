@@ -111,20 +111,26 @@ def write_qa(path: str | os.PathLike, ranked: Iterable[tuple[str, int, str]]) ->
     warning — one bad row must not abort the whole 100-row export
     mid-competition. An entirely-invalid non-empty input still raises.
     """
-    seen: set[tuple[str, int]] = set()
+    # Dedup on the FULL emitted row (video, frame, sanitized answer): under the
+    # official max-over-rows formula, the same frame with DIFFERENT candidate
+    # answers is a legitimate score-raising strategy — only true duplicates
+    # (same locus AND same answer after sanitization) may collapse.
+    seen: set[tuple[str, int, str]] = set()
     lines: list[str] = []
     skipped = 0
     for video_id, frame_idx, answer in ranked:
         try:
-            key = (_validate_video_id(video_id), _validate_frame_idx(frame_idx))
+            vid, fi = _validate_video_id(video_id), _validate_frame_idx(frame_idx)
         except ValueError as e:
             log.warning("QA row skipped: %s", e)
             skipped += 1
             continue
+        ans = sanitize_answer(answer)
+        key = (vid, fi, ans.casefold())
         if key in seen:
             continue
         seen.add(key)
-        lines.append(f"{key[0]},{key[1]},{sanitize_answer(answer)}")
+        lines.append(f"{vid},{fi},{ans}")
         if len(lines) >= MAX_SUBMISSION_ROWS:
             break
     if skipped and not lines:

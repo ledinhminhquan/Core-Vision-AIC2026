@@ -417,11 +417,47 @@ def load_ground_truth(path: str | Path) -> dict[str, dict[str, Any]]:
                 f"GT entry {stem!r} is TRAKE but has no usable events — need 'events', "
                 "'moments', 'segments' or 'centers'+'epsilon'"
             )
+        # Validate the RAW entry: canonicalization already drops unparseable
+        # windows, which is exactly the silent shrinkage this guard catches.
+        _validate_gt_windows(str(stem), entry)
         out[str(stem)] = canonical
     return out
 
 
 # ── R-Score (per-row) ────────────────────────────────────────────────────────
+
+
+def _validate_gt_windows(stem: str, canonical: Mapping[str, Any]) -> None:
+    """Loud-fail on PARTIALLY-broken GT windows (round-5, extends R3-C4).
+
+    ``_entry_targets`` already raises when any AVS target window is unparseable
+    ('a typo'd window would silently shrink the acceptance region') — the same
+    policy must cover top-level KIS/QA ``ranges`` and TRAKE events, where a
+    dropped window (or a None event) silently caps achievable scores.
+    """
+    raw_ranges = canonical.get("ranges")
+    if isinstance(raw_ranges, Sequence) and not isinstance(raw_ranges, str):
+        parsed = [_one_event(ev) for ev in raw_ranges]
+        bad = [raw_ranges[i] for i, w in enumerate(parsed) if w is None]
+        if bad:
+            raise ValueError(
+                f"GT entry {stem!r}: {len(bad)}/{len(parsed)} 'ranges' windows are "
+                f"unparseable (first: {bad[0]!r}) — fix the GT instead of silently "
+                "shrinking the acceptance region"
+            )
+        for s, e in [w for w in parsed if w is not None]:
+            if s > e:
+                raise ValueError(f"GT entry {stem!r}: inverted range [{s}, {e}]")
+    events = _entry_events(canonical)
+    if events and any(ev is None for ev in events):
+        raise ValueError(
+            f"GT entry {stem!r}: {sum(1 for ev in events if ev is None)}/{len(events)} "
+            "TRAKE event windows are unparseable — every submission would be capped "
+            "below 1.0; fix the GT"
+        )
+    for ev in events:
+        if ev is not None and ev[0] > ev[1]:
+            raise ValueError(f"GT entry {stem!r}: inverted event window [{ev[0]}, {ev[1]}]")
 
 
 def normalize_answer(answer: Any) -> str:
@@ -851,7 +887,9 @@ def score_submission_dir(
             per_query[stem] = {"status": "unscored",
                                "reason": f"unknown task {entry.get('task')!r}"}
             continue
-        if task == TASK_QA and not _entry_answers(entry):
+        if task == TASK_QA and not entry.get("targets") and not _entry_answers(entry):
+            # Coverage (targets) entries never need answers — same exemption as
+            # score_run/score_rows (review R3-C2; round-5 sync).
             per_query[stem] = {"status": "unscored", "reason": "gt missing answer"}
             continue
         try:

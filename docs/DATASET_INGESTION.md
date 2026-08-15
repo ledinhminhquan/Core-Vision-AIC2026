@@ -57,7 +57,7 @@ map-keyframes** (lỗ hổng §4 KHÔNG xảy ra với batch này):
 |---|---|
 | `Keyframes_L21..L30` (+`L26_a..e`) | 177.321 jpg, `keyframes/{vid}/{nnn}.jpg` 3 chữ số, 1-based, liên tục, khớp `n` |
 | `Videos_L21_a..L30_a` (+`L26_a..e`) | 873 mp4, wrapper `video/` |
-| `map-keyframes-aic25-b1` | **873 csv ĐỦ**, đúng 4 cột `n,pts_time,fps,frame_idx`, frame_idx tăng nghiêm ngặt |
+| `map-keyframes-aic25-b1` | **873 csv ĐỦ**, đúng 4 cột `n,pts_time,fps,frame_idx`; frame_idx KHÔNG GIẢM — có **614 cặp kề BẰNG NHAU trên 192/873 video** (tie thật; TRAKE tự monotonize +1, xem `temporal.py`) |
 | `clip-features-32-aic25-b1` | 873 npy `{vid}.npy`, shape (số keyframe, 512), float16, đã L2-normalize |
 | `objects-aic25-b1` | 177.321 json `objects/{vid}/{nnn}.json`, keys `detection_*` (giá trị dạng CHUỖI — parser đã float-hóa) |
 | `media-info-aic25-b1` | 873 json YouTube (`title/description/keywords/…`) |
