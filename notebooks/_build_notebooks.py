@@ -170,30 +170,46 @@ from pathlib import Path
 
 REPO_DIR = Path("/content/Core-Vision_Perfect_V1")
 
-def _run(cmd, **kw):
-    print("$", " ".join(map(str, cmd)))
+def _run(cmd, show=None, **kw):
+    # `show` masks credentials in the echoed command — a PAT-carrying clone
+    # URL must NEVER be printed into the saved notebook output.
+    print("$", " ".join(map(str, show or cmd)))
     return subprocess.run([str(c) for c in cmd], check=False, **kw).returncode
 
 def _pip(args):
     return _run([sys.executable, "-m", "pip", *args])
 
-# Private repo? Add a fine-grained PAT as Colab secret "GITHUB_TOKEN".
-clone_url = REPO_URL
+# Private repo? Add a fine-grained PAT as Colab secret "GITHUB_TOKEN"
+# (Contents: Read-only on this repo) and ENABLE its notebook-access toggle.
+clone_url, _tok = REPO_URL, None
 try:
     from google.colab import userdata
     _tok = userdata.get("GITHUB_TOKEN")
-    if _tok and clone_url.startswith("https://github.com/"):
-        clone_url = clone_url.replace("https://", f"https://{_tok}@")
-except Exception:
-    pass
+except Exception as _e:
+    print(f"⚠ KHÔNG đọc được secret GITHUB_TOKEN ({type(_e).__name__}) — repo "
+          "private sẽ KHÔNG clone được. Kiểm tra: 🔑 panel có secret tên đúng "
+          "y hệt GITHUB_TOKEN và công tắc 'Notebook access' đã BẬT chưa?")
+if _tok and clone_url.startswith("https://github.com/"):
+    clone_url = clone_url.replace("https://", f"https://{_tok}@")
+    print(f"GITHUB_TOKEN: loaded ({len(_tok)} chars, {_tok[:11]}…)")
+elif not _tok:
+    print("⚠ GITHUB_TOKEN trống/vắng mặt — thử clone KHÔNG xác thực "
+          "(chắc chắn fail nếu repo private).")
 
 if REPO_DIR.exists():
     _run(["git", "-C", REPO_DIR, "fetch", "--all", "-q"])
     _run(["git", "-C", REPO_DIR, "checkout", REPO_REF, "-q"])
     _run(["git", "-C", REPO_DIR, "pull", "-q"])
 else:
-    rc = _run(["git", "clone", "--branch", REPO_REF, clone_url, REPO_DIR])
+    rc = _run(["git", "clone", "--branch", REPO_REF, clone_url, REPO_DIR],
+              show=["git", "clone", "--branch", REPO_REF, REPO_URL, REPO_DIR])
     if rc != 0:  # private repo / no network → fall back to a Drive copy
+        print("⚠ Clone THẤT BẠI. Nguyên nhân thường gặp, theo thứ tự:\n"
+              "  1) Secret GITHUB_TOKEN sai tên / chưa bật Notebook access "
+              "(xem cảnh báo phía trên);\n"
+              "  2) PAT sai/hết hạn/thiếu quyền — cần fine-grained PAT với "
+              "Contents: Read-only cấp cho ĐÚNG repo này;\n"
+              "  3) Mạng Colab trục trặc tạm thời — chạy lại cell.")
         drive_copy = Path("/content/drive/MyDrive") / DRIVE_PROJECT_DIR / "Core-Vision_Perfect_V1"
         assert drive_copy.exists(), (
             "Clone failed and no Drive copy found. Either make the GitHub repo "
