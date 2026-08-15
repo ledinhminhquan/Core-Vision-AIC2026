@@ -265,6 +265,19 @@ def _current_results_for(task: str) -> list:
     return []
 
 
+def _grid_results_for(tab: str):
+    """Results to RENDER in one tab — only the tab that produced them.
+
+    st.tabs renders every tab's body on every rerun; painting the shared grid
+    (120–300 image tiles + per-tile buttons) four times made each basket click
+    rebuild thousands of widgets (round-6). Export already has its own
+    provenance guard (_current_results_for) — this is the display twin.
+    """
+    if st.session_state.get("results_task") == tab:
+        return st.session_state.results
+    return []
+
+
 def _export(task: str, engine) -> None:
     from cvp.submission.writer import write_kis, write_qa, write_trake
 
@@ -283,6 +296,13 @@ def _export(task: str, engine) -> None:
             answer = st.session_state.get("qa_answer_input", "")
             ranked = [(v, f, a or answer) for v, f, a, _ in st.session_state.basket_qa]
             ranked += [(r.video_id, r.frame_idx, answer) for r in results]
+            if not any((a or "").strip() for _, _, a in ranked):
+                # Every QA row without an answer scores 0 — an all-blank export
+                # silently burns one of the 5 daily submission slots (round-6).
+                st.error("Chưa có ĐÁP ÁN nào: nhập ô 'Đáp án sẽ ghi vào CSV' "
+                         "(hoặc đáp án riêng khi thêm basket) rồi export lại — "
+                         "dòng QA thiếu answer chấm 0 điểm.")
+                return
             path = write_qa(_export_path(out_dir, "qa"), ranked)
     elif task == "trake":
         if st.session_state.basket_trake or st.session_state.trake_results:
@@ -355,19 +375,28 @@ def main() -> None:
                 from PIL import Image as _Img
 
                 t0 = time.time()
-                img = _Img.open(up).convert("RGB")
-                _set_results(engine.search_image(img, display_k=display_k), "kis")
-                # Image ranking replaced the text ranking — old feedback marks
-                # and last_query must expire (invariant L-R3-2; review C2:
-                # Refine on stale marks would silently restore the OLD query).
-                st.session_state.last_query = ""
-                st.session_state.marks_pos, st.session_state.marks_neg = set(), set()
-                st.caption(f"{len(st.session_state.results)} results in "
-                           f"{time.time() - t0:.2f}s (image query, ensemble-fused)")
+                # file_uploader filters by EXTENSION only — a corrupt/renamed
+                # file must show an error, not kill the whole app run (round-6).
+                try:
+                    img = _Img.open(up).convert("RGB")
+                except Exception as e:  # noqa: BLE001
+                    st.error(f"Ảnh không đọc được ({e}) — thử file khác.")
+                    img = None
+                if img is not None:
+                    _set_results(engine.search_image(img, display_k=display_k), "kis")
+                    # Image ranking replaced the text ranking — old feedback marks
+                    # and last_query must expire (invariant L-R3-2; review C2:
+                    # Refine on stale marks would silently restore the OLD query).
+                    st.session_state.last_query = ""
+                    st.session_state.marks_pos, st.session_state.marks_neg = set(), set()
+                    st.caption(f"{len(st.session_state.results)} results in "
+                               f"{time.time() - t0:.2f}s (image query, ensemble-fused)")
         if st.button("📤 Export KIS CSV"):
             _export("kis", engine)
-        render_result_grid(st.session_state.results, cols, "kis", engine)
-        render_concept_chips(st.session_state.results, engine)
+        _kis_grid = (st.session_state.results
+                     if st.session_state.get("results_task") in ("kis", "kisc") else [])
+        render_result_grid(_kis_grid, cols, "kis", engine)
+        render_concept_chips(_kis_grid, engine)
 
     # ── QA ───────────────────────────────────────────────────────────────
     with tab_qa:
@@ -393,7 +422,7 @@ def main() -> None:
                 st.warning(f"VQA unavailable: {e}")
         if st.button("📤 Export QA CSV"):
             _export("qa", engine)
-        render_result_grid(st.session_state.results, cols, "qa", engine, qa_answer=answer)
+        render_result_grid(_grid_results_for("qa"), cols, "qa", engine, qa_answer=answer)
 
     # ── TRAKE ────────────────────────────────────────────────────────────
     with tab_trake:
@@ -452,7 +481,7 @@ def main() -> None:
             )
         if st.button("📤 Export AVS CSV"):
             _export("avs", engine)
-        render_result_grid(st.session_state.results, cols, "avs", engine)
+        render_result_grid(_grid_results_for("avs"), cols, "avs", engine)
 
     # ── KIS-C (conversational) ───────────────────────────────────────────
     with tab_chat:
@@ -515,7 +544,7 @@ def main() -> None:
             st.info("❓ Câu hỏi làm rõ nên đặt: " + " · ".join(st.session_state.kisc_questions))
         if st.button("📤 Export KIS CSV", key="kisc_export"):
             _export("kis", engine)
-        render_result_grid(st.session_state.results, cols, "kisc", engine)
+        render_result_grid(_grid_results_for("kisc"), cols, "kisc", engine)
 
     # Basket counters render AFTER the tab handlers ran, so they show the
     # post-click state in the same rerun (round-3 fix C-R3-2). Streamlit lets

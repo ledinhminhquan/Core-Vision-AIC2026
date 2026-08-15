@@ -30,8 +30,17 @@ def main() -> None:
 
     settings = init(args.settings)
     out_dir = Path(args.out_dir) if args.out_dir else settings.paths.art("submissions")
+    query_files = sorted(Path(args.query_dir).glob("*.txt"))
     written = run_query_folder(settings, Path(args.query_dir), out_dir, with_vqa=not args.no_vqa)
     print(f"Wrote {len(written)} submission CSVs → {out_dir}")
+    # A query that produced no CSV scores 0 and would slip into the zip
+    # unnoticed — surface every dropped stem, mirroring run_auto's report.
+    dropped = sorted({q.stem for q in query_files} - {p.stem for p in written})
+    if dropped:
+        print(f"⚠ {len(dropped)}/{len(query_files)} query file(s) produced NO CSV "
+              "(engine error / zero candidates / unparseable) — these score 0:")
+        for stem in dropped:
+            print(f"   DROPPED: {stem}")
 
     if args.zip:
         from cvp.submission.packager import has_errors, package_codabench

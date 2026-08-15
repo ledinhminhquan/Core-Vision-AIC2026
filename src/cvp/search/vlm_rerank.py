@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from typing import TYPE_CHECKING
 
@@ -55,22 +54,24 @@ def _parse_scores(text: str, n: int) -> list[float] | None:
 
 
 def _gemini_scores(query: str, paths: list[str], settings: Settings) -> list[float] | None:
-    from google import genai
     from PIL import Image
 
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not set")
-    client = genai.Client(api_key=api_key)
+    from cvp.search.vqa import (
+        gemini_model_chain,
+        gemini_wall_timeout,
+        generate_with_fallback,
+        make_gemini_client,
+    )
+
+    client = make_gemini_client(settings)
     parts: list = [_GEMINI_PROMPT.format(query=query, n=len(paths))]
     for p in paths:
         img = Image.open(p).convert("RGB")
         img.thumbnail((448, 448))
         parts.append(img)
-    from cvp.search.vqa import gemini_model_chain, generate_with_fallback
-
     text = generate_with_fallback(
-        client, gemini_model_chain(settings, settings.vqa.gemini_model), parts)
+        client, gemini_model_chain(settings, settings.vqa.gemini_model), parts,
+        timeout_s=gemini_wall_timeout(settings))
     return _parse_scores(text, len(paths))
 
 

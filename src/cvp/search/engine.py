@@ -563,8 +563,13 @@ class SearchEngine:
         processed = [self.query_processor.process(q) for q in event_queries]
 
         def _texts_for(model) -> list[str]:
+            # English fallback order mirrors has_english(): expansions ARE an
+            # English variant (round-6 — _lane_usable counted them, so the
+            # text picker must consume them too, never raw Vietnamese).
             return [
-                p.original if model.multilingual else (p.enhanced or p.translation or p.original)
+                p.original if model.multilingual
+                else (p.enhanced or p.translation
+                      or (p.expansions[0] if p.expansions else p.original))
                 for p in processed
             ]
 

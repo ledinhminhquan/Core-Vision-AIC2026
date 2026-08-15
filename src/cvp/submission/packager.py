@@ -22,8 +22,11 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import json
+import logging
 import os
 import re
+import shutil
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -31,6 +34,8 @@ from pathlib import Path
 
 from cvp.constants import MAX_QA_ANSWER_CHARS, MAX_SUBMISSION_ROWS, VIDEO_ID_RE
 from cvp.utils.io import atomic_write_json
+
+log = logging.getLogger(__name__)
 
 SEVERITY_ERROR = "error"
 SEVERITY_WARNING = "warning"
@@ -287,4 +292,30 @@ def package_codabench(
         ],
     }
     atomic_write_json(out_zip.parent / "MANIFEST.json", manifest)
+
+    # Audit trail (round-6): each repackage OVERWRITES submission.zip +
+    # MANIFEST.json in place, and nothing tracked the 5/day-20-total ration.
+    # Keep an append-only ledger + a timestamped zip copy so every package
+    # ever built stays diffable (scripts/41) and countable.
+    try:
+        history = out_zip.parent / "history"
+        history.mkdir(exist_ok=True)
+        stamp = manifest["created_utc"].replace(":", "").replace("-", "")
+        archived = history / f"{stamp}-{manifest['zip_sha256'][:8]}.zip"
+        if not archived.exists():
+            shutil.copy2(out_zip, archived)
+        ledger = out_zip.parent / "submissions_log.jsonl"
+        with open(ledger, "a", encoding="utf-8") as lf:
+            lf.write(json.dumps({
+                "created_utc": manifest["created_utc"],
+                "zip_sha256": manifest["zip_sha256"],
+                "archived": archived.name,
+                "files": [f["name"] for f in manifest["files"]],
+            }, ensure_ascii=False) + "\n")
+        n_packages = sum(1 for _ in open(ledger, encoding="utf-8"))
+        log.info("Package archived → %s (ledger now lists %d builds; the prelim "
+                 "ration is 20 UPLOADS total / ≤5 per day — track uploads, not builds)",
+                 archived.name, n_packages)
+    except OSError as e:
+        log.warning("Could not archive the package for the audit trail: %s", e)
     return issues

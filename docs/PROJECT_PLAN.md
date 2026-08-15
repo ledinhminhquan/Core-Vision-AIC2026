@@ -95,7 +95,7 @@ Dựng `report/` (LaTeX kit theo template AIO): khung sẵn phần kiến trúc 
 cáo giải pháp** (FAQ), không để dồn sang tuần nộp bài.
 
 **Nghiệm thu WS-1 (chốt 25/07):**
-- [ ] `pytest` **496 tests** xanh trên máy dev (CI cài torch-cpu để đủ bộ).
+- [ ] `pytest` **514 tests** xanh trên máy dev (CI cài torch-cpu để đủ bộ).
 - [ ] L28: `scripts/05` tái tạo map csv cho **100% video** có keyframes + video gốc; `frame_idx` tăng nghiêm ngặt; đối chiếu K08 (map tự cắt exact) sai lệch ≤ stride (5 frame).
 - [ ] `scripts/20 --zip` tạo zip Codabench hợp lệ (folder trong zip tên `submission`, MANIFEST sha256) — 0 lỗi validate.
 - [ ] Đo và GHI **B0** = MEAN FINAL trên dev-89 với config mặc định (đây là baseline mọi WS sau so vào).
@@ -230,7 +230,7 @@ xanh vào 11/09; checklist PLAYBOOK §0 tick đủ trên cả 2 máy.
 
 | Chỉ tiêu | Đích | Lệnh đo |
 |---|---|---|
-| Test suite | 496 pass (CI, torch-cpu) | `pytest` |
+| Test suite | 514 pass (CI, torch-cpu) | `pytest` |
 | Dev-89 MEAN FINAL | ghi **B0** ở WS-1 → WS-2 ≥ B0+10% tương đối → trước freeze ≥ B0+20% (hiệu chỉnh sau khi có B0) | `scripts/20 --gt` / `scripts/26` |
 | Latency search_text | p50 ≤ 200 ms, p95 ≤ 500 ms (laptop thi) | `scripts/50_bench_latency.py` |
 | Artifacts từ drop mới | dùng được ≤48h, đủ aux ≤72h | notebook 01 + bảng WS-2 |

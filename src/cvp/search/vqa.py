@@ -54,12 +54,53 @@ def gemini_model_chain(settings: Settings, primary: str) -> list[str]:
     return [primary] + [m for m in fallbacks if m != primary]
 
 
-def generate_with_fallback(client, models: list[str], contents) -> str:
-    """One generate_content call, trying each model id until one answers."""
+def make_gemini_client(settings: Settings):
+    """genai.Client with the same HTTP timeout discipline as QueryProcessor.
+
+    A hung request on a flaky venue network must never freeze the caller — in
+    the Streamlit UI that thread IS the session, and the only operator escape
+    (browser refresh) wipes every basket/hint/timer (round-6 HIGH).
+    """
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY not set")
+    from google import genai
+
+    timeout_s = float(getattr(settings.query, "timeout_s", 8.0))
+    try:
+        # google-genai HttpOptions.timeout is in MILLISECONDS.
+        return genai.Client(api_key=api_key,
+                            http_options={"timeout": int(timeout_s * 1000 * 3)})
+    except TypeError:  # older google-genai without http_options
+        return genai.Client(api_key=api_key)
+
+
+def gemini_wall_timeout(settings: Settings) -> float:
+    """Per-attempt hard wall-clock cap for image-carrying Gemini calls.
+
+    3× the text-query timeout, floored at 30 s: image payloads are legitimately
+    slower than text, but an unbounded hang is never acceptable.
+    """
+    return max(30.0, float(getattr(settings.query, "timeout_s", 8.0)) * 3)
+
+
+def generate_with_fallback(client, models: list[str], contents,
+                           timeout_s: float | None = None) -> str:
+    """One generate_content call, trying each model id until one answers.
+
+    ``timeout_s`` adds a hard per-attempt wall-clock cap (on expiry the model
+    id is treated as failed and the next fallback is tried) — the HTTP-level
+    timeout alone cannot stop a stalled read on every transport.
+    """
+    from cvp.models.query_processor import _call_with_timeout
+
     last: Exception | None = None
     for model_id in models:
         try:
-            resp = client.models.generate_content(model=model_id, contents=contents)
+            def _do(mid=model_id):
+                return client.models.generate_content(model=mid, contents=contents)
+
+            resp = _call_with_timeout(_do, timeout_s) if timeout_s else _do()
             return (resp.text or "").strip()
         except Exception as e:  # noqa: BLE001 — try the next model id
             last = e
@@ -77,13 +118,8 @@ class VqaAssistant:
     # ── providers ────────────────────────────────────────────────────────
 
     def _ask_gemini(self, image_path: str, question: str) -> str:
-        from google import genai
-
         if self._gemini_client is None:
-            api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-            if not api_key:
-                raise RuntimeError("GEMINI_API_KEY not set")
-            self._gemini_client = genai.Client(api_key=api_key)
+            self._gemini_client = make_gemini_client(self.settings)
         img = load_rgb(image_path)
         if img is None:
             raise RuntimeError(f"Unreadable image: {image_path}")
@@ -91,6 +127,7 @@ class VqaAssistant:
             self._gemini_client,
             gemini_model_chain(self.settings, self.cfg.gemini_model),
             [_VQA_PROMPT.format(question=question), img],
+            timeout_s=gemini_wall_timeout(self.settings),
         )
 
     def _ask_local(self, image_path: str, question: str) -> str:
@@ -120,13 +157,8 @@ class VqaAssistant:
         return str(answer).strip()
 
     def _ask_gemini_strip(self, image_paths: list[str], question: str) -> str:
-        from google import genai
-
         if self._gemini_client is None:
-            api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-            if not api_key:
-                raise RuntimeError("GEMINI_API_KEY not set")
-            self._gemini_client = genai.Client(api_key=api_key)
+            self._gemini_client = make_gemini_client(self.settings)
         imgs = []
         for p in image_paths:
             img = load_rgb(p)
@@ -139,6 +171,7 @@ class VqaAssistant:
             self._gemini_client,
             gemini_model_chain(self.settings, self.cfg.gemini_model),
             [_VQA_STRIP_PROMPT.format(n=len(imgs), question=question), *imgs],
+            timeout_s=gemini_wall_timeout(self.settings),
         )
 
     # ── public ───────────────────────────────────────────────────────────

@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import time
 import uuid
@@ -117,12 +116,9 @@ class ConversationalAssistant:
 
     def _gemini(self):
         if self._client is None:
-            from google import genai
+            from cvp.search.vqa import make_gemini_client
 
-            api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-            if not api_key:
-                raise RuntimeError("GEMINI_API_KEY not set")
-            self._client = genai.Client(api_key=api_key)
+            self._client = make_gemini_client(self.settings)
         return self._client
 
     def step(self, state: DialogueState, results_summary: str | None = None,
@@ -150,12 +146,17 @@ class ConversationalAssistant:
                     if episodic_summary else ""
                 ),
             )
-            from cvp.search.vqa import gemini_model_chain, generate_with_fallback
+            from cvp.search.vqa import (
+                gemini_model_chain,
+                gemini_wall_timeout,
+                generate_with_fallback,
+            )
 
             raw = generate_with_fallback(
                 self._gemini(),
                 gemini_model_chain(self.settings, self.settings.query.gemini_model),
                 prompt,
+                timeout_s=gemini_wall_timeout(self.settings),
             )
             text = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
             data = json.loads(text)

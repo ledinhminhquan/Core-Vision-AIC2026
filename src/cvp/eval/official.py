@@ -448,6 +448,12 @@ def _validate_gt_windows(stem: str, canonical: Mapping[str, Any]) -> None:
         for s, e in [w for w in parsed if w is not None]:
             if s > e:
                 raise ValueError(f"GT entry {stem!r}: inverted range [{s}, {e}]")
+    single = _entry_range(canonical)
+    if single is not None and single[0] > single[1]:
+        # Covers the docstring's PRIMARY spelling ('range', frame_start/end,
+        # center+negative-epsilon) — round-6: the plural-only check let an
+        # inverted single window zero-score a query silently.
+        raise ValueError(f"GT entry {stem!r}: inverted range [{single[0]}, {single[1]}]")
     events = _entry_events(canonical)
     if events and any(ev is None for ev in events):
         raise ValueError(

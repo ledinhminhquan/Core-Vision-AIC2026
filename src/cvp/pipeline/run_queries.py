@@ -449,6 +449,14 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
 
 def run_query_folder(settings: Settings, query_dir: Path, out_dir: Path,
                      with_vqa: bool = True) -> list[Path]:
+    # A typo'd path exiting 0 with "Wrote 0 CSVs" misdirects the operator
+    # toward CSV problems mid-round (round-6) — fail loud instead.
+    if not query_dir.is_dir():
+        raise FileNotFoundError(f"query dir not found: {query_dir}")
+    qfiles = sorted(query_dir.glob("*.txt"))
+    if not qfiles:
+        log.error("No *.txt query files directly in %s — wrong folder, or did the "
+                  "pack unzip into a SUBFOLDER?", query_dir)
     engine = SearchEngine(settings)
     vqa = None
     if with_vqa:
@@ -458,7 +466,7 @@ def run_query_folder(settings: Settings, query_dir: Path, out_dir: Path,
             log.warning("VQA assistant unavailable: %s", e)
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
-    for qf in sorted(query_dir.glob("*.txt")):
+    for qf in qfiles:
         try:
             p = run_query_file(engine, qf, out_dir, vqa)
         except Exception as e:  # noqa: BLE001 — one bad query must not stop the pack

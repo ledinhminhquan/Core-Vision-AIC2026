@@ -147,7 +147,13 @@ def extract_video(video_path: Path, keyframes_dir: Path, map_dir: Path,
                 vid, existing,
             )
             return 0
-    if map_path.is_file() and not overwrite and not sentinel.exists():
+    # Written next to every csv THIS extractor produces — unlike the in-dir
+    # sentinel it SURVIVES deleting the keyframes dir, so our own csvs stay
+    # re-extractable (K-batch dense re-extraction, round-6) while organiser
+    # csvs stay protected.
+    selfmade = map_dir / f"{vid}.csv.selfmade"
+    if (map_path.is_file() and not overwrite and not sentinel.exists()
+            and not selfmade.exists()):
         # Mirror guard for the MAP side (round-5 HIGH): the organiser map csv
         # can land BEFORE the big Keyframes zips finish uploading. With no
         # keyframes dir the jpg guards above never fire, and self-extraction
@@ -156,8 +162,9 @@ def extract_video(video_path: Path, keyframes_dir: Path, map_dir: Path,
         log.error(
             "%s: an official-looking map csv already exists but the keyframes "
             "dir is missing/empty and the csv was NOT written by this extractor "
-            "— REFUSING to overwrite it with approximate rows. Unzip the "
-            "Keyframes package first, or pass overwrite=True.",
+            "— REFUSING to overwrite it with approximate rows. Organiser packs: "
+            "unzip the Keyframes package first. Self-extracted video: delete "
+            "the map csv too, or rerun with overwrite (scripts/01 --overwrite).",
             vid,
         )
         return 0
@@ -223,13 +230,18 @@ def extract_video(video_path: Path, keyframes_dir: Path, map_dir: Path,
         for row in rows:
             w.writerow([row[0], f"{row[1]:.2f}", row[2], row[3]])
     os.replace(tmp_csv, map_path)
+    selfmade.touch()
     sentinel.unlink(missing_ok=True)
     log.info("%s: wrote %d keyframes + map CSV", vid, n)
     return n
 
 
-def extract_missing(settings: Settings) -> int:
-    """Extract every video under data/videos that has no keyframes yet."""
+def extract_missing(settings: Settings, overwrite: bool = False) -> int:
+    """Extract every video under data/videos that has no keyframes yet.
+
+    ``overwrite=True`` (scripts/01 --overwrite) force-re-extracts everything —
+    the documented path for re-running with denser ``shot_positions``.
+    """
     video_root = settings.paths.data(settings.paths.videos_dir)
     keyframes_dir = settings.paths.data(settings.paths.keyframes_dir)
     map_dir = settings.paths.data(settings.paths.map_keyframes_dir)
@@ -252,7 +264,7 @@ def extract_missing(settings: Settings) -> int:
             before = (keyframes_dir / vid).is_dir() and (map_dir / f"{vid}.csv").is_file()
             ex_cfg = getattr(settings, "extraction", None)
             n = extract_video(
-                vp, keyframes_dir, map_dir,
+                vp, keyframes_dir, map_dir, overwrite=overwrite,
                 shot_positions=tuple(ex_cfg.shot_positions) if ex_cfg else None,
                 dedup_mad=ex_cfg.dedup_mad_threshold if ex_cfg else None,
             )
