@@ -85,6 +85,13 @@ def neighbor_boost(
             continue
         start, count = span
         for d in range(1, window + 1):
+            lo_in = start <= gid - d
+            hi_in = gid + d < start + count
+            if not lo_in and not hi_in:
+                # Both directions left the video span — no larger d can hit
+                # (round-10: an oversized neighbor_window burned
+                # candidates×window iterations for nothing).
+                break
             for other in (gid - d, gid + d):
                 if start <= other < start + count and other in scores:
                     contribution = boost * s / d

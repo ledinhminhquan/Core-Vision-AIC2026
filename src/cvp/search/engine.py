@@ -130,16 +130,21 @@ class SearchEngine:
         (sorted by n) — ordinal gaps are legal, so the row is
         ``global_id - video_start``, never ``n - 1``.
         """
-        refs = self.catalog.refs(gids)
+        # Column gather + span dict — building full KeyframeRefs here cost
+        # tens of ms per query at Batch-1 scale (round-10): only the video id
+        # is needed to locate each row.
+        vids = self.catalog.video_ids(gids)
         by_video: dict[str, list[tuple[int, int]]] = {}
-        for pos, ref in enumerate(refs):
-            start, _count = self.catalog.video_span(ref.video_id)
-            by_video.setdefault(ref.video_id, []).append((pos, ref.global_id - start))
+        for pos, (gid, vid) in enumerate(zip(gids, vids)):
+            start, _count = self.catalog.video_span(vid)
+            by_video.setdefault(vid, []).append((pos, int(gid) - start))
         dim = store.dim() or self.primary_model.dim
         out = np.zeros((len(gids), dim), dtype=np.float32)
         for vid, items in by_video.items():
             try:
-                vecs = np.load(store.embedding_path(vid), mmap_mode="r")
+                # Cached mmap handle (round-10): np.load per video per query
+                # was the single largest cost of the whole search path.
+                vecs = store.vectors_mmap(vid)
             except (OSError, ValueError) as e:
                 log.warning("Missing embeddings for %s: %s", vid, e)
                 continue
@@ -234,11 +239,10 @@ class SearchEngine:
         return dense
 
     def _spans_for(self, gids: list[int]) -> dict[int, tuple[int, int]]:
-        out: dict[int, tuple[int, int]] = {}
-        for gid in gids:
-            ref = self.catalog.ref(gid)
-            out[gid] = self.catalog.video_span(ref.video_id)
-        return out
+        # Batched column gather (round-10): per-gid catalog.ref() built a full
+        # KeyframeRef just to read .video_id — ~45ms/500 ids at Batch-1 scale.
+        vids = self.catalog.video_ids(gids)
+        return {gid: self.catalog.video_span(vid) for gid, vid in zip(gids, vids)}
 
     def _finalize(
         self,
@@ -246,6 +250,7 @@ class SearchEngine:
         query_text_for_bm25: str,
         display_k: int,
         signal_dump: dict[str, dict[int, float]] | None = None,
+        skip_rerank: bool = False,
     ) -> list[SearchResult]:
         """Fuse dense + text + object signals over the candidate pool.
 
@@ -301,8 +306,9 @@ class SearchEngine:
         fused = self._maybe_temporal_boost(query_text_for_bm25, fused)
 
         ranked = sorted(fused.items(), key=lambda kv: -kv[1])[:display_k]
+        ranked_refs = self.catalog.refs([gid for gid, _ in ranked])  # one gather (round-10)
         results = []
-        for gid, score in ranked:
+        for (gid, score), ref in zip(ranked, ranked_refs):
             signals = {"visual": dense.get(gid, 0.0)}
             for name in ("ocr", "asr", "caption", "metadata"):
                 v = (text_scores.get(name) or {}).get(gid)
@@ -310,8 +316,13 @@ class SearchEngine:
                     signals[name] = v
             if gid in object_scores:
                 signals["object"] = object_scores[gid]
-            results.append(SearchResult(ref=self.catalog.ref(gid), score=float(score), signals=signals))
+            results.append(SearchResult(ref=ref, score=float(score), signals=signals))
 
+        if skip_rerank:
+            # Low-confidence retry alts feed an RRF rank-merge — running the
+            # full cross/VLM stack per alt quadrupled reranker latency and
+            # Gemini quota for zero head-order benefit (round-10).
+            return results
         if self.settings.search.reranker != "none" and results:
             results = cross_rerank(results, query_text_for_bm25, self.settings)
         if self.settings.search.vlm_rerank and results:
@@ -348,17 +359,28 @@ class SearchEngine:
             ctx_vec = model.encode_text(texts)[0]
             head = sorted(fused.items(), key=lambda kv: -kv[1])[: cfg.temporal_boost_topk]
             spans = self._spans_for([gid for gid, _ in head])
-            ctx_scores: dict[int, float] = {}
+            # ONE batched vector fetch for every candidate's neighbours
+            # (round-10): a _vectors_for call per head candidate cost +1.0s
+            # per boosted query at the 177k-row Batch-1 scale.
+            rows_by_gid: dict[int, list[int]] = {}
             for gid, _score in head:
                 # _spans_for returns catalog.video_span = (first_row, COUNT).
                 rows = neighbor_rows_from_video_span(gid, spans[gid], parts.direction,
                                                      cfg.temporal_boost_window)
-                if not rows:
-                    continue
-                vecs = self._vectors_for(store, rows)
-                if vecs.size == 0:
-                    continue
-                ctx_scores[gid] = float((vecs @ ctx_vec).max())
+                if rows:
+                    rows_by_gid[gid] = rows
+            if not rows_by_gid:
+                return fused
+            uniq_rows = sorted({r for rows in rows_by_gid.values() for r in rows})
+            vecs = self._vectors_for(store, uniq_rows)
+            if vecs.size == 0:
+                return fused
+            sims = vecs @ ctx_vec
+            pos = {r: i for i, r in enumerate(uniq_rows)}
+            ctx_scores = {
+                gid: float(max(sims[pos[r]] for r in rows))
+                for gid, rows in rows_by_gid.items()
+            }
             return apply_context_boost(fused, ctx_scores, cfg.temporal_boost_weight)
         except Exception as e:  # noqa: BLE001 — an optional boost must never sink a query
             log.warning("Temporal-context boost failed (%s) — keeping plain ranking", e)
@@ -378,14 +400,18 @@ class SearchEngine:
         return self._finalize(dense, query_vi, display_k)
 
     def search_prepared(self, text: str, topk: int | None = None,
-                        display_k: int | None = None) -> list[SearchResult]:
+                        display_k: int | None = None,
+                        skip_rerank: bool = False) -> list[SearchResult]:
         """Search an ALREADY-prepared text VERBATIM — the query processor is
         bypassed entirely (no Gemini call, no enhancement-of-enhancement).
 
         Used by the low-confidence retry: its inputs are the processor's own
         cached enhanced/expansion strings, so re-processing them would both
         cost fresh API round-trips and search a re-description of a
-        re-description (review finding C2).
+        re-description (review finding C2). The retry passes
+        ``skip_rerank=True`` — its alts feed an RRF rank-merge, and running
+        the cross/VLM stack once per alt multiplied reranker latency and
+        Gemini quota 4× (round-10).
         """
         if not text or not text.strip():
             return []
@@ -394,7 +420,7 @@ class SearchEngine:
         processed = ProcessedQuery(original=text, translation=text,
                                    provider_used="prepared")
         dense = self._dense_scores(processed, topk)
-        return self._finalize(dense, text, display_k)
+        return self._finalize(dense, text, display_k, skip_rerank=skip_rerank)
 
     def search_text_debug(
         self, query_vi: str, topk: int | None = None, display_k: int | None = None

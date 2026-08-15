@@ -43,6 +43,20 @@ def strip_invisible(text: str) -> str:
     (``\\s`` does not match Cf). Round-9 chaos-lens fix."""
     return "".join(c for c in text if unicodedata.category(c) != "Cf")
 
+
+def load_query_lines(path: Path) -> list[str]:
+    """THE round-time query-file loader — the single source used by
+    run_query_file, scripts/51 (warm-cache) and scripts/23 (signal dumps).
+
+    Gemini cache keys and tuning signals must be BYTE-IDENTICAL to what the
+    engine sees at round time (round-2 C1); round-10 found the two scripts had
+    drifted from the round-9 strip_invisible fix — sharing one loader makes
+    divergence impossible.
+    """
+    lines = [strip_invisible(ln).strip()
+             for ln in Path(path).read_text(encoding="utf-8-sig").splitlines()]
+    return [ln for ln in lines if ln]
+
 # Placeholder for QA rows when no VQA answer is available: scores 0 exactly
 # like an empty string, but can never block packaging or trip format checks.
 QA_FALLBACK_ANSWER = "không rõ"
@@ -271,10 +285,13 @@ def maybe_retry_low_confidence(engine: SearchEngine, retrieval_text: str,
     Off by default (``search.low_confidence_retry``). When the confidence of
     the initial ranking is below the threshold, re-search the processor's
     cached enhanced/expansion texts VERBATIM via ``engine.search_prepared``
-    (no extra API calls: reading the cache is free and the alts skip the
-    query processor entirely) and RRF-merge the rankings, primary first.
-    Cost when triggered: up to 3 extra dense searches. Every failure path
-    returns the original ranking.
+    (no extra Gemini QUERY calls: reading the cache is free and the alts skip
+    the query processor entirely) and RRF-merge the rankings, primary first.
+    Cost when triggered: up to 3 extra dense searches — the alts also SKIP the
+    optional cross/VLM rerank stack (round-10: running it per alt multiplied
+    reranker latency and Gemini quota 4×; the RRF rank-merge gains nothing
+    from per-alt head reordering). Every failure path returns the original
+    ranking.
     """
     settings = getattr(engine, "settings", None)
     cfg = getattr(settings, "search", None)
@@ -294,9 +311,12 @@ def maybe_retry_low_confidence(engine: SearchEngine, retrieval_text: str,
         # cached outputs — re-processing would fire fresh Gemini calls and
         # search an enhancement-of-an-enhancement). Stub engines without the
         # method fall back to plain search_text.
-        search = getattr(engine, "search_prepared", None) or engine.search_text
+        search = getattr(engine, "search_prepared", None)
         for alt in alt_texts[:3]:
-            alt_results = search(alt)
+            if search is not None:
+                alt_results = search(alt, skip_rerank=True)
+            else:  # stub engines without the method fall back to plain search
+                alt_results = engine.search_text(alt)
             if alt_results:
                 rankings.append(alt_results)
         if len(rankings) == 1:
@@ -385,9 +405,7 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
     KIS/QA/AVS) — the DRES client submits millisecond timestamps, not frames.
     """
     task = infer_task(path.name)
-    lines = [strip_invisible(ln).strip()
-             for ln in path.read_text(encoding="utf-8-sig").splitlines()]
-    lines = [ln for ln in lines if ln]
+    lines = load_query_lines(path)
     if not lines:
         log.warning("Empty query file: %s", path.name)
         return None

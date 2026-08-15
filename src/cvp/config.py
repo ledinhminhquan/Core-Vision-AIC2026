@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 ENV_PREFIX = "CVP_"
 
@@ -113,6 +113,18 @@ class FusionWeights(BaseModel):
     metadata: float = 0.15
     object: float = 0.25
 
+    @model_validator(mode="after")
+    def _sane_weights(self) -> "FusionWeights":
+        # All-zero weights silently zeroed EVERY ranking (round-10 config
+        # matrix): weighted_sum skips zero-weight maps, so nothing survived
+        # and no CSV was written — a config typo must fail loud instead.
+        vals = [self.visual, self.ocr, self.asr, self.caption, self.metadata, self.object]
+        if any(v < 0 for v in vals):
+            raise ValueError(f"fusion weights must be >= 0, got {vals}")
+        if all(v <= 0 for v in vals):
+            raise ValueError("ALL fusion weights are 0 — every query would return nothing")
+        return self
+
 
 class SearchCfg(BaseModel):
     topk: int = 500          # dense candidates fetched before fusion
@@ -135,7 +147,8 @@ class SearchCfg(BaseModel):
     # Batch/auto-track: when the ranking looks flat (low confidence), re-search
     # the cached enhanced/expansion texts VERBATIM (engine.search_prepared —
     # bypasses the query processor, so no extra API calls) and RRF-merge.
-    # Cost when triggered: up to 3 extra dense searches on flagged queries.
+    # Cost when triggered: up to 3 extra dense searches on flagged queries
+    # (the alts skip the optional cross/VLM rerank stack — round-10).
     low_confidence_retry: bool = False
     low_confidence_threshold: float = 0.25
     # Optional PAIRWISE cross-encoder rerank of the fused head (Unified-IMMR
@@ -143,7 +156,7 @@ class SearchCfg(BaseModel):
     # off by default (latency). qwen_reranker = Qwen3-VL-Reranker (Jan 2026).
     reranker: Literal["none", "blip2_itm", "qwen_reranker"] = "none"
     rerank_topk: int = 100
-    rerank_weight: float = 0.5           # blend: (1-w)·fused + w·cross (both min-max)
+    rerank_weight: float = Field(0.5, ge=0.0, le=1.0)  # blend: (1-w)·fused + w·cross
     rerank_batch_size: int = 8
     blip2_itm_id: str = "Salesforce/blip2-itm-vit-g"
     qwen_reranker_id: str = "Qwen/Qwen3-VL-Reranker-2B"
@@ -170,7 +183,7 @@ class QueryCfg(BaseModel):
     enhance: bool = True              # rewrite as concrete visual description
     enhance_english: bool = True      # also enhance pure-English queries
     expansions: int = 2              # extra paraphrase queries for multi-query fusion
-    multi_query_agg: str = "max"     # max | mean over expanded queries
+    multi_query_agg: Literal["max", "mean"] = "max"  # over expanded queries (typo = loud)
     cache: bool = True
     timeout_s: float = 8.0
 
@@ -183,6 +196,19 @@ class TemporalCfg(BaseModel):
     per_event_topk: int = 100
     max_gap_s: float = 150.0     # max seconds between consecutive events
     min_gap_s: float = 0.0
+
+    @model_validator(mode="after")
+    def _sane_gaps(self) -> "TemporalCfg":
+        # min > max makes the DP window empty → EVERY TRAKE query returns 0
+        # candidates with an error that reads like a data problem (round-10).
+        if self.min_gap_s < 0:
+            raise ValueError(f"temporal.min_gap_s must be >= 0, got {self.min_gap_s}")
+        if self.min_gap_s > self.max_gap_s:
+            raise ValueError(
+                f"temporal.min_gap_s ({self.min_gap_s}) > max_gap_s ({self.max_gap_s}) "
+                "— the DP gap window would be empty and every TRAKE query would die"
+            )
+        return self
     sim_floor: float = 0.10
     beam_size: int = 8
     max_videos: int = 30         # videos considered (pooled from per-event hits)

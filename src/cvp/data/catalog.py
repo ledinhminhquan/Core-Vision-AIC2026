@@ -183,7 +183,28 @@ class KeyframeCatalog:
         )
 
     def refs(self, global_ids: list[int]) -> list[KeyframeRef]:
-        return [self.ref(g) for g in global_ids]
+        # One positional gather + itertuples: this runs with up to topk ids on
+        # EVERY query, and per-id ``.iloc`` singles measured ~50ms/500 ids at
+        # the 177k-row Batch-1 shape (round-10 scale rehearsal).
+        if not global_ids:
+            return []
+        rows = self.load().iloc[[int(g) for g in global_ids]]
+        return [
+            KeyframeRef(
+                global_id=int(r.global_id), video_id=str(r.video_id), n=int(r.n),
+                frame_idx=int(r.frame_idx), pts_time=float(r.pts_time), fps=float(r.fps),
+                path=self.resolve_path(str(r.path)), has_map=bool(r.has_map),
+            )
+            for r in rows.itertuples(index=False)
+        ]
+
+    def video_ids(self, global_ids: list[int]) -> list[str]:
+        """Just the video id per global id — a single column gather, for hot
+        paths that need row→video routing without full KeyframeRefs."""
+        if not global_ids:
+            return []
+        col = self.load()["video_id"]
+        return [str(v) for v in col.iloc[[int(g) for g in global_ids]]]
 
     def video_span(self, video_id: str) -> tuple[int, int]:
         """(first_global_id, count) for a video — contiguous by construction."""

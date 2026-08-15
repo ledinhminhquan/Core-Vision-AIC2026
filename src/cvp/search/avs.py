@@ -64,10 +64,13 @@ def avs_diversify(
                 return picked
     else:
         V = np.asarray(cand_vecs, dtype=np.float32)
-        # Normalize relevance to [0,1] so mmr_lambda means the same across queries.
-        scores = np.array([r.score for r in results], dtype=np.float64)
-        lo, hi = scores.min(), scores.max()
-        rel = (scores - lo) / (hi - lo) if hi - lo > 1e-9 else np.ones_like(scores)
+        # Relevance = list RANK, not .score (round-10): the cross/VLM rerank
+        # stages reorder the list while deliberately leaving .score at the
+        # pre-rerank fused value (C20 contract — "order is truth"). Score-based
+        # MMR silently discarded every rerank promotion; rank-based relevance
+        # is already normalized to [0,1] so mmr_lambda keeps its meaning.
+        n_res = len(results)
+        rel = 1.0 - np.arange(n_res, dtype=np.float64) / max(n_res, 1)
         valid = np.linalg.norm(V, axis=1) > 1e-6
         remaining = list(range(len(results)))
         max_sim = np.zeros(len(results), dtype=np.float64)  # cos to closest pick

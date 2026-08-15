@@ -242,6 +242,18 @@ def extract_video(video_path: Path, keyframes_dir: Path, map_dir: Path,
         rows.append((n, fid / fps, fps, fid))
     cap.release()
 
+    if not rows:
+        # Every cap.read() failed after the container opened (bit-rotted mp4).
+        # NEVER land a header-only csv over a previous good one — the jpgs are
+        # already gone (logged), but the old map must survive so the corruption
+        # is recoverable and visible (round-10 split finding).
+        log.error(
+            "%s: video opened but produced 0 frames — keeping the previous map "
+            "csv untouched; existing jpgs were cleared. Fix/redownload the "
+            "video and re-run.", vid,
+        )
+        return 0
+
     map_dir.mkdir(parents=True, exist_ok=True)
     tmp_csv = map_path.with_suffix(".csv.tmp")
     with open(tmp_csv, "w", encoding="utf-8", newline="") as f:

@@ -40,11 +40,28 @@ class IndexStore:
         self.meta_path = self.dir / "meta.json"
         self.embed_dir = settings.paths.art("embeddings", model_key)
         self._index = None
+        # Open mmap handles per video, reused across queries: np.load() per
+        # candidate video per query cost ~300ms at the 177k-row Batch-1 shape
+        # (round-10 scale rehearsal). Cleared whenever the corpus changes.
+        self._mmap_cache: dict[str, np.ndarray] = {}
 
     # ── build ────────────────────────────────────────────────────────────
 
     def embedding_path(self, video_id: str) -> Path:
         return self.embed_dir / f"{video_id}.npy"
+
+    def vectors_mmap(self, video_id: str) -> np.ndarray:
+        """Cached read-only mmap of one video's embedding rows.
+
+        Raises OSError/ValueError like ``np.load`` when the file is missing —
+        callers keep their existing per-video degradation. Invalidated by
+        :meth:`build` (and by constructing a fresh store after ingest).
+        """
+        vecs = self._mmap_cache.get(video_id)
+        if vecs is None:
+            vecs = np.load(self.embedding_path(video_id), mmap_mode="r")
+            self._mmap_cache[video_id] = vecs
+        return vecs
 
     def missing_videos(self, catalog: KeyframeCatalog, expected_dim: int | None = None) -> list[str]:
         """Videos with no (or wrong-shaped) embedding file.
@@ -81,6 +98,7 @@ class IndexStore:
     def build(self, catalog: KeyframeCatalog, force: bool = False,
               model_tag: str | None = None) -> None:
         """Stream per-video embeddings (catalog order) into a fresh FAISS index."""
+        self._mmap_cache.clear()   # embeddings may change under a rebuild
         faiss = _faiss()
         cfg_now = self.settings.index
         # Staleness includes the INDEX SHAPE, not just the corpus: changing

@@ -49,8 +49,10 @@ def main() -> None:
     if not files:
         raise SystemExit(f"No .txt query files in {query_dir}")
 
+    from cvp.pipeline.run_queries import load_query_lines
+
     for qf in files:
-        lines = [ln.strip() for ln in qf.read_text(encoding="utf-8-sig").splitlines() if ln.strip()]
+        lines = load_query_lines(qf)       # THE round-time loader — never drift
         if not lines:
             print(f"{qf.stem}: EMPTY query file — skipped")
             continue

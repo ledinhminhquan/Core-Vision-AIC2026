@@ -38,8 +38,9 @@ def round_time_texts(query_file: Path, event_context: str = "none") -> list[str]
     the FILENAME; TRAKE yields one string per event (each is processed
     separately at round time), everything else yields the retrieval text.
     """
-    lines = [ln.strip() for ln in
-             query_file.read_text(encoding="utf-8-sig").splitlines() if ln.strip()]
+    from cvp.pipeline.run_queries import load_query_lines
+
+    lines = load_query_lines(query_file)   # THE round-time loader — never drift
     if not lines:
         return []
     task = infer_task(query_file.name)
