@@ -275,6 +275,8 @@ def extract_missing(settings: Settings, overwrite: bool = False,
         log.info("No raw videos folder (%s) — nothing to extract", video_root)
         return 0
     count = 0
+    reextracted = 0
+    refused = 0
     # The organiser Videos zips wrap mp4s in a `video/` (singular) dir — accept
     # both the flat layout and an unflattened unzip; flat wins on collision.
     by_stem: dict[str, Path] = {}
@@ -295,6 +297,8 @@ def extract_missing(settings: Settings, overwrite: bool = False,
             # (jpg count must reconcile with the map CSV) — a bare folder check
             # here would accept partial extractions.
             before = (keyframes_dir / vid).is_dir() and (map_dir / f"{vid}.csv").is_file()
+            had_any = (before or (keyframes_dir / vid).is_dir()
+                       or (map_dir / f"{vid}.csv").is_file())
             ex_cfg = getattr(settings, "extraction", None)
             n = extract_video(
                 vp, keyframes_dir, map_dir, overwrite=overwrite,
@@ -302,8 +306,23 @@ def extract_missing(settings: Settings, overwrite: bool = False,
                 shot_positions=tuple(ex_cfg.shot_positions) if ex_cfg else None,
                 dedup_mad=ex_cfg.dedup_mad_threshold if ex_cfg else None,
             )
-            if not before and n > 0:
+            # Round-8: a forced re-extraction and a guard REFUSAL both used to
+            # report 0 — the summary must tell them apart, and re-extractions
+            # must count (callers force the catalog rebuild off this number).
+            if n > 0 and not before:
                 count += 1
+            elif n > 0 and overwrite:
+                count += 1
+                reextracted += 1
+            elif n == 0 and had_any:
+                refused += 1
         except Exception as e:  # noqa: BLE001 — a broken file must not stop the batch
             log.error("Extraction failed for %s: %s", vid, e)
+    if reextracted or refused:
+        log.warning(
+            "extract_missing summary: %d extracted (%d of those RE-extracted), "
+            "%d refused/unchanged by the organiser-protection guard%s",
+            count, reextracted, refused,
+            " — see the per-video REFUSING lines above" if refused else "",
+        )
     return count
