@@ -88,7 +88,16 @@ def load_signals(signals_dir: Path) -> dict[str, dict[str, dict[str, float]]]:
         raise FileNotFoundError(f"No *.json signal dumps under {signals_dir}")
     out: dict[str, dict[str, dict[str, float]]] = {}
     for f in files:
-        data = json.loads(f.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            # A bare JSONDecodeError names no file — with dozens of per-query
+            # dumps (often copied Colab→laptop, truncation happens) the
+            # operator must know WHICH one to re-copy or delete (round-9).
+            raise ValueError(
+                f"corrupt signal dump {f}: {e} — re-copy it from Colab or "
+                "delete the file and re-run scripts/23 for that pack"
+            ) from e
         for query, sig_maps in data.items():
             slot = out.setdefault(str(query), {})
             for signal, rows in (sig_maps or {}).items():

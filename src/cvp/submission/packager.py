@@ -274,12 +274,16 @@ def package_codabench(
     with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for f in csvs:
             zf.write(f, arcname=f"{package_name}/{f.name}")
-    os.replace(tmp, out_zip)
 
+    # ORDER (round-9): manifest + ledger + history are written from the tmp
+    # bytes BEFORE the zip lands at its final path. A crash mid-sequence then
+    # leaves audit records that are merely NEWER than the visible zip (healed
+    # by the next successful package) — never a fresh zip whose manifest,
+    # ledger and history all describe the PREVIOUS package.
     manifest = {
         "package_name": package_name,
         "zip": out_zip.name,
-        "zip_sha256": _sha256(out_zip),
+        "zip_sha256": _sha256(tmp),
         "created_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "files": [
             {
@@ -303,7 +307,7 @@ def package_codabench(
         stamp = manifest["created_utc"].replace(":", "").replace("-", "")
         archived = history / f"{stamp}-{manifest['zip_sha256'][:8]}.zip"
         if not archived.exists():
-            shutil.copy2(out_zip, archived)
+            shutil.copy2(tmp, archived)
         ledger = out_zip.parent / "submissions_log.jsonl"
         with open(ledger, "a", encoding="utf-8") as lf:
             lf.write(json.dumps({
@@ -318,4 +322,5 @@ def package_codabench(
                  archived.name, n_packages)
     except OSError as e:
         log.warning("Could not archive the package for the audit trail: %s", e)
+    os.replace(tmp, out_zip)
     return issues

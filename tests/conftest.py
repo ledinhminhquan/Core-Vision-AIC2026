@@ -86,6 +86,7 @@ def corpus(tmp_path: Path) -> Settings:
 @pytest.fixture()
 def corpus_with_index(corpus: Settings) -> Settings:
     """corpus + built catalog, fake embeddings and FAISS index for 'fake' model."""
+    pytest.importorskip("faiss", reason="install the [search] extra for index tests")
     from cvp.data.catalog import KeyframeCatalog
     from cvp.index.store import IndexStore
 

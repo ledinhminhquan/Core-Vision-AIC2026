@@ -50,8 +50,15 @@ def test_extract_missing_counts_forced_reextraction(tmp_path, monkeypatch):
     s = Settings()
     s.paths.data_root = tmp_path
     _seed_video(tmp_path, s)
-    monkeypatch.setattr(extraction, "extract_video",
-                        lambda *a, **k: 210)          # successful re-extraction
+
+    def _fake_extract(vp, kf_dir, mp_dir, **kw):
+        # A real re-extraction REWRITES the map csv — that's how the counter
+        # tells it apart from the untouched skip path (round-9 mtime check).
+        (mp_dir / "L21_V001.csv").write_text(
+            "n,pts_time,fps,frame_idx\n1,0.0,25.0,0\n2,1.0,25.0,25\n", encoding="utf-8")
+        return 210
+
+    monkeypatch.setattr(extraction, "extract_video", _fake_extract)
     assert extraction.extract_missing(s, overwrite=True, only=["L21_V001"]) == 1
 
 

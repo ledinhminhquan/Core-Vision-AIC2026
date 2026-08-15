@@ -296,9 +296,10 @@ def extract_missing(settings: Settings, overwrite: bool = False,
             # extract_video itself decides whether existing output is complete
             # (jpg count must reconcile with the map CSV) — a bare folder check
             # here would accept partial extractions.
-            before = (keyframes_dir / vid).is_dir() and (map_dir / f"{vid}.csv").is_file()
-            had_any = (before or (keyframes_dir / vid).is_dir()
-                       or (map_dir / f"{vid}.csv").is_file())
+            map_p = map_dir / f"{vid}.csv"
+            before = (keyframes_dir / vid).is_dir() and map_p.is_file()
+            had_any = (keyframes_dir / vid).is_dir() or map_p.is_file()
+            digest_before = _map_csv_sha256(map_p) if map_p.is_file() else None
             ex_cfg = getattr(settings, "extraction", None)
             n = extract_video(
                 vp, keyframes_dir, map_dir, overwrite=overwrite,
@@ -306,14 +307,19 @@ def extract_missing(settings: Settings, overwrite: bool = False,
                 shot_positions=tuple(ex_cfg.shot_positions) if ex_cfg else None,
                 dedup_mad=ex_cfg.dedup_mad_threshold if ex_cfg else None,
             )
-            # Round-8: a forced re-extraction and a guard REFUSAL both used to
-            # report 0 — the summary must tell them apart, and re-extractions
-            # must count (callers force the catalog rebuild off this number).
-            if n > 0 and not before:
+            # Round-8/9: fresh extractions, RE-extractions (incl. the
+            # no-overwrite mismatch repair — round-9) and guard REFUSALS must
+            # all be told apart; callers key the catalog rebuild off the
+            # return. A rewrite is detected by the map csv CONTENT changing
+            # (hash, not mtime — NTFS timestamp updates can lag ~15ms): the
+            # skip path returns n>0 without touching it, and a re-extraction
+            # producing byte-identical rows changes nothing downstream.
+            wrote_map = (map_p.is_file()
+                         and _map_csv_sha256(map_p) != digest_before)
+            if n > 0 and (not before or wrote_map):
                 count += 1
-            elif n > 0 and overwrite:
-                count += 1
-                reextracted += 1
+                if before:
+                    reextracted += 1
             elif n == 0 and had_any:
                 refused += 1
         except Exception as e:  # noqa: BLE001 — a broken file must not stop the batch

@@ -156,7 +156,7 @@ media-info + objects (Open Images)      ─┘            ──► kết quả 
     b-roll), vẫn giữ cap/video + khoảng cách thời gian.
 12. **Frame hỏng (vector 0) bị loại khỏi pool SuperGlobal** — không pha loãng refinement.
 13. **Test tầng tích hợp**: SearchEngine end-to-end với fake model (6 tests), official
-    scorer 60+ tests, packager 34 tests... tổng cộng **530 tests** (Perfect V1: 316 kế thừa + 214 mới cho cross-rerank/objects-parquet/keyframe-align/service/VQA-đa-khung/temporal-boost/confidence-retry) + GitHub Actions CI.
+    scorer 60+ tests, packager 34 tests... tổng cộng **537 tests** (Perfect V1: 316 kế thừa + 221 mới cho cross-rerank/objects-parquet/keyframe-align/service/VQA-đa-khung/temporal-boost/confidence-retry) + GitHub Actions CI.
 14. **KIS-C nhận tóm tắt kết quả hiện tại** → câu hỏi làm rõ có tính phân biệt;
     thêm **đồng hồ 5 phút** progressive-KIS trong app.
 15. **Truy vấn tiếng Anh cũng được enhance** (trước đây bị bỏ qua hoàn toàn).
@@ -274,13 +274,13 @@ Core-Vision_Perfect_V1/
 │            · PROJECT_PLAN · DATA_FORMAT · DRIVE_SETUP · TRAINING · PLAYBOOK · PAPER_NOTES
 ├── report/  LaTeX kit báo cáo giải pháp (BẮT BUỘC nộp kèm vòng sơ tuyển)
 ├── HUONG_DAN.md  hướng dẫn A-Z tiếng Việt (Drive → Colab → thi đấu)
-├── tests/   530 tests CPU thuần (không cần GPU/mạng/data thật)
+├── tests/   537 tests CPU thuần (không cần GPU/mạng/data thật)
 └── .github/workflows/ci.yml
 ```
 
 ## 6. Quy trình A→Z
 
-1. **Local**: `pip install -e ".[search,dev]"` → `pytest` (bộ đầy đủ **530 pass** khi có torch-cpu như CI; không torch thì các test training/model bị skip — đo lại con số torch-less sau khi cài).
+1. **Local**: `pip install -e ".[search,dev]"` → `pytest` (bộ đầy đủ **537 pass** khi có torch-cpu như CI; không torch thì các test training/model bị skip — đo lại con số torch-less sau khi cài).
 2. **Drive**: upload theo `docs/DRIVE_SETUP.md`.
 3. **Colab nb 01** (GPU bất kỳ): catalog → extract K-batch → embed các lane → FAISS
    → OCR/ASR/captions → **text index**. Mọi bước resumable, FORCE_* để làm lại.
@@ -308,7 +308,7 @@ Core-Vision_Perfect_V1/
 
 ## 8. Trạng thái & việc còn lại
 
-- ✅ Source + 530 tests + CI + 3 notebooks + docs (11 file) + app + service + report/ LaTeX kit.
+- ✅ Source + 537 tests + CI + 3 notebooks + docs (11 file) + app + service + report/ LaTeX kit.
 - ✅ **Batch 1 sơ tuyển ĐÃ VỀ (15/08/2026)** — 32 zip / 873 video L21–L30, map-keyframes đủ
   (DATASET_INGESTION §1b); việc còn lại là VẬN HÀNH: upload Drive → nb01 build artifacts →
   nb02 train → nb03 + tune weights đo chất lượng thật. BTC sẽ phát thêm batch 2.

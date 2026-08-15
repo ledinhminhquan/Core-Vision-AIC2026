@@ -22,6 +22,7 @@ from __future__ import annotations
 import csv
 import logging
 import re
+import unicodedata
 from pathlib import Path
 from typing import Sequence
 
@@ -33,6 +34,14 @@ from cvp.submission.packager import infer_task  # single source for task-from-fi
 from cvp.submission.writer import write_kis, write_qa, write_trake
 
 log = logging.getLogger(__name__)
+
+
+def strip_invisible(text: str) -> str:
+    """Remove Unicode format (Cf) characters — zero-width spaces, stray BOMs,
+    RTL marks. Organiser text copy-pasted from PDF/Word/chat routinely carries
+    them, and they are invisible in every editor while breaking prefix regexes
+    (``\\s`` does not match Cf). Round-9 chaos-lens fix."""
+    return "".join(c for c in text if unicodedata.category(c) != "Cf")
 
 # Placeholder for QA rows when no VQA answer is available: scores 0 exactly
 # like an empty string, but can never block packaging or trip format checks.
@@ -88,6 +97,12 @@ def parse_trake_events(lines: list[str], *, prepend_context: bool = False) -> li
             carries video-level context ("một con lân màu vàng đen trắng")
             that helps video pooling; off by default (A/B-able via config).
     """
+    # Invisible Cf chars (zero-width space, stray mid-file BOM, RTL marks) ride
+    # along when organiser text is copy-pasted from PDF/Word/chat. Python's \s
+    # does NOT match them, so an 'E1:' line with a leading U+200B would fail
+    # the prefix match and the event would silently VANISH — the CSV stays
+    # structurally valid and the query scores ~0 (round-9 chaos lens).
+    lines = [strip_invisible(ln) for ln in lines]
     prefixed = [(i, _EVENT_RE.sub("", ln).strip()) for i, ln in enumerate(lines)
                 if _EVENT_RE.match(ln)]
     if len(prefixed) < 2:
@@ -370,7 +385,9 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
     KIS/QA/AVS) — the DRES client submits millisecond timestamps, not frames.
     """
     task = infer_task(path.name)
-    lines = [ln.strip() for ln in path.read_text(encoding="utf-8-sig").splitlines() if ln.strip()]
+    lines = [strip_invisible(ln).strip()
+             for ln in path.read_text(encoding="utf-8-sig").splitlines()]
+    lines = [ln for ln in lines if ln]
     if not lines:
         log.warning("Empty query file: %s", path.name)
         return None

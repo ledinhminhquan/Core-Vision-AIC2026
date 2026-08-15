@@ -63,8 +63,10 @@ mclip = ["multilingual-clip>=1.0.10"]
 service = ["fastapi>=0.111", "uvicorn>=0.30"]
 # Preferred backend of the qwen_reranker cross-encoder lane (search.reranker).
 rerank = ["sentence-transformers>=3.0"]
-# fastapi+httpx let CI exercise the service endpoints (TestClient) without uvicorn.
-dev = ["pytest>=8.0", "ruff>=0.4", "fastapi>=0.111", "httpx>=0.27"]
+# fastapi+httpx let CI exercise the service endpoints (TestClient) without
+# uvicorn; faiss-cpu makes `pip install -e ".[dev]"` alone able to run the
+# full index/search test files instead of erroring on import (round-9).
+dev = ["pytest>=8.0", "ruff>=0.4", "fastapi>=0.111", "httpx>=0.27", "faiss-cpu>=1.7"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
