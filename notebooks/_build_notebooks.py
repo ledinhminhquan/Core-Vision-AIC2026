@@ -337,10 +337,12 @@ if torch.cuda.is_available():
             getattr(torch.backends.cuda, fn)(True)
 print(f"GPU: {GPU_NAME} | VRAM {VRAM_GB:.0f} GB | bf16={USE_BF16}")
 
-# Colab secrets → env (optional: Gemini query enhancement/VQA, HF pushes)
+# Colab secrets → env (optional: Gemini query enhancement/VQA, HF pushes).
+# GOOGLE_API_KEY is the name Colab's built-in "Gemini API key ▸ Import from
+# Google AI Studio" button creates — the engine accepts either spelling.
 try:
     from google.colab import userdata
-    for _sec in ("GEMINI_API_KEY", "HF_TOKEN"):
+    for _sec in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "HF_TOKEN"):
         try:
             _v = userdata.get(_sec)
             if _v:
