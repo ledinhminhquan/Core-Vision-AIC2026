@@ -14,7 +14,12 @@ tqdm>=4.66
 pillow>=10.2
 rank-bm25>=0.2.2
 
-transformers>=4.57,<5   # 4.57+ = Qwen3-VL classes (qwen_embed lane); fine for siglip2 too
+# NO upper cap (round-11): the 2026 Colab image ships transformers 5.x with a
+# matched huggingface-hub 1.x + accelerate 1.14 stack. Capping <5 forced a 4.x
+# downgrade whose hub<1.0 requirement broke the preinstalled accelerate at
+# import ("partially initialized module accelerate.big_modeling"). 4.57+ has
+# the Qwen3-VL classes (qwen_embed lane); siglip2/blip2/vintern work on both.
+transformers>=4.57
 safetensors>=0.4
 sentencepiece>=0.2
 accelerate>=1.0,<2

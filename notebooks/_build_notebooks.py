@@ -306,10 +306,13 @@ if did_install:
     print("pip check: OK" if rc == 0 else f"⚠ pip check còn cảnh báo (không chặn):\n{out}")
 
 # Purge stale sys.modules of upgraded packages BEFORE importing cvp (v12).
+# ONLY the packages actually (re)installed THIS run (round-11): purging every
+# requirement dropped numpy/pandas from sys.modules while torch still held
+# references to the old modules — the "NumPy module was reloaded" warning.
 if did_install:
     _ALIAS = {"pillow": "pil", "pyyaml": "yaml", "opencv_python_headless": "cv2",
               "open_clip_torch": "open_clip", "scikit_learn": "sklearn"}
-    _roots = {r.name.lower().replace("-", "_") for r in reqs} | {"cvp", "faiss"}
+    _roots = {r.name.lower().replace("-", "_") for r in missing} | {"cvp", "faiss"}
     _roots |= {_ALIAS[n] for n in _roots & set(_ALIAS)}
     _purged = [m for m in list(sys.modules)
                if m.split(".", 1)[0].lower().replace("-", "_") in _roots]
@@ -317,6 +320,16 @@ if did_install:
         sys.modules.pop(_m, None)
     if _purged:
         print(f"purged {len(_purged)} stale sys.modules entries")
+
+    # Sanity (round-11): the HF stack must import cleanly in a FRESH
+    # interpreter — a broken hub/accelerate pairing must surface HERE with an
+    # actionable message, not 5 cells later as a cryptic circular import.
+    _rc = _run([sys.executable, "-c", "import transformers, accelerate"])
+    if _rc != 0:
+        print("⚠ transformers/accelerate KHÔNG import được — thường do phiên cài "
+              "này đã hạ cấp huggingface-hub dưới mức accelerate cần. Cách sửa "
+              "sạch nhất: Runtime ▸ Disconnect and delete runtime, rồi Run all "
+              "lại từ đầu (mọi tiến độ đã nằm trên Drive, không mất gì).")
 
 if str(REPO_DIR / "src") not in sys.path:
     sys.path.insert(0, str(REPO_DIR / "src"))
