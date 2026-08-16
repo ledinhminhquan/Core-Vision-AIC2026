@@ -17,6 +17,7 @@ import numpy as np
 from PIL import Image
 
 from cvp.config import Settings
+from cvp.models.hf_compat import feature_tensor
 from cvp.models.base import EmbeddingModel, l2_normalize, resolve_device, resolve_dtype
 
 log = logging.getLogger(__name__)
@@ -56,7 +57,7 @@ class MetaClip2Model(EmbeddingModel):
                 )
                 pixel_values = inputs["pixel_values"].to(self.device, self.dtype)
                 out = self.model.get_image_features(pixel_values=pixel_values)
-                feats.append(out.float().cpu().numpy())
+                feats.append(feature_tensor(out).float().cpu().numpy())
         return l2_normalize(np.concatenate(feats, axis=0)) if feats else \
             np.zeros((0, self.dim), np.float32)
 
@@ -72,6 +73,6 @@ class MetaClip2Model(EmbeddingModel):
                     truncation=True, max_length=cfg_max, return_tensors="pt",
                 ).to(self.device)
                 out = self.model.get_text_features(**inputs)
-                feats.append(out.float().cpu().numpy())
+                feats.append(feature_tensor(out).float().cpu().numpy())
         return l2_normalize(np.concatenate(feats, axis=0)) if feats else \
             np.zeros((0, getattr(self, "dim", 0) or 0), np.float32)

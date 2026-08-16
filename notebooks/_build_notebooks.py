@@ -549,6 +549,63 @@ if COPY_KEYFRAMES_LOCAL and (DATA_DIR / "keyframes").exists():
             added += 1
         if added:
             print(f"merged {added} new item(s) from Drive into local {sub}/")
+    # INTEGRITY + SELF-HEAL (round-11, live-run lesson): Google Drive FUSE can
+    # serve freshly-written files back EMPTY (buffered writes lost when a
+    # session dies mid-sync) — 873 header-less map csvs poisoned the catalog
+    # with estimated frame_idx on a real run. Verify every LOCAL map csv and
+    # heal broken ones straight FROM THE ZIP (uploaded long ago = reliably
+    # synced), repairing the Drive copy too.
+    import zipfile as _zf
+    _map_local = LOCAL_DATA / "map-keyframes"
+    if _map_local.is_dir():
+        def _csv_bad(f):
+            try:
+                if f.stat().st_size < 40:
+                    return True
+                with open(f, encoding="utf-8-sig") as fh:
+                    return sum(1 for _ in fh) < 2      # header only / empty
+            except OSError:
+                return True
+        _bad = [f for f in sorted(_map_local.glob("*.csv")) if _csv_bad(f)]
+        if _bad:
+            print(f"⚠ {len(_bad)} map csv LOCAL rỗng/hỏng (Drive FUSE mất dữ liệu?) "
+                  "— tự phục hồi từ zip gốc ...")
+            _members = {}
+            for _z in DATA_DIR.glob("*.zip"):
+                _zl = _z.name.lower()
+                if "map" in _zl and "keyframe" in _zl:
+                    with _zf.ZipFile(_z) as zh:
+                        for _n in zh.namelist():
+                            if _n.endswith(".csv"):
+                                _members[Path(_n).name] = (_z, _n)
+            _healed = 0
+            for f in _bad:
+                _srcz = _members.get(f.name)
+                if not _srcz:
+                    continue
+                with _zf.ZipFile(_srcz[0]) as zh:
+                    _data = zh.read(_srcz[1])
+                if len(_data) < 40:
+                    continue
+                f.write_bytes(_data)                       # heal LOCAL
+                _drv = DATA_DIR / "map-keyframes" / f.name  # heal DRIVE too
+                try:
+                    if not _drv.exists() or _drv.stat().st_size < 40:
+                        _tmpf = _drv.parent / (f.name + ".__tmp")
+                        _tmpf.write_bytes(_data)
+                        _tmpf.replace(_drv)
+                except OSError:
+                    pass
+                _healed += 1
+            print(f"   phục hồi {_healed}/{len(_bad)} csv từ zip")
+            _still = [f.name for f in _bad if _csv_bad(f)]
+            if _still:
+                raise RuntimeError(
+                    f"{len(_still)} map csv vẫn rỗng sau phục hồi (vd {_still[:3]}) — "
+                    "kiểm tra zip map-keyframes-*.zip còn trong data/ trên Drive "
+                    "(đừng xóa zip!) rồi chạy lại ô này.")
+        else:
+            print("map csv integrity: OK")
     # videos stay on Drive (huge); link them in
     if (DATA_DIR / "videos").exists() and not (LOCAL_DATA / "videos").exists():
         (LOCAL_DATA / "videos").symlink_to(DATA_DIR / "videos")
@@ -615,6 +672,24 @@ with _log_stage("catalog"):
     print("extracted videos:", n_extracted)
     catalog = KeyframeCatalog(settings)
     df = catalog.build(force=FORCE_CATALOG or n_extracted > 0)
+    # Round-11 (live-run): a manifest built while the map csvs read EMPTY says
+    # 0 has_map forever (the corpus signature ignores map csvs) — detect the
+    # poisoned state and rebuild once the csvs are healthy again.
+    if len(df) and int(df.has_map.sum()) == 0:
+        _map_dir = Path(str(settings.paths.data_root)) / "map-keyframes"
+        _valid = (sum(1 for f in _map_dir.glob("*.csv") if f.stat().st_size > 40)
+                  if _map_dir.is_dir() else 0)
+        if _valid:
+            print(f"manifest nói 0 map nhưng {_valid} csv hợp lệ đang có "
+                  "→ FORCE rebuild catalog")
+            df = catalog.build(force=True)
+if len(df) and int(df.has_map.sum()) == 0:
+    raise RuntimeError(
+        "TOÀN BỘ catalog KHÔNG có map-keyframes — frame_idx nộp bài sẽ SAI. "
+        "DỪNG tại đây thay vì tốn nhiều giờ embed vô ích. Kiểm tra thông báo "
+        "phục hồi map csv ở ô 6, xác nhận data/map-keyframes trên Drive có "
+        "csv thật (mở thử 1 file), rồi chạy lại ô này."
+    )
 print(f"catalog: {len(df):,} keyframes / {df.video_id.nunique()} videos "
       f"({int(df.has_map.sum()):,} frames with map-keyframes)")
 _no_map = int((~df.has_map).sum())
