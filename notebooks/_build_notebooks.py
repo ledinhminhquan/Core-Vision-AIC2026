@@ -549,63 +549,96 @@ if COPY_KEYFRAMES_LOCAL and (DATA_DIR / "keyframes").exists():
             added += 1
         if added:
             print(f"merged {added} new item(s) from Drive into local {sub}/")
-    # INTEGRITY + SELF-HEAL (round-11, live-run lesson): Google Drive FUSE can
-    # serve freshly-written files back EMPTY (buffered writes lost when a
-    # session dies mid-sync) — 873 header-less map csvs poisoned the catalog
-    # with estimated frame_idx on a real run. Verify every LOCAL map csv and
-    # heal broken ones straight FROM THE ZIP (uploaded long ago = reliably
+    # INTEGRITY + SELF-HEAL (round-11/12, live-run lessons): Google Drive FUSE
+    # can serve freshly-written files back EMPTY (buffered writes lost when a
+    # session dies mid-sync). Round-11 hit 873 header-less map csvs; round-12
+    # hit empty clip-features .npy files that killed the provided_clip32 lane
+    # AFTER 8h of GPU work. Validate every LOCAL small-file artifact and heal
+    # broken ones straight FROM THE SOURCE ZIP (uploaded long ago = reliably
     # synced), repairing the Drive copy too.
     import zipfile as _zf
-    _map_local = LOCAL_DATA / "map-keyframes"
-    if _map_local.is_dir():
-        def _csv_bad(f):
-            try:
-                if f.stat().st_size < 40:
-                    return True
-                with open(f, encoding="utf-8-sig") as fh:
-                    return sum(1 for _ in fh) < 2      # header only / empty
-            except OSError:
+    import numpy as _np
+
+    def _bad_csv(f):
+        try:
+            if f.stat().st_size < 40:
                 return True
-        _bad = [f for f in sorted(_map_local.glob("*.csv")) if _csv_bad(f)]
-        if _bad:
-            print(f"⚠ {len(_bad)} map csv LOCAL rỗng/hỏng (Drive FUSE mất dữ liệu?) "
-                  "— tự phục hồi từ zip gốc ...")
-            _members = {}
-            for _z in DATA_DIR.glob("*.zip"):
-                _zl = _z.name.lower()
-                if "map" in _zl and "keyframe" in _zl:
-                    with _zf.ZipFile(_z) as zh:
-                        for _n in zh.namelist():
-                            if _n.endswith(".csv"):
-                                _members[Path(_n).name] = (_z, _n)
-            _healed = 0
-            for f in _bad:
-                _srcz = _members.get(f.name)
-                if not _srcz:
-                    continue
-                with _zf.ZipFile(_srcz[0]) as zh:
-                    _data = zh.read(_srcz[1])
-                if len(_data) < 40:
-                    continue
-                f.write_bytes(_data)                       # heal LOCAL
-                _drv = DATA_DIR / "map-keyframes" / f.name  # heal DRIVE too
-                try:
-                    if not _drv.exists() or _drv.stat().st_size < 40:
-                        _tmpf = _drv.parent / (f.name + ".__tmp")
-                        _tmpf.write_bytes(_data)
-                        _tmpf.replace(_drv)
-                except OSError:
-                    pass
-                _healed += 1
-            print(f"   phục hồi {_healed}/{len(_bad)} csv từ zip")
-            _still = [f.name for f in _bad if _csv_bad(f)]
-            if _still:
-                raise RuntimeError(
-                    f"{len(_still)} map csv vẫn rỗng sau phục hồi (vd {_still[:3]}) — "
-                    "kiểm tra zip map-keyframes-*.zip còn trong data/ trên Drive "
-                    "(đừng xóa zip!) rồi chạy lại ô này.")
-        else:
-            print("map csv integrity: OK")
+            with open(f, encoding="utf-8-sig") as fh:
+                return sum(1 for _ in fh) < 2          # header only / empty
+        except OSError:
+            return True
+
+    def _bad_npy(f):
+        try:
+            if f.stat().st_size < 90:                  # npy header alone is ~64B
+                return True
+            return _np.load(f, mmap_mode="r").shape[0] == 0
+        except Exception:
+            return True
+
+    def _bad_empty(f):
+        try:
+            return f.stat().st_size == 0
+        except OSError:
+            return True
+
+    # (subdir, glob, zip-name matcher, validator, key depth 1=basename 2=vid/name)
+    _HEAL_SPECS = [
+        ("map-keyframes", "*.csv",
+         lambda z: "map" in z and "keyframe" in z, _bad_csv, 1),
+        ("clip-features-32", "*.npy",
+         lambda z: "clip-feature" in z or "features-32" in z, _bad_npy, 1),
+        ("media-info", "*.json",
+         lambda z: "media-info" in z or "metadata" in z, _bad_empty, 1),
+        ("objects", "*/*.json",
+         lambda z: "object" in z, _bad_empty, 2),
+    ]
+    for _sub, _pat, _match, _isbad, _depth in _HEAL_SPECS:
+        _dirL = LOCAL_DATA / _sub
+        if not _dirL.is_dir():
+            continue
+        _key = (lambda p: p.name) if _depth == 1 else (lambda p: f"{p.parent.name}/{p.name}")
+        _bad = [f for f in sorted(_dirL.glob(_pat)) if _isbad(f)]
+        if not _bad:
+            print(f"{_sub} integrity: OK")
+            continue
+        print(f"⚠ {len(_bad)} file LOCAL rỗng/hỏng trong {_sub}/ (Drive FUSE mất "
+              "dữ liệu?) — tự phục hồi từ zip gốc ...")
+        _members = {}
+        for _z in DATA_DIR.glob("*.zip"):
+            _zl = _z.name.lower().replace("_", "-")
+            if _match(_zl):
+                with _zf.ZipFile(_z) as zh:
+                    for _n in zh.namelist():
+                        if not _n.endswith("/"):
+                            _parts = Path(_n).parts
+                            _members["/".join(_parts[-_depth:])] = (_z, _n)
+        _healed = 0
+        for f in _bad:
+            _srcz = _members.get(_key(f))
+            if not _srcz:
+                continue
+            with _zf.ZipFile(_srcz[0]) as zh:
+                _data = zh.read(_srcz[1])
+            if not _data:
+                continue
+            f.write_bytes(_data)                       # heal LOCAL
+            _drv = DATA_DIR / _sub / _key(f)           # heal DRIVE too
+            try:
+                if not _drv.exists() or _isbad(_drv):
+                    _tmpf = _drv.parent / (_drv.name + ".__tmp")
+                    _tmpf.write_bytes(_data)
+                    _tmpf.replace(_drv)
+            except OSError:
+                pass
+            _healed += 1
+        print(f"   phục hồi {_healed}/{len(_bad)}")
+        _still = [_key(f) for f in _bad if _isbad(f)]
+        if _still:
+            raise RuntimeError(
+                f"{len(_still)} file trong {_sub}/ vẫn hỏng sau phục hồi "
+                f"(vd {_still[:3]}) — kiểm tra zip nguồn còn trong data/ trên "
+                "Drive (đừng xóa zip!) rồi chạy lại ô này.")
     # videos stay on Drive (huge); link them in
     if (DATA_DIR / "videos").exists() and not (LOCAL_DATA / "videos").exists():
         (LOCAL_DATA / "videos").symlink_to(DATA_DIR / "videos")

@@ -51,7 +51,14 @@ def ingest_provided_features(settings: Settings, catalog: KeyframeCatalog) -> in
         if not src.is_file():
             log.warning("No provided features for %s — embed it with a real model instead", vid)
             continue
-        vecs = np.asarray(np.load(src), dtype=np.float32)
+        try:
+            vecs = np.asarray(np.load(src), dtype=np.float32)
+        except (EOFError, ValueError, OSError) as e:
+            # Round-12 (live run): Drive-FUSE can leave a copied .npy EMPTY —
+            # a raw EOFError here killed the whole lane after 8h of GPU work.
+            log.warning("Provided features for %s are corrupt/empty (%s) — skipped; "
+                        "restore the file from the clip-features zip", vid, e)
+            continue
         if vecs.shape[0] != int(cnt):
             log.warning(
                 "Provided features for %s have %d rows but catalog has %d keyframes — skipped",
