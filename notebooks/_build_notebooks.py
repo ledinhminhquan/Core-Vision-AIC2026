@@ -604,22 +604,24 @@ if COPY_KEYFRAMES_LOCAL and (DATA_DIR / "keyframes").exists():
             continue
         print(f"⚠ {len(_bad)} file LOCAL rỗng/hỏng trong {_sub}/ (Drive FUSE mất "
               "dữ liệu?) — tự phục hồi từ zip gốc ...")
-        _members = {}
+        # Zip handles opened ONCE per family (round-13): re-opening a Drive
+        # zip per bad file would stall for hours on a family-scale corruption.
+        _members, _open_zips = {}, []
         for _z in DATA_DIR.glob("*.zip"):
             _zl = _z.name.lower().replace("_", "-")
             if _match(_zl):
-                with _zf.ZipFile(_z) as zh:
-                    for _n in zh.namelist():
-                        if not _n.endswith("/"):
-                            _parts = Path(_n).parts
-                            _members["/".join(_parts[-_depth:])] = (_z, _n)
+                _zh = _zf.ZipFile(_z)
+                _open_zips.append(_zh)
+                for _n in _zh.namelist():
+                    if not _n.endswith("/"):
+                        _parts = Path(_n).parts
+                        _members["/".join(_parts[-_depth:])] = (_zh, _n)
         _healed = 0
         for f in _bad:
             _srcz = _members.get(_key(f))
             if not _srcz:
                 continue
-            with _zf.ZipFile(_srcz[0]) as zh:
-                _data = zh.read(_srcz[1])
+            _data = _srcz[0].read(_srcz[1])
             if not _data:
                 continue
             f.write_bytes(_data)                       # heal LOCAL
@@ -632,6 +634,8 @@ if COPY_KEYFRAMES_LOCAL and (DATA_DIR / "keyframes").exists():
             except OSError:
                 pass
             _healed += 1
+        for _zh in _open_zips:
+            _zh.close()
         print(f"   phục hồi {_healed}/{len(_bad)}")
         _still = [_key(f) for f in _bad if _isbad(f)]
         if _still:
@@ -818,33 +822,50 @@ for name in EMBED_MODELS:
 '''
 
 NB1_AUX = r'''
-# ── 9 · Aux indexes: OCR / ASR / captions (each resumable) ──
-# AUX_CHANGED feeds cell 10: scripts/03's rule is "force-rebuild the BM25
-# text index whenever this run processed ≥1 aux video".
+# ── 9 · Aux indexes: OCR / ASR / captions (each resumable, each GUARDED) ──
+# AUX_CHANGED feeds cell 10. Round-13: MỖI stage được bọc riêng — một stage
+# hỏng (model-load fail, API drift) KHÔNG giết các stage còn lại và không chặn
+# cell 10-11; lỗi được nêu lại TO ở ô cuối sau khi mọi thứ khác hoàn tất.
 AUX_CHANGED = False
+_aux_errors = {}
 
 def _did_work(n) -> bool:
     return n is None or n > 0   # None (older API) → assume something changed
 
-if RUN_OCR:
+def _aux_stage(stage, enabled, fn):
+    global AUX_CHANGED
+    if not enabled:
+        return
+    try:
+        with _log_stage(stage):
+            n = fn()
+        AUX_CHANGED = AUX_CHANGED or _did_work(n)
+        print(f"{stage}: processed {n} videos")
+    except Exception as e:  # noqa: BLE001 — stage isolation, re-raised in cell 11
+        _aux_errors[stage] = e
+        import traceback
+        traceback.print_exc()
+        print(f"⚠ stage {stage} FAILED: {e!r} — TIẾP TỤC các stage còn lại; "
+              "lỗi sẽ được nêu lại ở ô cuối.")
+
+def _run_ocr():
     from cvp.auxindex.ocr import ocr_all_keyframes
-    with _log_stage("ocr"):
-        n = ocr_all_keyframes(settings, catalog, overwrite=FORCE_AUX)
-    AUX_CHANGED = AUX_CHANGED or _did_work(n)
-    print(f"OCR: processed {n} videos")
-if RUN_ASR:
+    return ocr_all_keyframes(settings, catalog, overwrite=FORCE_AUX)
+
+def _run_asr():
     from cvp.auxindex.asr import asr_all_videos
-    with _log_stage("asr"):
-        n = asr_all_videos(settings, catalog, overwrite=FORCE_AUX)
-    AUX_CHANGED = AUX_CHANGED or _did_work(n)
-    print(f"ASR: processed {n} videos")
-if RUN_CAPTIONS:
+    return asr_all_videos(settings, catalog, overwrite=FORCE_AUX)
+
+def _run_captions():
     from cvp.auxindex.captioner import caption_all_keyframes
-    with _log_stage("captions"):
-        n = caption_all_keyframes(settings, catalog, stride=CAPTION_STRIDE, overwrite=FORCE_AUX)
-    AUX_CHANGED = AUX_CHANGED or _did_work(n)
-    print(f"Captions: processed {n} videos")
-print("aux indexes done | AUX_CHANGED =", AUX_CHANGED)
+    return caption_all_keyframes(settings, catalog, stride=CAPTION_STRIDE,
+                                 overwrite=FORCE_AUX)
+
+_aux_stage("ocr", RUN_OCR, _run_ocr)
+_aux_stage("asr", RUN_ASR, _run_asr)
+_aux_stage("captions", RUN_CAPTIONS, _run_captions)
+print("aux indexes done | AUX_CHANGED =", AUX_CHANGED,
+      "| stage lỗi:", list(_aux_errors) or "không")
 '''
 
 NB1_TEXT_INDEX = r'''
@@ -874,6 +895,16 @@ NB1_DOCTOR = r'''
 import json
 from cvp.pipeline.ingest import doctor
 print(json.dumps(doctor(settings), indent=2, ensure_ascii=False))
+# Round-13: aux-stage failures were isolated in cell 9 so the rest of the
+# build could finish — but they must NOT pass silently. Surface them here,
+# AFTER the doctor report, as the run's final verdict.
+_errs = globals().get("_aux_errors") or {}
+if _errs:
+    raise RuntimeError(
+        f"Build hoàn tất NHƯNG {len(_errs)} aux stage đã FAIL: {list(_errs)} — "
+        "xem traceback ở ô 9. Các stage khác đã lưu; sửa nguyên nhân rồi "
+        "Run all lại (resume tự skip phần xong)."
+    )
 print("\n✅ Artifacts build complete. Next: notebooks/02_train_vi_encoder_H100.ipynb")
 '''
 

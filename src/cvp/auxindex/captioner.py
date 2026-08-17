@@ -74,15 +74,25 @@ def caption_all_keyframes(settings: Settings, catalog: KeyframeCatalog,
             captioner = VinternCaptioner(settings)
         n_to_caption: dict[str, str] = {}
         processed = 0
+        last_err: Exception | None = None
         for _, row in wanted.iterrows():
             try:
                 cap = captioner.caption(catalog.resolve_path(str(row["path"])))
             except Exception as e:  # noqa: BLE001 — one bad frame must not kill hours of work
+                last_err = e
                 log.warning("Caption failed on %s n=%s: %s", vid, row["n"], e)
                 continue
             processed += 1
             if cap:
                 n_to_caption[str(int(row["n"]))] = cap
+        if done == 0 and len(wanted) > 0 and processed == 0 and last_err is not None:
+            # Round-13: all-fail on the FIRST video = systemic breakage (e.g.
+            # a transformers-5 semantics change inside the remote code) — fail
+            # loud now, not after hours of empty artifacts.
+            raise RuntimeError(
+                f"Captioning failed on every frame of the first video ({vid}) — "
+                "systemic failure, aborting the sweep"
+            ) from last_err
         atomic_write_json(out_path, {"n_to_caption": n_to_caption, "processed_count": processed})
         done += 1
         log.info("Captions %s: %d frames (%d/%d videos)", vid, len(n_to_caption), done, len(todo_videos))

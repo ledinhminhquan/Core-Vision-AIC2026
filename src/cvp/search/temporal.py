@@ -406,7 +406,7 @@ def _ensemble_video_sims(
         for vid in videos:
             try:
                 vecs = np.asarray(np.load(store.embedding_path(vid)), dtype=np.float32)
-            except (OSError, ValueError) as e:
+            except (EOFError, OSError, ValueError) as e:
                 log.warning("TRAKE ensemble: cannot load %r embeddings for %s: %s", name, vid, e)
                 continue
             if len(vecs) != n_rows_by_vid.get(vid, -1):
@@ -526,7 +526,7 @@ def trake_search(
         else:
             try:
                 vecs = np.asarray(np.load(embedding_path(vid)), dtype=np.float32)
-            except (OSError, ValueError) as e:
+            except (EOFError, OSError, ValueError) as e:
                 log.warning("TRAKE: cannot load embeddings for %s: %s", vid, e)
                 continue
             if len(vecs) != len(rows_df):

@@ -110,7 +110,7 @@ def build_training_set(
             continue
         try:
             vecs = np.asarray(np.load(store.embedding_path(str(vid))), dtype=np.float32)
-        except (OSError, ValueError):
+        except (EOFError, OSError, ValueError):
             log.warning("No embeddings for %s — skipped", vid)
             continue
         norms = np.linalg.norm(vecs, axis=1, keepdims=True)

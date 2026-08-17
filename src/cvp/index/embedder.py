@@ -45,7 +45,7 @@ def ingest_provided_features(settings: Settings, catalog: KeyframeCatalog) -> in
             try:
                 if np.load(dst, mmap_mode="r").shape[0] == int(cnt):
                     continue
-            except (OSError, ValueError):
+            except (EOFError, OSError, ValueError):
                 pass
         src = src_root / f"{vid}.npy"
         if not src.is_file():

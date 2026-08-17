@@ -111,15 +111,26 @@ def ocr_all_keyframes(settings: Settings, catalog: KeyframeCatalog,
             engine = _build_engine(settings)
         n_to_text: dict[str, str] = {}
         processed = 0
+        last_err: Exception | None = None
         for _, row in grp.iterrows():
             try:
                 text = engine.read(catalog.resolve_path(str(row["path"])))
             except Exception as e:  # noqa: BLE001 — one bad frame must not kill the run
+                last_err = e
                 log.warning("OCR failed on %s n=%s: %s", vid, row["n"], e)
                 continue
             processed += 1
             if text:
                 n_to_text[str(int(row["n"]))] = text
+        if done == 0 and len(grp) > 0 and processed == 0 and last_err is not None:
+            # Round-13: EVERY frame of the very first video failing is a
+            # SYSTEMIC breakage (API drift, broken weights) — fail loud in a
+            # minute instead of spending hours writing empty artifacts that
+            # report as success.
+            raise RuntimeError(
+                f"OCR failed on every frame of the first video ({vid}) — "
+                "systemic failure, aborting the sweep"
+            ) from last_err
         atomic_write_json(out_path, {"n_to_text": n_to_text, "processed_count": processed})
         done += 1
         log.info("OCR %s: %d/%d frames had text (%d/%d videos)",

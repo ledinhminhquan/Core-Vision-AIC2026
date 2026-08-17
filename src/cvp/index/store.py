@@ -80,7 +80,7 @@ class IndexStore:
                 continue
             try:
                 shape = np.load(p, mmap_mode="r").shape
-            except (OSError, ValueError):
+            except (EOFError, OSError, ValueError):
                 missing.append(str(vid))
                 continue
             if shape[0] != int(cnt):

@@ -39,7 +39,7 @@ hợp nhất với BM25 bốn kênh (OCR/ASR/caption/metadata), tinh chỉnh Sup
 rerank cross-encoder tùy chọn (BLIP-2 ITM~\cite{li2023blip2} / Qwen3-VL-Reranker),
 quy hoạch động DANTE cho TRAKE, MMR~\cite{carbonell1998mmr} cho AVS, và VQA đa khung hình
 cho Q\&A. Toàn bộ pipeline offline có thể resume, online trả lời
-dưới 1 giây/truy vấn; 557 test CPU + CI đảm bảo tính đúng của công thức chấm
+dưới 1 giây/truy vấn; 568 test CPU + CI đảm bảo tính đúng của công thức chấm
 và định dạng nộp bài. % TODO: cập nhật kết quả sơ tuyển khi có.
 \end{minisummaryboxaivn}
 
@@ -277,7 +277,7 @@ chạy engine một lần mỗi câu, \texttt{scripts/21\_tune\_weights.py} tố
 p50/p95/p99 của đường nóng \texttt{search\_text}); chỉ tiêu vận hành đã chốt: \textbf{p50
 $\le$ 200 ms, p95 $\le$ 500 ms} trên laptop thi đấu --- dư ngân sách lớn trong khung 4--5 phút
 mỗi truy vấn chung kết. % TODO: dán bảng percentile thật sau khi build artifacts 2026.
-Chất lượng kỹ thuật của mã được găm bằng 557 test CPU thuần (không cần GPU/mạng/data thật)
+Chất lượng kỹ thuật của mã được găm bằng 568 test CPU thuần (không cần GPU/mạng/data thật)
 chạy trong CI, phủ scorer chính thức, packager, parser đề thật của BTC và toàn bộ engine
 tích hợp với fake model.
 

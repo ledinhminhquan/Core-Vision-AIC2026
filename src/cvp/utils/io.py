@@ -62,7 +62,16 @@ def read_json(path: str | os.PathLike, default: Any = None) -> Any:
         if default is not None:
             return default
         raise FileNotFoundError(path)
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        # Round-13: Drive-FUSE can leave a rewritten marker (meta.json,
+        # model_tag.json) 0-byte/torn. When the caller supplied a default,
+        # a broken marker means "no marker" — the self-healing answer
+        # (restamp / rebuild). Callers without a default still fail loud.
+        if default is not None:
+            return default
+        raise
 
 
 def read_jsonl(path: str | os.PathLike) -> Iterator[dict]:

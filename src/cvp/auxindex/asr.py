@@ -105,6 +105,7 @@ def asr_all_videos(settings: Settings, catalog: KeyframeCatalog,
     todo = videos or catalog.videos()
     backend = None
     done = 0
+    consecutive_failures = 0
     for vid in todo:
         out_path = out_dir / f"{vid}.json"
         if out_path.exists() and not overwrite:
@@ -117,8 +118,17 @@ def asr_all_videos(settings: Settings, catalog: KeyframeCatalog,
         try:
             segments = backend.transcribe(str(src))
         except Exception as e:  # noqa: BLE001 — a corrupt file must not stop the batch
+            consecutive_failures += 1
             log.warning("ASR failed for %s: %s", vid, e)
+            if consecutive_failures >= 5:
+                # Round-13: 5 straight failures is a systemic breakage (model/
+                # decode API drift), not 5 coincidentally corrupt videos.
+                raise RuntimeError(
+                    "ASR failed on 5 consecutive videos — systemic failure, "
+                    "aborting the sweep"
+                ) from e
             continue
+        consecutive_failures = 0
         atomic_write_json(out_path, {"segments": segments})
         done += 1
         log.info("ASR %s: %d segments (%d done)", vid, len(segments), done)
