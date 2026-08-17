@@ -504,51 +504,187 @@ print("zip check done")
 '''
 
 NB1_LOCAL_COPY = r'''
-# ── 6 · Copy keyframes Drive → local disk (I/O speed) ──
-# Embedding reads hundreds of thousands of small JPGs; Drive FUSE is ~50×
-# slower than local disk. Artifacts still go to Drive.
-import shutil
+# ── 6 · Materialize data → local disk TỪ ZIP GỐC (nhanh + miễn nhiễm FUSE) ──
+# Round-14 (live-run 5): copytree 177k JPG lẻ qua Drive FUSE mất 3h+ rồi làm
+# SẬP luôn cả mount ([Errno 107] Transport endpoint is not connected — mọi
+# file sau đó đọc ra ENOENT). Chiến lược mới: copy CÁC FILE ZIP về local
+# (ít file, to, đọc tuần tự — đúng kiểu I/O FUSE làm tốt) rồi giải nén tại
+# chỗ — nhanh hơn nhiều lần, resume theo TỪNG zip, tự remount khi FUSE chết.
+# Nội dung chỉ-có-trên-Drive (keyframes K-batch tự cắt, csv tái dựng…) được
+# merge bù ở pha 2. Embedding/OCR/caption đọc 177k JPG từ local như cũ.
+import re as _re
+import shutil, time, zipfile
 from pathlib import Path
 
+def _drive_alive() -> bool:
+    try:
+        return DATA_DIR.exists()
+    except OSError:
+        return False
+
+def _ensure_drive():
+    """FUSE chết giữa chừng → remount tối đa 3 lần rồi mới chịu thua."""
+    for _try in range(3):
+        if _drive_alive():
+            return
+        print(f"⚠ Drive FUSE mất kết nối — remount (lần {_try + 1}/3) ...")
+        try:
+            from google.colab import drive as _gd
+            _gd.mount("/content/drive", force_remount=True)
+        except Exception as _e:
+            print("   remount lỗi:", _e)
+        time.sleep(5)
+    if not _drive_alive():
+        raise RuntimeError(
+            "Google Drive FUSE sập và remount 3 lần không thành công — "
+            "Runtime ▸ Restart session rồi Run all lại "
+            "(tiến độ đã lưu trên Drive còn nguyên).")
+
+_ensure_drive()          # verify-R14: gate dưới stat qua FUSE — mount phải sống
 if COPY_KEYFRAMES_LOCAL and (DATA_DIR / "keyframes").exists():
     LOCAL_DATA = Path("/content/data")
-    (LOCAL_DATA).mkdir(exist_ok=True)
-    for sub in ("keyframes", "map-keyframes", "media-info", "objects", "clip-features-32"):
-        src, dst = DATA_DIR / sub, LOCAL_DATA / sub
-        if not src.exists():
-            continue
-        if not dst.exists():
-            print(f"copying {sub} → local ...")
-            # copy into a tmp dir then rename: an interrupted copy must not
-            # leave a partial folder that a re-run would silently accept
-            tmp_dst = LOCAL_DATA / (sub + ".__tmp")
-            if tmp_dst.exists():
-                shutil.rmtree(tmp_dst)
-            shutil.copytree(src, tmp_dst)
-            tmp_dst.rename(dst)
-            continue
-        # Local dir already exists: MERGE any children Drive has that local
-        # lacks — a batch added mid-session (unzip cell re-run, manual upload)
-        # must reach local instead of being silently skipped (review R3-C15).
-        # Same tmp+rename discipline as the first copy: an interrupted merge
-        # must not leave a partial video dir that the next run would accept
-        # and the catalog would silently index half-empty (review R4).
-        for stale in dst.glob("*.__tmp"):
-            shutil.rmtree(stale, ignore_errors=True) if stale.is_dir() else stale.unlink()
-        added = 0
-        for item in src.iterdir():
-            target = dst / item.name
-            if target.exists():
+    LOCAL_DATA.mkdir(exist_ok=True)
+    _ZCACHE = Path("/content/__zip_cache")
+    _ZCACHE.mkdir(exist_ok=True)
+    _VID_DIR_RE = _re.compile(r"^[A-Z]\d{2}_V\d{3}$")
+
+    def _zip_family(zname: str):
+        # CÙNG thứ tự ưu tiên với guess_dest ở ô 5 — một zip phải về đúng
+        # MỘT family ở cả hai ô. Videos* trả None: video ở lại Drive (symlink).
+        z = zname.lower().replace("_", "-").replace(" ", "-")
+        if "map" in z and "keyframe" in z:                        return "map-keyframes"
+        if "clip-feature" in z or "features-32" in z:             return "clip-features-32"
+        if "media-info" in z or "metadata" in z:                  return "media-info"
+        if "object" in z:                                         return "objects"
+        if z.startswith(("keyframes", "keyframe", "key-frames")): return "keyframes"
+        return None
+
+    def _walk_wrapper(root: Path) -> Path:
+        # bỏ các folder bọc ngoài thật sự (Keyframes_L26/keyframes/…) nhưng
+        # không bao giờ nhầm một payload dir dạng L21_V001 đơn độc là wrapper
+        src = root
+        while True:
+            ch = list(src.iterdir())
+            if len(ch) == 1 and ch[0].is_dir() and not _VID_DIR_RE.match(ch[0].name):
+                src = ch[0]
                 continue
-            tmp_target = dst / (item.name + ".__tmp")
-            if item.is_dir():
-                shutil.copytree(item, tmp_target)
+            return src
+
+    def _merge_into(src: Path, dest: Path) -> int:
+        """Move src/* vào dest — không ghi đè, đi sâu 1 cấp cho dir trùng."""
+        kept = 0
+        dest.mkdir(parents=True, exist_ok=True)
+        for item in src.iterdir():
+            target = dest / item.name
+            if not target.exists():
+                shutil.move(str(item), str(target))
+            elif item.is_dir() and target.is_dir():
+                for sub in item.iterdir():
+                    st = target / sub.name
+                    if not st.exists():
+                        shutil.move(str(sub), str(st))
+                    else:
+                        kept += 1
             else:
-                shutil.copy2(item, tmp_target)
-            tmp_target.rename(target)
-            added += 1
-        if added:
-            print(f"merged {added} new item(s) from Drive into local {sub}/")
+                kept += 1
+        return kept
+
+    for _sub in ("keyframes", "map-keyframes", "media-info", "objects", "clip-features-32"):
+        dst = LOCAL_DATA / _sub
+        _stamp = LOCAL_DATA / f".materialized-{_sub}"
+        if _stamp.exists():
+            # verify-R14: stamp KHÔNG được che zip mới upload giữa session —
+            # còn zip matching chưa có marker local thì phải bung bổ sung.
+            _ensure_drive()
+            _new = [z for z in sorted(DATA_DIR.glob("*.zip"))
+                    if _zip_family(z.name) == _sub
+                    and not (LOCAL_DATA / f".unzipped-{_sub}-{z.stem}").exists()]
+            if not _new:
+                print(f"{_sub}: đã materialize trong session này — skip")
+                continue
+            print(f"{_sub}: {len(_new)} zip mới sau lần materialize trước → bung bổ sung")
+        if dst.exists():
+            for stale in dst.glob("*.__tmp"):
+                shutil.rmtree(stale, ignore_errors=True) if stale.is_dir() else stale.unlink()
+
+        # PHA 1 — bung từ zip nguồn (marker LOCAL theo từng zip → resume mịn;
+        # crash giữa merge không sao: lần sau bung lại, merge chỉ bù file thiếu)
+        _ensure_drive()
+        for zp in sorted(DATA_DIR.glob("*.zip")):
+            if _zip_family(zp.name) != _sub:
+                continue
+            _done = LOCAL_DATA / f".unzipped-{_sub}-{zp.stem}"
+            if _done.exists():
+                continue
+            t0 = time.time()
+            lz = _ZCACHE / zp.name
+            tmp_root = _ZCACHE / "__tmp_extract"
+            for _attempt in (1, 2, 3):
+                try:
+                    # verify-R14: MỌI syscall chạm FUSE (stat, copyfile) phải
+                    # nằm TRONG retry — zip trước mất nhiều phút extract thuần
+                    # local, FUSE có thể chết trong cửa sổ đó.
+                    _ensure_drive()
+                    _free = shutil.disk_usage("/content").free
+                    if _free < zp.stat().st_size * 2.2 + 5e9:
+                        raise RuntimeError(          # không retry lỗi hết disk
+                            f"Disk local sắp đầy ({_free / 1e9:.0f} GB) — không đủ "
+                            f"chỗ bung {zp.name}. Runtime ▸ Disconnect and delete "
+                            "runtime để lấy máy mới, hoặc đặt "
+                            "COPY_KEYFRAMES_LOCAL=False (chậm hơn nhiều).")
+                    shutil.copyfile(zp, lz)             # 1 file to, đọc tuần tự
+                    if tmp_root.exists():
+                        shutil.rmtree(tmp_root)
+                    with zipfile.ZipFile(lz) as z:      # CRC check từng member
+                        z.extractall(tmp_root)
+                    break
+                except (OSError, zipfile.BadZipFile) as e:
+                    print(f"   ⚠ {zp.name}: {e!r} — thử lại ({_attempt}/3)")
+                    if _attempt == 3:
+                        raise
+                    time.sleep(5)
+            kept = _merge_into(_walk_wrapper(tmp_root), dst)
+            shutil.rmtree(tmp_root, ignore_errors=True)
+            lz.unlink(missing_ok=True)                  # trả disk ngay
+            _done.touch()
+            print(f"   {zp.name} → local {_sub}/ ({time.time() - t0:.0f}s"
+                  + (f", giữ {kept} mục trùng)" if kept else ")"))
+
+        # PHA 2 — merge phần CHỈ có trên Drive (K-batch tự cắt, upload tay…):
+        # 1 lần listdir + exists-check local là rẻ; copy lẻ chỉ cho phần thiếu.
+        added = 0
+        srcD = DATA_DIR / _sub
+        # verify-R14: family chỉ-có-folder (không zip nguồn) → pha 1 chưa hề
+        # tạo dst; copy2 vào parent chưa tồn tại sẽ FileNotFoundError.
+        dst.mkdir(parents=True, exist_ok=True)
+        for _attempt in (1, 2, 3):
+            try:
+                _ensure_drive()                 # srcD.exists cũng chạm FUSE
+                if srcD.exists():
+                    for item in sorted(srcD.iterdir()):
+                        if item.name.startswith(".unzipped-") or item.name.endswith(".__tmp"):
+                            continue
+                        target = dst / item.name
+                        if target.exists():
+                            continue
+                        tmp_target = dst / (item.name + ".__tmp")
+                        if tmp_target.is_dir():
+                            shutil.rmtree(tmp_target)
+                        elif tmp_target.exists():
+                            tmp_target.unlink()
+                        (shutil.copytree if item.is_dir() else shutil.copy2)(item, tmp_target)
+                        tmp_target.rename(target)
+                        added += 1
+                break
+            except OSError as e:
+                print(f"   ⚠ merge Drive-extras {_sub}: {e!r} — thử lại ({_attempt}/3)")
+                if _attempt == 3:
+                    raise
+                time.sleep(5)
+        _stamp.touch()
+        _n = sum(1 for _ in dst.iterdir())
+        print(f"{_sub}: sẵn sàng local ({_n} mục"
+              + (f", +{added} bù từ Drive" if added else "") + ")")
     # INTEGRITY + SELF-HEAL (round-11/12, live-run lessons): Google Drive FUSE
     # can serve freshly-written files back EMPTY (buffered writes lost when a
     # session dies mid-sync). Round-11 hit 873 header-less map csvs; round-12
@@ -606,6 +742,7 @@ if COPY_KEYFRAMES_LOCAL and (DATA_DIR / "keyframes").exists():
               "dữ liệu?) — tự phục hồi từ zip gốc ...")
         # Zip handles opened ONCE per family (round-13): re-opening a Drive
         # zip per bad file would stall for hours on a family-scale corruption.
+        _ensure_drive()                        # verify-R14: ZipFile đọc qua FUSE
         _members, _open_zips = {}, []
         for _z in DATA_DIR.glob("*.zip"):
             _zl = _z.name.lower().replace("_", "-")
@@ -644,6 +781,7 @@ if COPY_KEYFRAMES_LOCAL and (DATA_DIR / "keyframes").exists():
                 f"(vd {_still[:3]}) — kiểm tra zip nguồn còn trong data/ trên "
                 "Drive (đừng xóa zip!) rồi chạy lại ô này.")
     # videos stay on Drive (huge); link them in
+    _ensure_drive()
     if (DATA_DIR / "videos").exists() and not (LOCAL_DATA / "videos").exists():
         (LOCAL_DATA / "videos").symlink_to(DATA_DIR / "videos")
     import os
@@ -804,6 +942,9 @@ from cvp.models.registry import build_model
 
 for name in EMBED_MODELS:
     print(f"\n════ {name} ════")
+    _ens = globals().get("_ensure_drive")   # ô 6 (round-14): FUSE chết giữa
+    if _ens:                                # lane trước → remount trước lane sau
+        _ens()
     model_tag = None
     with _log_stage(f"embed:{name}"):
         if name == "provided_clip32":
@@ -837,6 +978,9 @@ def _aux_stage(stage, enabled, fn):
     if not enabled:
         return
     try:
+        _ens = globals().get("_ensure_drive")   # ô 6 (round-14): FUSE chết
+        if _ens:                                # ở stage trước → remount đã
+            _ens()
         with _log_stage(stage):
             n = fn()
         AUX_CHANGED = AUX_CHANGED or _did_work(n)

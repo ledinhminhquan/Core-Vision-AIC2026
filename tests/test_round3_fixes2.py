@@ -231,4 +231,5 @@ def test_unzip_wrapper_walk_markers_present():
     src = (REPO / "notebooks" / "_build_notebooks.py").read_text(encoding="utf-8")
     assert "_VID_DIR_RE" in src                    # payload dirs never stripped (C14)
     assert "giữ nguyên" in src                     # merge-never-clobber path (C28)
-    assert "merged" in src and "new item(s) from Drive into local" in src  # C15
+    # C15 (round-14 form): Drive-only extras still reach local via phase 2
+    assert "merge Drive-extras" in src and "bù từ Drive" in src

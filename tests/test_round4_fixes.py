@@ -223,5 +223,5 @@ def test_builder_nb02_staleness_sees_caption_growth():
 
 def test_builder_local_copy_merge_uses_tmp_rename():
     src = (REPO / "notebooks" / "_build_notebooks.py").read_text(encoding="utf-8")
-    merge = src.split("Local dir already exists: MERGE")[1].split("videos stay on Drive")[0]
+    merge = src.split("PHA 2")[1].split("videos stay on Drive")[0]
     assert '.__tmp' in merge and "tmp_target.rename(target)" in merge
