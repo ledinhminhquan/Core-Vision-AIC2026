@@ -69,6 +69,6 @@ def test_requirements_colab_transformers_uncapped():
 def test_builder_heals_and_hard_stops():
     src = (REPO / "notebooks" / "_build_notebooks.py").read_text(encoding="utf-8")
     assert "tự phục hồi từ zip" in src                      # heal path exists
-    assert "map csv integrity: OK" in src
+    assert "integrity: OK" in src                           # per-family (round-12)
     assert "TOÀN BỘ catalog KHÔNG có map-keyframes" in src  # hard stop
     assert "FORCE rebuild catalog" in src                   # poisoned-manifest rebuild
