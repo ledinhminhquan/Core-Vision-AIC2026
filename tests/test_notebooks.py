@@ -25,11 +25,12 @@ import pytest
 
 NOTEBOOKS_DIR = Path(__file__).resolve().parents[1] / "notebooks"
 NB1 = "01_build_artifacts_colab.ipynb"
+NB1B = "01b_caption_boost_colab.ipynb"
 NB2 = "02_train_vi_encoder_H100.ipynb"
 NB3 = "03_test_system.ipynb"
-ALL_NBS = (NB1, NB2, NB3)
+ALL_NBS = (NB1, NB1B, NB2, NB3)
 
-EXPECTED_CODE_CELLS = {NB1: 11, NB2: 13, NB3: 12}
+EXPECTED_CODE_CELLS = {NB1: 11, NB1B: 8, NB2: 13, NB3: 12}
 
 # import-detection: `import torch`, `import gc, torch`, `from torch... import`
 TORCH_IMPORT_RE = re.compile(r"^\s*(?:import\s+[^#\n]*\btorch\b|from\s+torch\b)", re.MULTILINE)
@@ -160,6 +161,13 @@ NB_MARKERS = {
         "qwen_embed",                   # optional heavy lane documented
         "INSTALL_TRANSNETV2",           # TransNetV2 --no-deps install toggle
         "transnetv2-pytorch",           # ...and the actual pip target
+    ),
+    NB1B: (
+        "caption_all_keyframes",        # captions-only sweep
+        "[::-1]",                       # REVERSED order → meets nb01 mid-list
+        "captions-boost",               # its own stage tag in nb01.log
+        "FORCE_TEXT_INDEX=True",        # final BM25 pass reminder
+        "GIỐNG HỆT",                    # stride-must-match warning
     ),
     NB2: (
         "active_train_run.json",        # v12 run pointer

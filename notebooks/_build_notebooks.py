@@ -85,7 +85,10 @@ COPY_KEYFRAMES_LOCAL = True
 
 # Aux indexes to build (each is resumable; captions are the slowest).
 RUN_OCR, RUN_ASR, RUN_CAPTIONS = True, True, True
-CAPTION_STRIDE = 2                   # caption every 2nd keyframe (2× faster)
+CAPTION_STRIDE = 4                   # caption mỗi keyframe thứ 4 (round-16: đủ dày
+#   cho kênh recall BM25 mà nhanh gấp đôi stride 2. NÂNG stride luôn an toàn với
+#   resume: video đã caption ở stride nhỏ hơn vẫn được tính là XONG ở stride lớn
+#   hơn. Mọi phiên chạy song song PHẢI dùng CÙNG một stride.
 
 # K-batch shot detection: install TransNetV2 (the winning-team detector) for
 # keyframe self-extraction. Installed --no-deps (Colab torch is never touched);
@@ -410,6 +413,39 @@ Prerequisites (see `docs/DRIVE_SETUP.md`):
 `MyDrive/AIC2025/data/{keyframes, map-keyframes, media-info, clip-features-32, objects, videos}`
 
 GPU: any (T4 works; A100/H100 much faster for SigLIP-2 + captions).
+'''
+
+NB01B_TITLE = r'''
+# 🚀 Core Vision Perfect V1 — 01b · Caption BOOST (chạy SONG SONG với nb01)
+
+Notebook phụ **chỉ chạy captions**, đi **NGƯỢC** danh sách video (L30 → L21)
+trong khi phiên nb01 chính đi xuôi (L21 → L30) — hai phiên tự **gặp nhau ở
+giữa** nhờ resume-skip theo từng video, chia đôi thời gian captions.
+
+**An toàn:** mỗi video là MỘT file json ghi atomic trên Drive; phiên này KHÔNG
+đụng embeddings / FAISS / BM25 / OCR / ASR. Tệ nhất hai phiên trùng nhau đúng
+1 video ở điểm gặp — bên sau ghi đè bản y hệt, không thể phá artifact.
+
+Cách dùng: mở **một phiên Colab GPU thứ hai** (A100/H100 đều được) → Run all.
+Đứt phiên → Run all lại, tự resume. Khi CẢ HAI phiên xong captions: chạy nb01
+một lượt cuối với `FORCE_TEXT_INDEX=True` để BM25 nạp đủ trường caption.
+'''
+
+NB01B_CAPTIONS = r'''
+# ── 5 (01b) · Captions ONLY — đi NGƯỢC danh sách video ──
+# Phiên nb01 chính caption L21→L30; phiên boost này L30→L21. Resume-skip theo
+# từng video làm hai phiên hội tụ ở giữa mà không cần điều phối gì thêm.
+# LƯU Ý: CAPTION_STRIDE ở ô PARAMS phải GIỐNG HỆT giá trị bên nb01.
+from cvp.auxindex.captioner import caption_all_keyframes
+
+vids = [str(v) for v in df.video_id.unique()][::-1]
+print(f"captions-boost: {len(vids)} videos, đi ngược từ {vids[0]} về {vids[-1]}, "
+      f"stride={CAPTION_STRIDE}")
+with _log_stage("captions-boost"):
+    n = caption_all_keyframes(settings, catalog, videos=vids, stride=CAPTION_STRIDE)
+print(f"✅ captions-boost: {n} video mới trong phiên này")
+print("Khi CẢ HAI phiên đều xong captions: chạy lại nb01 một lượt với "
+      "FORCE_TEXT_INDEX=True để BM25 nạp đủ trường caption cho toàn bộ 873 video.")
 '''
 
 NB1_UNZIP = r'''
@@ -1644,6 +1680,17 @@ def main() -> None:
         code(NB1_AUX),
         code(NB1_TEXT_INDEX),
         code(NB1_DOCTOR),
+    ])
+    write_nb("01b_caption_boost_colab.ipynb", [
+        md(NB01B_TITLE),
+        code(CELL_PARAMS),
+        code(CELL_MOUNT),
+        code(CELL_REPO_DEPS),
+        code(CELL_ENV_GPU),
+        code(NB1_UNZIP),
+        code(NB1_LOCAL_COPY),
+        code(NB1_CATALOG),
+        code(NB01B_CAPTIONS),
     ])
     write_nb("02_train_vi_encoder_H100.ipynb", [
         md(NB2_TITLE),
