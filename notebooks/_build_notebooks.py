@@ -184,6 +184,34 @@ except Exception as e:
         "rồi chạy lại ô này."
     ) from e
 
+# DATA-PRESENCE GATE (round-20, live run 9): trên VM mới, DriveFS có thể liệt
+# kê data/ ra RỖNG suốt vài phút đầu (metadata sync lười) — mkdir exist_ok ở
+# trên còn CHE mất triệu chứng, để cell 7 chết khó hiểu với "Keyframes folder
+# not found". Poll tới 3 phút (mỗi listdir là một cú hích ép DriveFS fetch);
+# hết kiên nhẫn thì dừng TO với chẩn đoán rõ ràng.
+_t0 = time.time()
+_data_ok = False
+while time.time() - _t0 < 180:
+    try:
+        if any(DATA_DIR.iterdir()):
+            _data_ok = True
+            break
+    except OSError:
+        pass
+    print(f"⏳ data/ đang rỗng — đợi DriveFS sync metadata ({int(time.time() - _t0)}s) ...")
+    time.sleep(10)
+if not _data_ok:
+    raise RuntimeError(
+        "data/ trên Drive vẫn RỖNG sau 3 phút chờ. Ba nguyên nhân thường gặp:\n"
+        "  1) Phiên Colab đăng nhập NHẦM tài khoản Google (kiểm tra avatar góc "
+        f"phải trên) — phải là tài khoản có MyDrive/{DRIVE_PROJECT_DIR}/data;\n"
+        "  2) DriveFS sync quá chậm — Runtime ▸ Disconnect and delete runtime "
+        "rồi Run all lại trên máy mới;\n"
+        "  3) Lần chạy đầu tiên mà chưa upload dữ liệu — ném các zip của BTC "
+        f"vào MyDrive/{DRIVE_PROJECT_DIR}/data trước (docs/DRIVE_SETUP.md).\n"
+        "KHÔNG có gì bị mất — dữ liệu vẫn nằm nguyên trên Drive của tài khoản đúng.")
+print(f"✅ data/ nhìn thấy dữ liệu sau {int(time.time() - _t0)}s")
+
 # HF + pip caches on Drive → models/wheels download once, not per session.
 os.environ["HF_HOME"] = str(ARTIFACTS / "hf_cache")
 os.environ["PIP_CACHE_DIR"] = str(ARTIFACTS / "pip_cache")
