@@ -162,6 +162,73 @@ def _build_backend(settings: Settings):
     return _TransformersBackend(settings)
 
 
+def _video_zip_map(video_root: Path) -> dict[str, tuple[Path, str]]:
+    """video_id → (zip path, member) for every video inside Videos_*.zip.
+
+    Live run 7: mp4s extracted onto Drive during the FUSE-data-loss era can be
+    TRUNCATED ("moov atom not found") while the source zips uploaded long ago
+    are intact. The zips sit in the data/ dir that the videos folder (or the
+    /content symlink's target) lives in.
+    """
+    import zipfile
+
+    zmap: dict[str, tuple[Path, str]] = {}
+    try:
+        zdir = (video_root.resolve() if video_root.exists() else video_root).parent
+    except OSError:
+        return zmap
+    for zp in sorted(zdir.glob("*.zip")):
+        z = zp.name.lower().replace("_", "-").replace(" ", "-")
+        if not z.startswith(("videos", "video-")):
+            continue
+        try:
+            with zipfile.ZipFile(zp) as zh:
+                for m in zh.namelist():
+                    if m.endswith("/"):
+                        continue
+                    stem = m.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+                    zmap.setdefault(stem, (zp, m))
+        except (OSError, zipfile.BadZipFile) as e:
+            log.warning("cannot index %s (%s) — skipping", zp.name, e)
+    return zmap
+
+
+def _extract_video_from_zip(zp: Path, member: str) -> str:
+    """Copy ONE mp4 out of a source zip into a local temp file (a large
+    sequential read — the FUSE-friendly pattern). Caller deletes it."""
+    import shutil
+    import tempfile
+    import zipfile
+
+    tmp = tempfile.NamedTemporaryFile(suffix=Path(member).suffix or ".mp4", delete=False)
+    try:
+        with zipfile.ZipFile(zp) as zh, zh.open(member) as srcf, open(tmp.name, "wb") as dstf:
+            shutil.copyfileobj(srcf, dstf, 1024 * 1024)
+    except BaseException:
+        Path(tmp.name).unlink(missing_ok=True)
+        raise
+    return tmp.name
+
+
+def _try_zip_fallback(backend, vid: str, hit: tuple[Path, str],
+                      orig_err: Exception) -> tuple[bool, list[dict] | None]:
+    """(ok, segments) — segments may be None for a silent video (still ok)."""
+    zp, member = hit
+    tmp_mp4 = None
+    try:
+        tmp_mp4 = _extract_video_from_zip(zp, member)
+        segments = backend.transcribe(tmp_mp4)
+        log.info("ASR %s: bản trên Drive hỏng/thiếu (%s) — đã phục hồi từ %s",
+                 vid, orig_err, zp.name)
+        return True, segments
+    except Exception as e2:  # noqa: BLE001 — zip copy failed too → real failure
+        log.warning("ASR zip fallback for %s failed too: %s", vid, e2)
+        return False, None
+    finally:
+        if tmp_mp4:
+            Path(tmp_mp4).unlink(missing_ok=True)
+
+
 def asr_all_videos(settings: Settings, catalog: KeyframeCatalog,
                    videos: list[str] | None = None, overwrite: bool = False) -> int:
     """Transcribe raw videos that exist under data/videos; skip finished ones."""
@@ -169,6 +236,7 @@ def asr_all_videos(settings: Settings, catalog: KeyframeCatalog,
     video_root = settings.paths.data(settings.paths.videos_dir)
     todo = videos or catalog.videos()
     backend = None
+    zip_map: dict[str, tuple[Path, str]] | None = None
     done = 0
     attempted = 0
     files_found = 0
@@ -181,23 +249,40 @@ def asr_all_videos(settings: Settings, catalog: KeyframeCatalog,
         attempted += 1
         src = _find_video_file(video_root, vid)
         if src is None:
-            continue
-        files_found += 1
+            if zip_map is None:
+                zip_map = _video_zip_map(video_root)
+            if vid not in zip_map:
+                continue          # thiếu ở MỌI nguồn → skip; tổng kết bắt all-missing
+        else:
+            files_found += 1
         if backend is None:
             backend = _build_backend(settings)
         try:
+            if src is None:       # có trong zip nhưng không có trên đĩa → đi thẳng fallback
+                raise RuntimeError(f"video file for {vid} not found on disk")
             segments = backend.transcribe(str(src))
         except Exception as e:  # noqa: BLE001 — a corrupt file must not stop the batch
-            consecutive_failures += 1
-            log.warning("ASR failed for %s: %s", vid, e)
-            if consecutive_failures >= 5:
-                # Round-13: 5 straight failures is a systemic breakage (model/
-                # decode API drift), not 5 coincidentally corrupt videos.
-                raise RuntimeError(
-                    "ASR failed on 5 consecutive videos — systemic failure, "
-                    "aborting the sweep"
-                ) from e
-            continue
+            # Round-17 (live run 7): truncated Drive extraction / missing file
+            # → pull THIS video straight from its source zip and retry once.
+            if zip_map is None:
+                zip_map = _video_zip_map(video_root)
+            hit = zip_map.get(vid)
+            ok, segments = (False, None) if hit is None else _try_zip_fallback(backend, vid, hit, e)
+            if ok:
+                if src is None:
+                    files_found += 1
+            else:
+                consecutive_failures += 1
+                log.warning("ASR failed for %s: %s", vid, e)
+                if consecutive_failures >= 5:
+                    # Round-13: 5 straight failures is a systemic breakage
+                    # (model/decode API drift), not 5 coincidentally corrupt
+                    # videos.
+                    raise RuntimeError(
+                        "ASR failed on 5 consecutive videos — systemic failure, "
+                        "aborting the sweep"
+                    ) from e
+                continue
         consecutive_failures = 0
         no_audio = segments is None
         if no_audio:

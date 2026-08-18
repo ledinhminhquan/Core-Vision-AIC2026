@@ -49,7 +49,7 @@ auxindex ─────── ocr (EasyOCR) · asr (PhoWhisper) · captioner (V
 ```
 
 Quy ước chung: import nặng (torch/transformers/faiss) luôn **lazy** bên trong
-constructor/hàm — mọi module import sạch trên máy không GPU; suite **596 test CPU**
+constructor/hàm — mọi module import sạch trên máy không GPU; suite **602 test CPU**
 chạy không cần model/mạng/data thật.
 
 ## 2. Bất biến trung tâm: `global_id == dòng manifest == dòng FAISS`
