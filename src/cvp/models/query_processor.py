@@ -59,12 +59,14 @@ def _call_with_timeout(fn, timeout_s: float):
         return value
     raise value
 
-_GEMINI_PROMPT = """You help a video-retrieval team search Vietnamese TV news with a CLIP-style model.
+_GEMINI_PROMPT = """You help a video-retrieval team search Vietnamese videos with a CLIP-style model.
 Given a Vietnamese query, return STRICT JSON (no markdown) with keys:
   "translation": faithful English translation.
   "enhanced": one English sentence describing exactly what the TARGET VIDEO FRAME shows,
               concrete and visual (colors, objects, actions, scene type, on-screen text),
-              dropping meta-words like "tìm cảnh" / "đoạn video".
+              dropping meta-words like "tìm cảnh" / "đoạn video". If the query names a
+              real-world entity the video itself may not name (a person, brand, place),
+              expand it into what is VISUALLY observable (appearance, role, context).
   "expansions": {n} alternative English phrasings emphasizing different visual details.
 Query: {query}
 JSON:"""

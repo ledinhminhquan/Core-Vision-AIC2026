@@ -25,7 +25,7 @@ bật/tắt) · KIS-C (phong cách hội thoại)**.
 | **Tự động** (pilot 2026) | Trợ lý đấu trợ lý, không người can thiệp; **BTC CHƯA công bố spec** (chắc chắn KHÔNG phải "tự nộp file") | `scripts/25_auto_agent.py` + dịch vụ HTTP `cvp serve` (nền tảng máy-gọi-máy, đợi spec là lắp adapter) |
 
 **Timeline 2026 (đã xác minh):** dataset + đề bài + baseline + metrics phát hành
-**không muộn hơn 25/07/2026** → sơ tuyển **tháng 8/2026** trên Codabench (trang 2026
+**không muộn hơn 25/07/2026** → sơ tuyển **tháng 8/2026** trên HỆ THỐNG RIÊNG của BTC — buổi 4: tài khoản qua email đội trưởng, đợt 1 tối thứ Sáu trên B1 (trang 2026
 dự kiến xuất hiện đầu–giữa tháng 8 dưới organizer **vnaic**; trang 2025 id 10187 là
 mẫu tham khảo) → kết quả sơ tuyển **30/8** → chung kết on-site **12–26/9/2026** →
 trao giải **10/2026**. Sơ tuyển **BẮT BUỘC kèm báo cáo giải pháp** (bài viết mô tả
@@ -39,7 +39,7 @@ hệ thống) — đừng để sát ngày mới viết.
 | 2 | Ném các file `.zip` của BTC vào Drive (KHÔNG cần giải nén) | trình duyệt | tùy mạng |
 | 3 | Colab nb01: build catalog → embed → FAISS → OCR/ASR/caption → BM25 | Colab (GPU nào cũng được) | vài giờ, tự resume |
 | 4 | (Tùy chọn — kênh phụ) Colab nb02: train text tower tiếng Việt | Colab H100 | 30–60 phút H100 |
-| 5 | Colab nb03: smoke test + latency + CSV mẫu + zip Codabench | Colab / laptop | 15 phút |
+| 5 | Colab nb03: smoke test + latency + CSV mẫu + zip `submission/` | Colab / laptop | 15 phút |
 | 6 | Kéo `artifacts/` về laptop → chạy UI | máy của bạn | 15 phút |
 | 7 | Sơ tuyển: chạy đề → validate → zip → chấm offline → nộp | máy của bạn | theo lịch BTC |
 
@@ -192,7 +192,7 @@ model/thuật toán/công cụ** — nghĩa là dùng hay không dùng model tra
 ### 4c. `notebooks/03_test_system.ipynb` — kiểm tra + đóng gói
 
 Chạy truy vấn tiếng Việt thật (KIS/TRAKE/AVS) và hiện lưới ảnh kết quả, đo
-latency, ghi CSV mẫu, **validate + zip đúng chuẩn Codabench**, chấm thử với GT
+latency, ghi CSV mẫu, **validate + zip đúng thể lệ (folder `submission/`)**, chấm thử với GT
 local (công thức chính thức), dry-run auto-agent (`RUN_AUTO_AGENT=True`), và có
 thể phục vụ UI Streamlit qua proxy Colab (`LAUNCH_UI=True`). Ô 5 có biến đổi model
 (`CVP_EMBEDDING__MODEL`) để test `siglip2` / `finetuned` / `ensemble` trong cùng phiên.
@@ -364,7 +364,7 @@ Không cần embed lại ảnh trong mọi trường hợp — LiT giữ nguyên
 | Chung kết được xem clip mấy lần, có tiếng không? | Clip chỉ được XEM trên màn hình (cấm quay/chụp/capture — nhưng được mô tả lại/vẽ/sinh ảnh để đưa vào hệ); âm thanh CÓ THỂ bị tắt. 2025: KIS 5 phút với 5 hint nhỏ giọt mỗi phút; V-KIS 4 phút/clip 20s; server kiểu DRES — nộp sớm điểm cao, nộp sai bị trừ (xem `docs/COMPETITION_PLAYBOOK.md`). |
 | Làm sao biết train có "lãi" để bật vào ensemble? | `python scripts/eval_model.py` (Bước 8). Delta R@1/R@5 dương rõ → bật; lằng nhằng → thi bằng zero-shot ensemble mặc định `[siglip2, openclip]` 0.55/0.45 (công thức các đội top). |
 | Objects boost đọc chậm trên Drive? | Chạy `python scripts/03_build_aux_indexes.py --objects-index` — gộp hàng trăm nghìn JSON thành 1 parquet, ObjectBooster tự ưu tiên dùng. |
-| Kiểm tra tổng thể hệ đang thiếu gì? | `python scripts/doctor.py` — in coverage từng artifact + cảnh báo index stale. Test suite: `pytest` (602 tests, thuần CPU, không cần data thật). |
+| Kiểm tra tổng thể hệ đang thiếu gì? | `python scripts/doctor.py` — in coverage từng artifact + cảnh báo index stale. Test suite: `pytest` (609 tests, thuần CPU, không cần data thật). |
 
 ---
 

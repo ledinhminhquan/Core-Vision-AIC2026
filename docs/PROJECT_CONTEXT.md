@@ -73,16 +73,18 @@ tách theo ranh giới câu cho QA không marker); lệnh cài TransNetV2 local 
 - **AVS KHÔNG chắc thi năm nay** (giảng viên buổi 2 nhớ là không có; thể lệ đổi hằng
   năm → giữ nguyên module sau cờ). KIS-C là "phong cách hệ thống" chưa phải dạng đề.
 - FAQ row 9: **không giới hạn model/thuật toán/công cụ**; cả tự động lẫn tương tác đều
-  hợp lệ. Theo dõi spec qua: Q&A sheet của BTC, facebook.com/AICHCMC, Codabench
+  hợp lệ. Theo dõi spec qua: EMAIL ĐỘI TRƯỞNG + thư mục Google Drive chung của BTC
+  (buổi 4: bật notification!), Q&A sheet, facebook.com/AICHCMC. (Codabench
   (organizer `vnaic`, trang 2025 = id 10187; trang 2026 dự kiến xuất hiện đầu-giữa T8).
-- Zip Codabench **PHẢI chứa folder tên `submission`** (đã là mặc định của packager).
+- **CẬP NHẬT buổi 4 (18/08/2026): sơ tuyển 2026 chạy trên HỆ THỐNG RIÊNG của BTC, KHÔNG phải Codabench** — tài khoản thi thử gửi qua email đội trưởng chậm nhất thứ Ba; BTC phát file spec + validator CSV; thi thử tuần này; **đợt 1 thi TỐI THỨ SÁU trên B1** (~20-25 câu, vd 15 KIS + 4 QA + 1 TRAKE); 3 đợt (25/30/35 câu như 2025), xét TỔNG 3 đợt, không loại giữa chừng; B2 (giao thông + thể thao) dùng cho đợt 2-3; leaderboard vẫn ẨN ~50% điểm — tin scorer offline, đừng đốt lượt nộp.
+- Zip nộp bài **PHẢI chứa folder tên `submission`** (buổi 4 tái xác nhận; đã là mặc định của packager); tên file CSV phải khớp tên file query (`{stem}.csv` — writer đã làm đúng); video KHÔNG kèm đuôi .mp4 (VIDEO_ID_RE đã đảm bảo); RE-VALIDATE với validator chính thức của BTC ngay khi nhận được.
 
 ---
 
 ## 1. Bài toán: HCMC AI Challenge 2026 (AIC)
 
 **Hội thi Thử thách Trí tuệ Nhân tạo TP.HCM** — truy xuất khoảnh khắc trong hàng trăm
-đến ~1000+ giờ video (tin tức HTV + có thể lifelog/egocentric theo định hướng 2026)
+đến ~1000+ giờ video. **Buổi 4 (18/08/2026): B1 = NẤU ĂN + HỌC/LUYỆN THI; B2 = GIAO THÔNG + THỂ THAO (không phải tin tức!)**; batch chung kết phát sau
 bằng truy vấn tiếng Việt. Mô hình theo VBS (Video Browser Showdown) và LSC.
 
 **Timeline 2026 (đã xác minh từ cổng chính thức):** đăng ký đến 15/6 · tập huấn 6–7/2026
@@ -99,9 +101,9 @@ bằng truy vấn tiếng Việt. Mô hình theo VBS (Video Browser Showdown) v�
 | **AVS** | Tìm CÀNG NHIỀU đoạn khớp mô tả càng tốt | như KIS, nhiều dòng đa dạng |
 | **KIS-C** *(điểm nhấn 2026, chưa chắc thi)* | Hội thoại: gợi ý tối thiểu ban đầu, tiết lộ thêm sau 60s theo câu hỏi của đội | như KIS |
 
-**Chấm điểm vòng loại (Codabench)** — công thức CHÍNH THỨC (đã cài trong `cvp/eval/official.py`):
+**Chấm điểm vòng loại (hệ thống riêng của BTC)** — công thức CHÍNH THỨC (đã cài trong `cvp/eval/official.py`):
 - KIS: `R-Score = 1` khi và chỉ khi đúng video VÀ `frame_idx ∈ [s,e]`; sai một trong hai → 0.
-- QA: thêm điều kiện answer khớp (so sánh casefold, GIỮ NGUYÊN dấu tiếng Việt).
+- QA: thêm điều kiện answer khớp. LƯU Ý buổi 4: chấm THẬT dùng LLM so khớp NGỮ NGHĨA + người đọc lại (đáp án mơ hồ chấp nhận nhiều phương án; lỗi cú pháp nhỏ được chấm lại tay) — casefold trong `official.py` là cận dưới bảo thủ, đừng tối ưu hình thức chuỗi.
 - TRAKE: sai video → 0; đúng video → `(1/N)·Σ 1(frame_j ∈ [s_j,e_j])` (ví dụ BTC: 3/4 = 0.75).
 - Mỗi truy vấn: `R@k = max R-Score trong k dòng đầu`, k ∈ {1,5,20,50,100};
   **Final = trung bình 5 giá trị R@k**. Hit càng sớm điểm càng cao.
@@ -113,7 +115,7 @@ bằng truy vấn tiếng Việt. Mô hình theo VBS (Video Browser Showdown) v�
 
 ## 2. Ý tưởng cốt lõi
 
-Bài toán đưa về **truy xuất ảnh mức keyframe** (BTC đảm bảo mọi đoạn đáp án chứa ≥1 keyframe):
+Bài toán đưa về **truy xuất ảnh mức keyframe** (buổi 4: keyframe BTC chỉ là GIẢI PHÁP MẪU ~1-2 khung/đoạn đáp án; GT có thể nằm GIỮA hai keyframe — câu đếm/lia máy nên xem video; densify bằng `extraction.shot_positions` khi cần):
 
 ```
 OFFLINE (build 1 lần, resumable)                 ONLINE (mỗi truy vấn <1s)
@@ -140,7 +142,7 @@ media-info + objects (Open Images)      ─┘            ──► kết quả 
 4. **QA trả lời THEO TỪNG dòng** — ứng viên gộp nhóm theo (video, ngắt cảnh >10s/250 frame),
    VQA từng nhóm (≤`vqa.max_calls_per_query`), mỗi dòng mang answer đúng nhóm của nó
    (điểm QA yêu cầu ĐÚNG dòng mang ĐÚNG answer).
-5. **Đóng gói + nộp tự động** — `packager.py` validate mọi CSV theo thể lệ rồi zip Codabench
+5. **Đóng gói + nộp tự động** — `packager.py` validate mọi CSV theo thể lệ rồi zip đúng thể lệ
    kèm MANIFEST sha256; `dres_client.py` (urllib thuần, không bao giờ tự retry lệnh bị từ chối);
    `auto_agent.py` chạy trọn gói cho **thể thức tự động 2026**.
 6. **provided_clip32 tự bật** trong notebook 01 khi có features của BTC.
@@ -156,7 +158,7 @@ media-info + objects (Open Images)      ─┘            ──► kết quả 
     b-roll), vẫn giữ cap/video + khoảng cách thời gian.
 12. **Frame hỏng (vector 0) bị loại khỏi pool SuperGlobal** — không pha loãng refinement.
 13. **Test tầng tích hợp**: SearchEngine end-to-end với fake model (6 tests), official
-    scorer 60+ tests, packager 34 tests... tổng cộng **602 tests** (Perfect V1: 316 kế thừa + 286 mới cho cross-rerank/objects-parquet/keyframe-align/service/VQA-đa-khung/temporal-boost/confidence-retry) + GitHub Actions CI.
+    scorer 60+ tests, packager 34 tests... tổng cộng **609 tests** (Perfect V1: 316 kế thừa + 293 mới cho cross-rerank/objects-parquet/keyframe-align/service/VQA-đa-khung/temporal-boost/confidence-retry) + GitHub Actions CI.
 14. **KIS-C nhận tóm tắt kết quả hiện tại** → câu hỏi làm rõ có tính phân biệt;
     thêm **đồng hồ 5 phút** progressive-KIS trong app.
 15. **Truy vấn tiếng Anh cũng được enhance** (trước đây bị bỏ qua hoàn toàn).
@@ -256,7 +258,7 @@ Core-Vision_Perfect_V1/
 │   │            · temporal (DANTE/beam, ensemble) · temporal_boost (Vortex)
 │   │            · avs (MMR) · feedback (ensemble) · text_signals (O(K))
 │   │            · object_filter · cross_rerank (BLIP-2 ITM/Qwen) · vqa · vlm_rerank
-│   ├── submission/ writer · packager (Codabench zip) · dres_client
+│   ├── submission/ writer · packager (zip `submission/`) · dres_client
 │   ├── training/ build_dataset · datamodule (anchor+hardneg) · losses (sigmoid/infonce)
 │   │            · lit_trainer (exact resume + WiSE-FT) · public_datasets
 │   ├── eval/    metrics · official (công thức BTC, pure stdlib)
@@ -274,21 +276,21 @@ Core-Vision_Perfect_V1/
 │            · PROJECT_PLAN · DATA_FORMAT · DRIVE_SETUP · TRAINING · PLAYBOOK · PAPER_NOTES
 ├── report/  LaTeX kit báo cáo giải pháp (BẮT BUỘC nộp kèm vòng sơ tuyển)
 ├── HUONG_DAN.md  hướng dẫn A-Z tiếng Việt (Drive → Colab → thi đấu)
-├── tests/   602 tests CPU thuần (không cần GPU/mạng/data thật)
+├── tests/   609 tests CPU thuần (không cần GPU/mạng/data thật)
 └── .github/workflows/ci.yml
 ```
 
 ## 6. Quy trình A→Z
 
-1. **Local**: `pip install -e ".[search,dev]"` → `pytest` (bộ đầy đủ **602 pass** khi có torch-cpu như CI; không torch thì các test training/model bị skip — đo lại con số torch-less sau khi cài).
+1. **Local**: `pip install -e ".[search,dev]"` → `pytest` (bộ đầy đủ **609 pass** khi có torch-cpu như CI; không torch thì các test training/model bị skip — đo lại con số torch-less sau khi cài).
 2. **Drive**: upload theo `docs/DRIVE_SETUP.md`.
 3. **Colab nb 01** (GPU bất kỳ): catalog → extract K-batch → embed các lane → FAISS
    → OCR/ASR/captions → **text index**. Mọi bước resumable, FORCE_* để làm lại.
 4. **Colab nb 02** (ưu tiên H100): public parquets → train set → LoRA-LiT → WiSE-FT
    → so baseline. Run all là tự resume.
-5. **Colab nb 03** / laptop: smoke test, latency, CSV mẫu, **validate + zip Codabench**,
+5. **Colab nb 03** / laptop: smoke test, latency, CSV mẫu, **validate + zip `submission/`**,
    chấm thử với GT, dry-run auto-agent.
-6. **Vòng loại**: `python scripts/20_run_queries.py --query-dir <đề> --zip` → nộp Codabench
+6. **Vòng loại**: `python scripts/20_run_queries.py --query-dir <đề> --zip` → nộp lên hệ thống của BTC
    (nhớ: 5 lượt/ngày, 20 lượt tổng).
 7. **Chung kết**: laptop chạy app + artifacts sync về; đấu pháp trong PLAYBOOK;
    DRES client cấu hình `submission.dres_base_url` khi BTC công bố endpoint.
@@ -308,7 +310,7 @@ Core-Vision_Perfect_V1/
 
 ## 8. Trạng thái & việc còn lại
 
-- ✅ Source + 602 tests + CI + 3 notebooks + docs (11 file) + app + service + report/ LaTeX kit.
+- ✅ Source + 609 tests + CI + 3 notebooks + docs (11 file) + app + service + report/ LaTeX kit.
 - ✅ **Batch 1 sơ tuyển ĐÃ VỀ (15/08/2026)** — 32 zip / 873 video L21–L30, map-keyframes đủ
   (DATASET_INGESTION §1b); việc còn lại là VẬN HÀNH: upload Drive → nb01 build artifacts →
   nb02 train → nb03 + tune weights đo chất lượng thật. BTC sẽ phát thêm batch 2.

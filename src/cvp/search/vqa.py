@@ -19,7 +19,7 @@ from cvp.utils.images import load_rgb
 log = logging.getLogger(__name__)
 
 _VQA_PROMPT = (
-    "Bạn đang xem một khung hình từ video tin tức Việt Nam. "
+    "Bạn đang xem một khung hình từ video tiếng Việt. "
     "Trả lời NGẮN GỌN câu hỏi sau (chỉ đáp án, tối đa 100 ký tự, không giải thích):\n{question}"
 )
 
@@ -29,10 +29,38 @@ _VQA_PROMPT = (
 # is free.
 _VQA_STRIP_PROMPT = (
     "Bạn đang xem {n} khung hình LIÊN TIẾP theo thứ tự thời gian từ CÙNG MỘT "
-    "cảnh trong video tin tức Việt Nam. Kết hợp thông tin từ TẤT CẢ các khung "
+    "cảnh trong video tiếng Việt. Kết hợp thông tin từ TẤT CẢ các khung "
     "hình (chữ trên màn hình có thể trải dài qua nhiều khung) và trả lời NGẮN "
     "GỌN câu hỏi sau (chỉ đáp án, tối đa 100 ký tự, không giải thích):\n{question}"
 )
+
+
+def _with_context(prompt: str, context: str) -> str:
+    """Prepend the ASR transcript around the candidate moment.
+
+    Buổi tập huấn 4: đây là Q&A chứ không phải VQA — câu hỏi có thể dựa trên
+    ÂM THANH (lời thoại) chứ không chỉ hình ảnh. Model phải được đọc thoại.
+    """
+    if not context:
+        return prompt
+    return (f"Lời thoại trong đoạn video quanh khoảnh khắc này (nhận dạng từ "
+            f'âm thanh, có thể sai chính tả): "{context}"\n{prompt}')
+
+
+def asr_context(settings: Settings, video_id: str, pts_time: float,
+                window_s: float = 20.0) -> str:
+    """Transcript text overlapping [pts_time ± window_s] from artifacts/asr."""
+    from cvp.utils.io import read_json
+
+    p = settings.paths.art("asr") / f"{video_id}.json"
+    if not p.exists():
+        return ""
+    segs = (read_json(p, default={}) or {}).get("segments") or []
+    lo, hi = pts_time - window_s, pts_time + window_s
+    texts = [str(s.get("text", "")).strip() for s in segs
+             if s.get("text") and float(s.get("end", 0)) >= lo
+             and float(s.get("start", 0)) <= hi]
+    return " ".join(t for t in texts if t)[:800]
 
 
 @dataclass
@@ -118,7 +146,7 @@ class VqaAssistant:
 
     # ── providers ────────────────────────────────────────────────────────
 
-    def _ask_gemini(self, image_path: str, question: str) -> str:
+    def _ask_gemini(self, image_path: str, question: str, context: str = "") -> str:
         if self._gemini_client is None:
             self._gemini_client = make_gemini_client(self.settings)
         img = load_rgb(image_path)
@@ -127,11 +155,11 @@ class VqaAssistant:
         return generate_with_fallback(
             self._gemini_client,
             gemini_model_chain(self.settings, self.cfg.gemini_model),
-            [_VQA_PROMPT.format(question=question), img],
+            [_with_context(_VQA_PROMPT.format(question=question), context), img],
             timeout_s=gemini_wall_timeout(self.settings),
         )
 
-    def _ask_local(self, image_path: str, question: str) -> str:
+    def _ask_local(self, image_path: str, question: str, context: str = "") -> str:
         """Vintern-1B (InternVL family) — loaded lazily, cached."""
         import torch
         from transformers import AutoModel
@@ -155,12 +183,13 @@ class VqaAssistant:
 
         pixel_values = load_image_tiles(image_path, max_num=self.settings.caption.max_tiles)
         pixel_values = pixel_values.to(device=device, dtype=dtype)
-        prompt = "<image>\n" + _VQA_PROMPT.format(question=question)
+        prompt = "<image>\n" + _with_context(_VQA_PROMPT.format(question=question), context)
         gen_cfg = dict(max_new_tokens=64, do_sample=False, num_beams=2)
         answer = model.chat(tokenizer, pixel_values, prompt, gen_cfg)
         return str(answer).strip()
 
-    def _ask_gemini_strip(self, image_paths: list[str], question: str) -> str:
+    def _ask_gemini_strip(self, image_paths: list[str], question: str,
+                          context: str = "") -> str:
         if self._gemini_client is None:
             self._gemini_client = make_gemini_client(self.settings)
         imgs = []
@@ -174,13 +203,15 @@ class VqaAssistant:
         return generate_with_fallback(
             self._gemini_client,
             gemini_model_chain(self.settings, self.cfg.gemini_model),
-            [_VQA_STRIP_PROMPT.format(n=len(imgs), question=question), *imgs],
+            [_with_context(_VQA_STRIP_PROMPT.format(n=len(imgs), question=question),
+                           context), *imgs],
             timeout_s=gemini_wall_timeout(self.settings),
         )
 
     # ── public ───────────────────────────────────────────────────────────
 
-    def answer_group(self, question: str, image_paths: list[str]) -> str:
+    def answer_group(self, question: str, image_paths: list[str],
+                     context: str = "") -> str:
         """ONE answer for a temporal strip of frames from one candidate group.
 
         Gemini sees the whole strip in a single call (multi-frame evidence —
@@ -193,30 +224,31 @@ class VqaAssistant:
             return ""
         if self.cfg.provider == "gemini":
             try:
-                return self._ask_gemini_strip(paths, question)[:MAX_QA_ANSWER_CHARS]
+                return self._ask_gemini_strip(paths, question, context)[:MAX_QA_ANSWER_CHARS]
             except Exception as e:  # noqa: BLE001 — degrade to local model
                 log.warning("Gemini strip-VQA failed (%s) — trying local model", e)
         if self.cfg.provider in ("gemini", "vintern"):
             try:
                 middle = paths[len(paths) // 2]
-                return self._ask_local(middle, question)[:MAX_QA_ANSWER_CHARS]
+                return self._ask_local(middle, question, context)[:MAX_QA_ANSWER_CHARS]
             except Exception as e:  # noqa: BLE001
                 log.warning("Local VQA failed: %s", e)
         return ""
 
-    def suggest(self, question: str, frames: list[tuple[int, str]]) -> list[VqaAnswer]:
+    def suggest(self, question: str, frames: list[tuple[int, str]],
+                context: str = "") -> list[VqaAnswer]:
         """frames: [(global_id, image_path)] — returns one suggestion per frame."""
         out: list[VqaAnswer] = []
         for gid, path in frames[: self.cfg.top_frames]:
             answer, provider = "", "none"
             if self.cfg.provider == "gemini":
                 try:
-                    answer, provider = self._ask_gemini(path, question), "gemini"
+                    answer, provider = self._ask_gemini(path, question, context), "gemini"
                 except Exception as e:  # noqa: BLE001 — degrade to local model
                     log.warning("Gemini VQA failed (%s) — trying local model", e)
             if not answer and self.cfg.provider in ("gemini", "vintern"):
                 try:
-                    answer, provider = self._ask_local(path, question), "vintern"
+                    answer, provider = self._ask_local(path, question, context), "vintern"
                 except Exception as e:  # noqa: BLE001
                     log.warning("Local VQA failed: %s", e)
             if answer:

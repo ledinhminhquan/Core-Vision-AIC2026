@@ -39,7 +39,7 @@ hợp nhất với BM25 bốn kênh (OCR/ASR/caption/metadata), tinh chỉnh Sup
 rerank cross-encoder tùy chọn (BLIP-2 ITM~\cite{li2023blip2} / Qwen3-VL-Reranker),
 quy hoạch động DANTE cho TRAKE, MMR~\cite{carbonell1998mmr} cho AVS, và VQA đa khung hình
 cho Q\&A. Toàn bộ pipeline offline có thể resume, online trả lời
-dưới 1 giây/truy vấn; 602 test CPU + CI đảm bảo tính đúng của công thức chấm
+dưới 1 giây/truy vấn; 609 test CPU + CI đảm bảo tính đúng của công thức chấm
 và định dạng nộp bài. % TODO: cập nhật kết quả sơ tuyển khi có.
 \end{minisummaryboxaivn}
 
@@ -64,7 +64,7 @@ lẫn dịch vụ HTTP/JSON máy-gọi-máy (mục~\ref{sec:autoagent}) sẵn s�
 hình thức tự động được công bố.
 
 Về thời gian: BTC phát hành dữ liệu, đề bài, baseline và độ đo \emph{chậm nhất 25/07/2026};
-sơ tuyển diễn ra tháng 8/2026 trên Codabench (kết quả 30/8); chung kết on-site 12--26/9/2026;
+sơ tuyển diễn ra tháng 8/2026 trên hệ thống nộp bài của BTC (kết quả 30/8); chung kết on-site 12--26/9/2026;
 trao giải tháng 10/2026. Vòng sơ tuyển yêu cầu nộp kèm \emph{báo cáo giải pháp} --- chính là
 tài liệu này. Các dạng đề: KIS (mô tả văn bản $\rightarrow$ đúng một khoảnh khắc),
 KIS-V (xem clip ngắn chiếu trên màn hình --- chỉ được \emph{xem}, cấm quay chụp, âm thanh
@@ -272,12 +272,12 @@ artifacts thật.} A5 in bảng riêng trong notebook 02; quét trọng số đ�
 
 Trọng số tín hiệu được tune \emph{offline} trên score map đã cache: \texttt{scripts/23\_dump\_signals.py}
 chạy engine một lần mỗi câu, \texttt{scripts/21\_tune\_weights.py} tối ưu rồi in đúng các dòng
-\texttt{CVP\_SEARCH\_\_WEIGHTS\_\_*} để dán sang máy thi --- không tốn lượt nộp nào của Codabench.
+\texttt{CVP\_SEARCH\_\_WEIGHTS\_\_*} để dán sang máy thi --- không tốn lượt nộp nào của hệ thống nộp bài của BTC.
 Độ trễ được đo bằng \texttt{scripts/50\_bench\_latency.py} (mặc định $N{=}200$ truy vấn, báo cáo
 p50/p95/p99 của đường nóng \texttt{search\_text}); chỉ tiêu vận hành đã chốt: \textbf{p50
 $\le$ 200 ms, p95 $\le$ 500 ms} trên laptop thi đấu --- dư ngân sách lớn trong khung 4--5 phút
 mỗi truy vấn chung kết. % TODO: dán bảng percentile thật sau khi build artifacts 2026.
-Chất lượng kỹ thuật của mã được găm bằng 602 test CPU thuần (không cần GPU/mạng/data thật)
+Chất lượng kỹ thuật của mã được găm bằng 609 test CPU thuần (không cần GPU/mạng/data thật)
 chạy trong CI, phủ scorer chính thức, packager, parser đề thật của BTC và toàn bộ engine
 tích hợp với fake model.
 
@@ -290,7 +290,7 @@ Quy trình vòng loại là một lệnh duy nhất, thiết kế để \emph{ti
 
 \begin{aivnoutputbox}[Vòng loại: chạy đề $\rightarrow$ validate $\rightarrow$ zip $\rightarrow$ chấm thử offline]
 python scripts/20_run_queries.py --query-dir <thư mục đề> --zip --gt <gt.json nếu có>
-# zip đầu ra CHỨA folder 'submission' đúng thể lệ Codabench, kèm MANIFEST sha256;
+# zip đầu ra CHỨA folder 'submission' đúng thể lệ hệ thống nộp bài của BTC, kèm MANIFEST sha256;
 # --gt in bảng điểm per-query/per-task/MEAN FINAL đúng công thức BTC trước khi nộp.
 \end{aivnoutputbox}
 

@@ -418,8 +418,15 @@ def main() -> None:
                        "trước rồi mới Suggest answers.")
         if do_vqa and _qa_results and qq.strip():
             try:
+                from cvp.search.vqa import asr_context
+                _top = _qa_results[0].ref
+                _ctx = asr_context(load_settings(), str(_top.video_id),
+                                   float(getattr(_top, "pts_time", 0.0)))
+                if _ctx:  # buổi 4: QA có thể hỏi về ÂM THANH — cho người xem đọc thoại
+                    st.caption("🔊 Thoại (ASR) quanh ứng viên #1: " + _ctx[:300])
                 suggestions = get_vqa().suggest(
-                    qq, [(r.global_id, r.ref.path) for r in _qa_results[:5]]
+                    qq, [(r.global_id, r.ref.path) for r in _qa_results[:5]],
+                    context=_ctx,
                 )
                 st.session_state.vqa_suggestions = {s.global_id: s.answer for s in suggestions}
                 if suggestions:

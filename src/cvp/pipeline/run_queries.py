@@ -372,16 +372,35 @@ def compute_qa_answers(results: Sequence[SearchResult], question: str,
         best = group[0]
         ans = ""
         try:
+            # Buổi 4: đây là Q&A chứ không phải VQA — câu hỏi có thể dựa trên
+            # ÂM THANH. Đưa thoại ASR quanh khoảnh khắc ứng viên vào prompt.
+            ctx = ""
+            if settings is not None:
+                try:
+                    from cvp.search.vqa import asr_context
+                    _ref = results[best].ref
+                    ctx = asr_context(settings, str(_ref.video_id),
+                                      float(getattr(_ref, "pts_time", 0.0)))
+                except Exception:  # noqa: BLE001 — context is best-effort
+                    ctx = ""
             # Multi-frame strip first (one call sees the whole group — fixes
             # the 2025 "math in video" QA where text spans several frames);
             # single-frame `suggest` remains the compatibility/stub fallback.
             if hasattr(vqa, "answer_group"):
                 strip = _group_strip(results, group,
                                      getattr(cfg, "frames_per_answer", 1))
-                ans = str(vqa.answer_group(question, strip) or "")[:MAX_QA_ANSWER_CHARS]
+                try:
+                    ans = str(vqa.answer_group(question, strip, context=ctx)
+                              or "")[:MAX_QA_ANSWER_CHARS]
+                except TypeError:  # stub/legacy vqa without the context kwarg
+                    ans = str(vqa.answer_group(question, strip) or "")[:MAX_QA_ANSWER_CHARS]
             if not ans:
                 r = results[best]
-                suggestions = vqa.suggest(question, [(r.global_id, r.ref.path)])
+                try:
+                    suggestions = vqa.suggest(question, [(r.global_id, r.ref.path)],
+                                              context=ctx)
+                except TypeError:
+                    suggestions = vqa.suggest(question, [(r.global_id, r.ref.path)])
                 if suggestions:
                     ans = str(suggestions[0].answer)[:MAX_QA_ANSWER_CHARS]
         except Exception as e:  # noqa: BLE001 — one failed group must not sink the query

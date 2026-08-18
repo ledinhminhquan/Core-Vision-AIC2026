@@ -88,7 +88,17 @@ Tab 💬: mỗi khi ban tổ chức nhả thêm gợi ý → **Add hint** (trợ
 thành 1 truy vấn — không bao giờ chỉ search gợi ý mới nhất). Đọc các "câu hỏi làm rõ"
 trợ lý đề xuất — đó là những chi tiết nên chờ/đoán từ gợi ý sau.
 
-## 7. Vòng sơ tuyển (Codabench) — kỷ luật nộp bài
+## 6b. ⚡ CHECKLIST TUẦN THI ĐẦU (buổi 4, 18/08/2026 — đợt 1 TỐI THỨ SÁU trên B1)
+
+1. **Email đội trưởng (chậm nhất thứ Ba)**: tài khoản hệ thống thi RIÊNG của BTC (không phải Codabench) + thư mục Drive chung (BẬT notification) chứa baseline + video hướng dẫn.
+2. **Tải file spec nộp bài + validator CSV của BTC** → chạy validator lên zip do `packager.py` sinh ra; lệch gì sửa writer/packager NGAY (tên file CSV phải khớp tên file query từng đợt, vd `query-p1-1-kis.csv`).
+3. **Nộp THI THỬ trong tuần** — bắt buộc, để lỗi kỹ thuật chết ở vòng thử.
+4. Thi thật đợt 1: ~20-25 câu (đa số KIS + ~4 QA + ~1 TRAKE), CHỈ dữ liệu B1 (nấu ăn + học/luyện thi). Xét TỔNG 3 đợt — đợt 1 điểm thấp vẫn gỡ được, đừng hoảng.
+5. Leaderboard **ẨN ~50% điểm** (giữ như 2025) — tin scorer offline, không đốt lượt nộp để "sửa rank".
+6. Kiểm frame thủ công: mở video bằng **Media Player Classic → Ctrl+G** (hiện frame hiện tại; frame đánh số TỪ 1, theo presentation time; lệch ±1 frame vẫn được chấm đúng). Độ rộng đoạn đáp án: ngắn ~4-10s, điển hình ~1 phút, tối đa ~5 phút.
+7. Query có thể mô tả ÂM THANH và thực thể NGOÀI video (vd "Donald Trump" khi video chỉ nói "Tổng thống Mỹ") — Verifier google thực thể lạ rồi mớm từ khóa THỊ GIÁC cho Driver; Gemini enhancement đã tự mở rộng thực thể (round-18).
+
+## 7. Vòng sơ tuyển (hệ thống riêng của BTC) — kỷ luật nộp bài
 
 - **5 lượt/ngày, 20 lượt tổng (thể lệ 2026)** → LUÔN chấm offline trước:
   `python scripts/40_eval_official.py --submission-dir ... --gt ...` (đúng công thức BTC).
