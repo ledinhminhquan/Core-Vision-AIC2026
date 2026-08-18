@@ -52,6 +52,56 @@ class _FasterWhisperBackend:
         return [{"start": float(s.start), "end": float(s.end), "text": s.text.strip()} for s in segments]
 
 
+def _extract_wav(media_path: str) -> str | None:
+    """Decode the audio track to a local 16 kHz mono wav and return its path.
+
+    The transformers ASR pipeline loads files by piping their BYTES through
+    ffmpeg's stdin (``ffmpeg_read``) — an mp4 whose moov atom sits at the END
+    of the file (the organiser encodes) cannot be decoded from a pipe, which
+    made every Batch-1 video fail with "Soundfile is malformed" (live run 6).
+    Decoding from the seekable path ourselves sidesteps that entirely.
+
+    Returns None when the video simply has NO audio stream (a silent video is
+    a valid input → empty transcript, not a failure).
+    """
+    import subprocess
+    import tempfile
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp.close()
+    try:
+        # timeout: a Drive-FUSE stall must become a per-video failure that
+        # feeds the systemic guard, not an invisible all-night hang (verify-R15)
+        r = subprocess.run(
+            ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", media_path,
+             "-vn", "-ac", "1", "-ar", "16000", "-f", "wav", tmp.name],
+            capture_output=True, text=True, timeout=600)
+    except FileNotFoundError as e:
+        Path(tmp.name).unlink(missing_ok=True)
+        raise RuntimeError("ffmpeg binary not found — ASR needs ffmpeg installed") from e
+    except subprocess.TimeoutExpired as e:
+        Path(tmp.name).unlink(missing_ok=True)
+        raise RuntimeError(f"ffmpeg timed out after 600s on {media_path}") from e
+    try:
+        if r.returncode == 0 and Path(tmp.name).stat().st_size > 44:  # > wav header
+            return tmp.name
+    except OSError:
+        pass
+    Path(tmp.name).unlink(missing_ok=True)
+    try:
+        p = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a",
+             "-show_entries", "stream=codec_type", "-of", "csv=p=0", media_path],
+            capture_output=True, text=True, timeout=60)
+    except FileNotFoundError as e:
+        raise RuntimeError("ffprobe binary not found — ASR needs ffmpeg installed") from e
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"ffprobe timed out on {media_path}") from e
+    if p.returncode == 0 and not p.stdout.strip():
+        return None                      # no audio stream — silent video
+    raise RuntimeError(f"ffmpeg audio extraction failed: {(r.stderr or '').strip()[:300]}")
+
+
 class _TransformersBackend:
     def __init__(self, settings: Settings):
         import torch
@@ -70,8 +120,15 @@ class _TransformersBackend:
             return_timestamps=True,
         )
 
-    def transcribe(self, media_path: str) -> list[dict]:
-        out = self.pipe(media_path)
+    def transcribe(self, media_path: str) -> list[dict] | None:
+        """Segments; ``None`` means the video has NO audio track (silent)."""
+        wav = _extract_wav(media_path)
+        if wav is None:
+            return None
+        try:
+            out = self.pipe(wav)
+        finally:
+            Path(wav).unlink(missing_ok=True)
         segments = []
         for chunk in out.get("chunks", []):
             ts = chunk.get("timestamp") or (None, None)
@@ -82,6 +139,14 @@ class _TransformersBackend:
                 "end": float(ts[1] if ts[1] is not None else ts[0] + 5.0),
                 "text": str(chunk.get("text", "")).strip(),
             })
+        if not segments:
+            # Whisper fine-tunes (PhoWhisper) can emit text WITHOUT usable
+            # timestamps — salvage it as one whole-video segment so the speech
+            # recall channel survives, instead of silently dropping everything
+            # (verify-R15). 86400s covers any video length.
+            text = str(out.get("text", "")).strip()
+            if text:
+                segments = [{"start": 0.0, "end": 86400.0, "text": text}]
         return segments
 
 
@@ -105,14 +170,19 @@ def asr_all_videos(settings: Settings, catalog: KeyframeCatalog,
     todo = videos or catalog.videos()
     backend = None
     done = 0
+    attempted = 0
+    files_found = 0
     consecutive_failures = 0
+    consecutive_empty_audio = 0
     for vid in todo:
         out_path = out_dir / f"{vid}.json"
         if out_path.exists() and not overwrite:
             continue
+        attempted += 1
         src = _find_video_file(video_root, vid)
         if src is None:
             continue
+        files_found += 1
         if backend is None:
             backend = _build_backend(settings)
         try:
@@ -129,9 +199,37 @@ def asr_all_videos(settings: Settings, catalog: KeyframeCatalog,
                 ) from e
             continue
         consecutive_failures = 0
-        atomic_write_json(out_path, {"segments": segments})
+        no_audio = segments is None
+        if no_audio:
+            segments = []
+        elif not segments:
+            # Audio track EXISTS but the decoder produced nothing. On a news
+            # corpus that cannot be true 5 videos in a row — and writing the
+            # empty artifact would lock the corruption in behind the resume
+            # skip forever (verify-R15). Leave it unwritten (retried next run)
+            # and abort loudly if it looks systemic.
+            consecutive_empty_audio += 1
+            log.warning("ASR %s: audio present but 0 segments — artifact NOT "
+                        "written (sẽ thử lại lần chạy sau)", vid)
+            if consecutive_empty_audio >= 5:
+                raise RuntimeError(
+                    "ASR produced 0 segments for 5 consecutive videos that DO "
+                    "have an audio track — decoder/output drift (systemic "
+                    "failure), aborting instead of writing empty transcripts")
+            continue
+        else:
+            consecutive_empty_audio = 0
+        payload: dict = {"segments": segments}
+        if no_audio:
+            payload["no_audio"] = True    # phân biệt video câm với decode hỏng
+        atomic_write_json(out_path, payload)
         done += 1
         log.info("ASR %s: %d segments (%d done)", vid, len(segments), done)
+    if attempted and files_found == 0:
+        raise RuntimeError(
+            f"ASR: KHÔNG tìm thấy file video nào cho {attempted} video cần xử lý "
+            f"dưới {video_root} — thư mục videos trống/symlink chết? Kiểm tra "
+            "Videos_*.zip đã bung trên Drive và mount còn sống, rồi chạy lại.")
     return done
 
 

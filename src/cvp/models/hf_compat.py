@@ -34,3 +34,42 @@ def feature_tensor(out):
         f"cannot extract a feature tensor from {type(out).__name__} — "
         "unexpected transformers output shape"
     )
+
+
+def ensure_remote_code_compat() -> None:
+    """transformers-5 drift (live run 6): the v5 finalize step reads
+    ``self.all_tied_weights_keys``, which is set during ``post_init()`` —
+    remote-code InternVL/Vintern models never call it, so every load died with
+    AttributeError. A read-only class-level default satisfies v5's
+    ``missing_keys - self.all_tied_weights_keys.keys()`` for models that skip
+    post_init, while properly initialised models still shadow it per-instance.
+    MappingProxyType keeps the shared default immune to in-place mutation (any
+    future transformers write to it fails LOUDLY instead of silently poisoning
+    later loads). No-op when the attribute already exists at class level.
+
+    Call before EVERY ``from_pretrained(..., trust_remote_code=True)`` site —
+    captioner (nb01), local VQA fallback, and the local VLM reranker all load
+    the same Vintern remote code in different processes.
+    """
+    import types
+
+    from transformers.modeling_utils import PreTrainedModel
+
+    if not hasattr(PreTrainedModel, "all_tied_weights_keys"):
+        PreTrainedModel.all_tied_weights_keys = types.MappingProxyType({})
+
+
+def load_tokenizer(model_id: str):
+    """Tokenizer for remote-code models across transformers generations.
+
+    Vintern's docs say ``use_fast=False``, but transformers 5 removed several
+    slow (pure-Python) tokenizer classes — if the slow path is gone, fall back
+    to the default (fast) tokenizer rather than dying one line after the
+    model finally loaded (verify-R15).
+    """
+    from transformers import AutoTokenizer
+
+    try:
+        return AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, use_fast=False)
+    except Exception:  # noqa: BLE001 — v5 slow-tokenizer removal
+        return AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)

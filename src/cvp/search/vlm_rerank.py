@@ -81,7 +81,7 @@ _LOCAL_VLM = None  # (model, tokenizer, device, dtype) — module-level lazy sin
 def _vintern_scores(query: str, paths: list[str], settings: Settings) -> list[float] | None:
     global _LOCAL_VLM
     import torch
-    from transformers import AutoModel, AutoTokenizer
+    from transformers import AutoModel
 
     from cvp.auxindex.vintern_preprocess import load_image_tiles
 
@@ -90,10 +90,13 @@ def _vintern_scores(query: str, paths: list[str], settings: Settings) -> list[fl
         log.info("Loading local rerank VLM %s", model_id)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.bfloat16 if device == "cuda" else torch.float32
+        from cvp.models.hf_compat import ensure_remote_code_compat, load_tokenizer
+
+        ensure_remote_code_compat()
         model = AutoModel.from_pretrained(
             model_id, torch_dtype=dtype, trust_remote_code=True
         ).to(device).eval()
-        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, use_fast=False)
+        tokenizer = load_tokenizer(model_id)
         _LOCAL_VLM = (model, tokenizer, device, dtype)
     model, tokenizer, device, dtype = _LOCAL_VLM
 

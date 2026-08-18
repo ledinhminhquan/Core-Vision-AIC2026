@@ -134,17 +134,20 @@ class VqaAssistant:
     def _ask_local(self, image_path: str, question: str) -> str:
         """Vintern-1B (InternVL family) — loaded lazily, cached."""
         import torch
-        from transformers import AutoModel, AutoTokenizer
+        from transformers import AutoModel
 
         if self._local is None:
             model_id = self.cfg.local_model
             log.info("Loading local VQA model %s", model_id)
             device = "cuda" if torch.cuda.is_available() else "cpu"
             dtype = torch.bfloat16 if device == "cuda" else torch.float32
+            from cvp.models.hf_compat import ensure_remote_code_compat, load_tokenizer
+
+            ensure_remote_code_compat()
             model = AutoModel.from_pretrained(
                 model_id, torch_dtype=dtype, trust_remote_code=True
             ).to(device).eval()
-            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, use_fast=False)
+            tokenizer = load_tokenizer(model_id)
             self._local = (model, tokenizer, device, dtype)
         model, tokenizer, device, dtype = self._local
 

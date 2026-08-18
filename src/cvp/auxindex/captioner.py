@@ -29,17 +29,20 @@ _CAPTION_PROMPT = (
 class VinternCaptioner:
     def __init__(self, settings: Settings):
         import torch
-        from transformers import AutoModel, AutoTokenizer
+        from transformers import AutoModel
+
+        from cvp.models.hf_compat import ensure_remote_code_compat, load_tokenizer
 
         self.settings = settings
         model_id = settings.caption.model
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
         log.info("Loading captioner %s (%s)", model_id, self.device)
+        ensure_remote_code_compat()
         self.model = AutoModel.from_pretrained(
             model_id, torch_dtype=self.dtype, trust_remote_code=True
         ).to(self.device).eval()
-        self.tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, use_fast=False)
+        self.tokenizer = load_tokenizer(model_id)
 
     def caption(self, image_path: str) -> str:
         from cvp.auxindex.vintern_preprocess import load_image_tiles
@@ -60,6 +63,7 @@ def caption_all_keyframes(settings: Settings, catalog: KeyframeCatalog,
     todo_videos = videos or [str(v) for v in df["video_id"].unique()]
     captioner = None
     done = 0
+    consecutive_video_failures = 0
     for vid in todo_videos:
         out_path = out_dir / f"{vid}.json"
         grp = df[df["video_id"] == vid].sort_values("n")
@@ -93,6 +97,18 @@ def caption_all_keyframes(settings: Settings, catalog: KeyframeCatalog,
                 f"Captioning failed on every frame of the first video ({vid}) — "
                 "systemic failure, aborting the sweep"
             ) from last_err
+        if len(wanted) > 0 and processed == 0 and last_err is not None:
+            # verify-R15: a STICKY mid-sweep failure (poisoned CUDA context,
+            # dead keyframe path) fails every frame of every later video — the
+            # first-video guard alone would let it burn the whole session.
+            consecutive_video_failures += 1
+            if consecutive_video_failures >= 3:
+                raise RuntimeError(
+                    "Captioning failed on every frame of 3 consecutive videos "
+                    f"(latest: {vid}) — systemic failure, aborting the sweep"
+                ) from last_err
+        else:
+            consecutive_video_failures = 0
         atomic_write_json(out_path, {"n_to_caption": n_to_caption, "processed_count": processed})
         done += 1
         log.info("Captions %s: %d frames (%d/%d videos)", vid, len(n_to_caption), done, len(todo_videos))
