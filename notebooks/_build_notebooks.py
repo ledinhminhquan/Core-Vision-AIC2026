@@ -113,11 +113,54 @@ CELL_MOUNT = r'''
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║  2 · Mount Drive + folder layout + preflight write test          ║
 # ╚══════════════════════════════════════════════════════════════════╝
-import os, time
+import os, shutil, subprocess, time
 from pathlib import Path
 
 from google.colab import drive
-drive.mount("/content/drive")
+
+_MP = "/content/drive"
+
+def _drive_alive() -> bool:
+    try:
+        return Path(_MP, "MyDrive").exists()
+    except OSError:
+        return False
+
+def _ensure_drive():
+    """Mount / HỒI SINH Drive FUSE — dùng ở mọi cell dài hơi phía sau.
+
+    Round-19 (live run 8): daemon DriveFS chết để lại mountpoint 'bẩn' →
+    drive.mount kêu 'Mountpoint must not already contain files' và cả
+    force_remount cũng bó tay. Trình tự cứu đúng: (1) fusermount -uz gỡ
+    mount chết; (2) CHỈ khi chắc chắn không còn mount (os.path.ismount ==
+    False — lúc này các entry trong mountpoint là RÁC LOCAL trên đĩa VM,
+    không phải Drive thật) mới dọn sạch chúng; (3) mount lại.
+    """
+    for _try in range(4):
+        if _drive_alive():
+            return
+        if _try:
+            print(f"⚠ Drive FUSE chưa sống — hồi sinh (lần {_try}/3) ...")
+        try:
+            if os.path.ismount(_MP):
+                subprocess.run(["fusermount", "-uz", _MP], capture_output=True)
+                time.sleep(2)
+            if os.path.isdir(_MP) and not os.path.ismount(_MP):
+                for _c in os.listdir(_MP):     # rác local — KHÔNG phải Drive
+                    _p = os.path.join(_MP, _c)
+                    shutil.rmtree(_p, ignore_errors=True) if os.path.isdir(_p) \
+                        else os.unlink(_p)
+            drive.mount(_MP, force_remount=bool(_try))
+        except Exception as _e:  # noqa: BLE001 — thử tiếp vòng sau
+            print("   mount lỗi:", _e)
+            time.sleep(5)
+    if not _drive_alive():
+        raise RuntimeError(
+            "Không mount được Google Drive sau 4 lần thử — Runtime ▸ "
+            "Disconnect and delete runtime rồi Run all lại (tiến độ đã lưu "
+            "trên Drive còn nguyên).")
+
+_ensure_drive()
 assert Path("/content/drive/MyDrive").exists(), "Drive mount failed — rerun this cell"
 
 PROJECT   = Path("/content/drive/MyDrive") / DRIVE_PROJECT_DIR
@@ -552,30 +595,8 @@ import re as _re
 import shutil, time, zipfile
 from pathlib import Path
 
-def _drive_alive() -> bool:
-    try:
-        return DATA_DIR.exists()
-    except OSError:
-        return False
-
-def _ensure_drive():
-    """FUSE chết giữa chừng → remount tối đa 3 lần rồi mới chịu thua."""
-    for _try in range(3):
-        if _drive_alive():
-            return
-        print(f"⚠ Drive FUSE mất kết nối — remount (lần {_try + 1}/3) ...")
-        try:
-            from google.colab import drive as _gd
-            _gd.mount("/content/drive", force_remount=True)
-        except Exception as _e:
-            print("   remount lỗi:", _e)
-        time.sleep(5)
-    if not _drive_alive():
-        raise RuntimeError(
-            "Google Drive FUSE sập và remount 3 lần không thành công — "
-            "Runtime ▸ Restart session rồi Run all lại "
-            "(tiến độ đã lưu trên Drive còn nguyên).")
-
+# _ensure_drive/_drive_alive: bản HARDENED định nghĩa ở Ô 2 (round-19) —
+# biết gỡ mount chết (fusermount -uz) + dọn mountpoint bẩn trước khi mount lại.
 _ensure_drive()          # verify-R14: gate dưới stat qua FUSE — mount phải sống
 if COPY_KEYFRAMES_LOCAL and (DATA_DIR / "keyframes").exists():
     LOCAL_DATA = Path("/content/data")

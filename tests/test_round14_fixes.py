@@ -22,7 +22,15 @@ def test_cell6_is_zip_first_not_copytree_over_fuse():
 
 
 def test_cell6_remount_guard_and_retries():
-    assert "def _ensure_drive" in CELL6 and "force_remount=True" in CELL6
+    # round-19: the HARDENED _ensure_drive lives in the MOUNT cell (cell 2)
+    # and is shared by every later cell — cell 6 only calls it.
+    mount = SRC.split("Mount Drive + folder layout")[1].split("Get repo")[0]
+    assert "def _ensure_drive" in mount and "force_remount=bool(_try)" in mount
+    # dead-daemon recovery: lazy-unmount the corpse, clear LOCAL leftovers
+    # ONLY when nothing is mounted, then mount again
+    assert "fusermount" in mount and "os.path.ismount" in mount
+    assert "Mountpoint must not already contain files" in mount  # names run 8
+    assert "def _ensure_drive" not in CELL6 and "_ensure_drive()" in CELL6
     # both phases retry through FUSE hiccups instead of dying on attempt 1
     assert CELL6.count("for _attempt in (1, 2, 3):") == 2
     assert "Transport endpoint" in SRC  # the failure is named for future readers
