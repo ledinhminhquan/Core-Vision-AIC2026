@@ -116,6 +116,8 @@ def test_transformers_backend_falls_back_to_local_download(monkeypatch, tmp_path
     """Live run 12 (01c): the Drive-hosted HF cache served a truncated model
     file — pipeline() rejected PhoWhisper with every class. The backend must
     re-download to LOCAL disk and retry from that path."""
+    pytest.importorskip("torch")
+    pytest.importorskip("huggingface_hub")
     import types
 
     calls = {"pipeline": [], "snapshot": []}
