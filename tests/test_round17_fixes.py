@@ -109,3 +109,36 @@ def test_extract_video_from_zip_roundtrip_and_cleanup(tmp_path):
         assert Path(tmp).read_bytes() == GOOD and tmp.endswith(".mp4")
     finally:
         Path(tmp).unlink()
+
+
+# ── R22 · torn shared-cache load → clean local re-download ───────────────────
+def test_transformers_backend_falls_back_to_local_download(monkeypatch, tmp_path):
+    """Live run 12 (01c): the Drive-hosted HF cache served a truncated model
+    file — pipeline() rejected PhoWhisper with every class. The backend must
+    re-download to LOCAL disk and retry from that path."""
+    import types
+
+    calls = {"pipeline": [], "snapshot": []}
+
+    def fake_pipeline(model, **kw):
+        calls["pipeline"].append(model)
+        if model == "vinai/PhoWhisper-medium":
+            raise ValueError("Could not load model with any of the following classes")
+        return types.SimpleNamespace(model=model)
+
+    def fake_snapshot(model_id, cache_dir=None):
+        calls["snapshot"].append((model_id, cache_dir))
+        return str(tmp_path / "local_snapshot")
+
+    import huggingface_hub
+
+    monkeypatch.setattr(asr, "_make_pipeline", fake_pipeline)
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot,
+                        raising=False)
+    settings = types.SimpleNamespace(asr=types.SimpleNamespace(
+        model="vinai/PhoWhisper-medium", chunk_length_s=30, batch_size=8))
+    backend = asr._TransformersBackend(settings)
+    assert calls["pipeline"][0] == "vinai/PhoWhisper-medium"      # shared cache first
+    assert calls["snapshot"][0][0] == "vinai/PhoWhisper-medium"   # then clean download
+    assert "hf_asr_cache" in calls["snapshot"][0][1]              # to LOCAL disk
+    assert backend.pipe.model == str(tmp_path / "local_snapshot") # loaded from local

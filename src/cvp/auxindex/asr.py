@@ -102,23 +102,44 @@ def _extract_wav(media_path: str) -> str | None:
     raise RuntimeError(f"ffmpeg audio extraction failed: {(r.stderr or '').strip()[:300]}")
 
 
+def _make_pipeline(model: str, **kw):
+    from transformers import pipeline
+
+    return pipeline("automatic-speech-recognition", model=model, **kw)
+
+
 class _TransformersBackend:
     def __init__(self, settings: Settings):
         import torch
-        from transformers import pipeline
 
         device = 0 if torch.cuda.is_available() else -1
         dtype = torch.float16 if torch.cuda.is_available() else torch.float32
         log.info("Loading ASR pipeline %s", settings.asr.model)
-        self.pipe = pipeline(
-            "automatic-speech-recognition",
-            model=settings.asr.model,
+        kw = dict(
             device=device,
             torch_dtype=dtype,
             chunk_length_s=settings.asr.chunk_length_s,
             batch_size=settings.asr.batch_size,
             return_timestamps=True,
         )
+        try:
+            self.pipe = _make_pipeline(settings.asr.model, **kw)
+        except Exception as e:  # noqa: BLE001 — hỏng cache chung (live run 12)
+            # HF_HOME nằm trên Drive FUSE (cache "degraded" không symlink, nhiều
+            # VM đọc chéo) — một bản đọc CỤT của file model ~3GB làm pipeline
+            # chê model với MỌI class. Tải sạch về đĩa LOCAL của VM rồi nạp
+            # từ đường dẫn đó, không đụng cache chung nữa.
+            import os
+            import tempfile
+
+            log.warning("ASR pipeline load failed from the shared cache (%s) — "
+                        "re-downloading to LOCAL disk and retrying", e)
+            from huggingface_hub import snapshot_download
+
+            local = snapshot_download(
+                settings.asr.model,
+                cache_dir=os.path.join(tempfile.gettempdir(), "hf_asr_cache"))
+            self.pipe = _make_pipeline(local, **kw)
 
     def transcribe(self, media_path: str) -> list[dict] | None:
         """Segments; ``None`` means the video has NO audio track (silent)."""
