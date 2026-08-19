@@ -519,6 +519,37 @@ print("Khi CẢ HAI phiên đều xong captions: chạy lại nb01 một lượt
       "FORCE_TEXT_INDEX=True để BM25 nạp đủ trường caption cho toàn bộ 873 video.")
 '''
 
+NB01C_TITLE = r'''
+# 🎙 Core Vision Perfect V1 — 01c · ASR BOOST (phiên thứ 3, tùy chọn)
+
+Notebook phụ **chỉ chạy ASR**, đi **NGƯỢC** danh sách video (L30 → L21) trong
+khi phiên nb01 chính đi xuôi — hai phiên hội tụ ở giữa nhờ resume-skip theo
+từng video, chia đôi thời gian ASR. Cùng khung an toàn đã kiểm chứng của 01b:
+mỗi video một file json ghi atomic trên Drive; KHÔNG đụng captions /
+embeddings / FAISS / OCR / BM25; bản mp4 hỏng trên Drive tự phục hồi từ
+Videos_*.zip gốc.
+
+⚠ CHỈ MỞ PHIÊN NÀY khi ngân sách Colab còn dư dả (panel Tài nguyên ▸ "Có
+sẵn: X đơn vị" — nên còn ≥150): phiên A100 thứ 3 đốt ~6.8 đơn vị/giờ, và hết
+đơn vị TRƯỚC buổi thi còn tệ hơn ASR chậm.
+'''
+
+NB01C_ASR = r'''
+# ── 5 (01c) · ASR ONLY — đi NGƯỢC danh sách video ──
+# Phiên nb01 chính ASR L21→; phiên này L30→ — hội tụ ở giữa nhờ resume-skip
+# theo từng video. Điểm gặp nhau: cùng lắm 1 video được transcribe 2 lần,
+# bên sau ghi đè bản tương đương (atomic) — không thể hỏng artifact.
+from cvp.auxindex.asr import asr_all_videos
+
+vids = [str(v) for v in df.video_id.unique()][::-1]
+print(f"asr-boost: {len(vids)} videos, đi ngược từ {vids[0]} về {vids[-1]}")
+with _log_stage("asr-boost"):
+    n = asr_all_videos(settings, catalog, videos=vids)
+print(f"✅ asr-boost: {n} video mới trong phiên này")
+print("ASR xong toàn bộ thì phiên nb01 chính sẽ tự chuyển sang captions; "
+      "phiên này có thể tắt để tiết kiệm đơn vị điện toán.")
+'''
+
 NB1_UNZIP = r'''
 # ── 5 · (optional) Auto-extract organiser zips still sitting in data/ ──
 # If you uploaded raw zips (Keyframes_L21.zip, ...) instead of extracted
@@ -1740,6 +1771,17 @@ def main() -> None:
         code(NB1_LOCAL_COPY),
         code(NB1_CATALOG),
         code(NB01B_CAPTIONS),
+    ])
+    write_nb("01c_asr_boost_colab.ipynb", [
+        md(NB01C_TITLE),
+        code(CELL_PARAMS),
+        code(CELL_MOUNT),
+        code(CELL_REPO_DEPS),
+        code(CELL_ENV_GPU),
+        code(NB1_UNZIP),
+        code(NB1_LOCAL_COPY),
+        code(NB1_CATALOG),
+        code(NB01C_ASR),
     ])
     write_nb("02_train_vi_encoder_H100.ipynb", [
         md(NB2_TITLE),
