@@ -110,7 +110,7 @@ bằng truy vấn tiếng Việt. Mô hình theo VBS (Video Browser Showdown) v�
 - **Đáp án là MỘT ĐOẠN frame liên tục** — nộp bất kỳ frame nào trong đoạn là ăn trọn điểm
   (BTC Q&A 2026: các keyframe thỏa mãn liên tiếp tạo thành đoạn; frame chuyển cảnh không tính).
 - **`frame_idx` là số frame trong video GỐC** (từ `map-keyframes`), *không phải* thứ tự keyframe!
-- Sơ tuyển 2026: tối đa **20 lượt nộp, 5 lượt/ngày** (theo thể lệ công bố). Chung kết dùng
+- Sơ tuyển 2026 (THỂ LỆ CHÍNH THỨC 20/08): **tối đa 3 LƯỢT NỘP MỖI GÓI truy vấn; lượt CUỐI CÙNG được tính điểm** (không phải lượt tốt nhất!); **nộp sai định dạng vẫn tốn 1 lượt**; Public Leaderboard chỉ chấm 50% đáp án — Private (100%) mới xếp hạng; mỗi đội đúng 1 tài khoản. Chung kết dùng
   server BTC kiểu DRES: nộp sớm điểm cao, nộp sai bị trừ — client trong `submission/dres_client.py`.
 
 ## 2. Ý tưởng cốt lõi
@@ -291,7 +291,7 @@ Core-Vision_Perfect_V1/
 5. **Colab nb 03** / laptop: smoke test, latency, CSV mẫu, **validate + zip `submission/`**,
    chấm thử với GT, dry-run auto-agent.
 6. **Vòng loại**: `python scripts/20_run_queries.py --query-dir <đề> --zip` → nộp lên hệ thống của BTC
-   (nhớ: 5 lượt/ngày, 20 lượt tổng).
+   (nhớ: CHỈ 3 lượt/gói và lượt CUỐI tính điểm — lượt cuối phải là bản tốt nhất).
 7. **Chung kết**: laptop chạy app + artifacts sync về; đấu pháp trong PLAYBOOK;
    DRES client cấu hình `submission.dres_base_url` khi BTC công bố endpoint.
 

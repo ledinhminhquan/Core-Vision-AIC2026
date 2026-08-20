@@ -100,7 +100,7 @@ trợ lý đề xuất — đó là những chi tiết nên chờ/đoán từ g�
 
 ## 7. Vòng sơ tuyển (hệ thống riêng của BTC) — kỷ luật nộp bài
 
-- **5 lượt/ngày, 20 lượt tổng (thể lệ 2026)** → LUÔN chấm offline trước:
+- **THỂ LỆ CHÍNH THỨC: 3 lượt/gói, lượt CUỐI tính điểm, sai format vẫn tốn lượt** → LUÔN chạy validator + chấm offline trước:
   `python scripts/40_eval_official.py --submission-dir ... --gt ...` (đúng công thức BTC).
 - Nộp bằng zip từ `scripts/20_run_queries.py --zip` — packager đã validate từng dòng
   (regex video id, ≤100 dòng, TRAKE tăng dần, QA ≤100 ký tự); zip lỗi là KHÔNG tạo.
@@ -121,7 +121,7 @@ trợ lý đề xuất — đó là những chi tiết nên chờ/đoán từ g�
   (`writer.py`/`packager.py` enforce toàn bộ — spec 2025, cổng BTC ghi 2026 giữ format).
 - Điểm mỗi câu = trung bình trên k∈{1,5,20,50,100} của **max R-Score trong top-k**
   → luôn điền đủ 100 dòng, xếp hạng tốt ăn điểm gấp bội.
-- Hạn mức: **tối đa 20 lượt tổng, ≤5 lượt/ngày**; 2025 còn giới hạn khung giờ
+- Hạn mức CHÍNH THỨC 2026: **3 lượt MỖI GÓI truy vấn — lượt nộp CUỐI CÙNG là lượt được chấm** (đừng bao giờ 'nộp thử' bằng lượt cuối; nộp sai định dạng vẫn bị trừ); 2025 còn giới hạn khung giờ
   sáng 9:00–11:59 — chuẩn bị đấu pháp cho CẢ HAI chế độ (dồn chấm offline từ hôm
   trước, nộp bản tốt nhất đầu khung giờ).
 - **Bán kết còn phải nộp BÁO CÁO giải pháp** (văn bản) — LaTeX kit có sẵn trong

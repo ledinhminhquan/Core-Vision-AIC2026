@@ -1707,7 +1707,7 @@ for i in issues:
 if has_errors(issues):
     print("❌ Còn lỗi chặn — sửa CSV rồi chạy lại ô này (zip KHÔNG được tạo).")
 else:
-    zip_path = settings.paths.art("submissions", "codabench.zip")
+    zip_path = settings.paths.art("submissions", "submission.zip")
     package_codabench(sub_dir, zip_path, package_name=settings.submission.package_name,
                       files=nb03_files)
     manifest = json.loads((zip_path.parent / "MANIFEST.json").read_text(encoding="utf-8"))
