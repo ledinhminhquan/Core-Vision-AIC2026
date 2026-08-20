@@ -657,7 +657,34 @@ from pathlib import Path
 # _ensure_drive/_drive_alive: bản HARDENED định nghĩa ở Ô 2 (round-19) —
 # biết gỡ mount chết (fusermount -uz) + dọn mountpoint bẩn trước khi mount lại.
 _ensure_drive()          # verify-R14: gate dưới stat qua FUSE — mount phải sống
-if COPY_KEYFRAMES_LOCAL and (DATA_DIR / "keyframes").exists():
+
+def _kf_visible() -> bool:
+    """DriveFS trên VM mới có thể thấy data/ nhưng CHƯA thấy subdir keyframes/
+    (round-28, live nb03 run 5: gate này rơi nhầm sang nhánh Drive-direct rồi
+    chết ở catalog). listdir cha = cú hích ép nạp metadata; zip Keyframes*
+    cũng được chấp nhận — materialize vốn bung từ zip, không cần dir Drive."""
+    try:
+        list(DATA_DIR.iterdir())
+        if (DATA_DIR / "keyframes").exists():
+            return True
+        _zn = [p.name.lower().replace("_", "-").replace(" ", "-")
+               for p in DATA_DIR.glob("*.zip")]
+        return any(n.startswith(("keyframes", "keyframe", "key-frames")) for n in _zn)
+    except OSError:
+        return False
+
+_kf_ok = False
+if COPY_KEYFRAMES_LOCAL:
+    for _w in range(12):                       # tới 2 phút
+        if _kf_visible():
+            _kf_ok = True
+            break
+        print(f"⏳ DriveFS chưa thấy keyframes/ hay Keyframes*.zip — đợi ({_w * 10}s) ...")
+        time.sleep(10)
+    if not _kf_ok:
+        print("⚠ 2 phút vẫn không thấy keyframes/ lẫn zip nguồn — rơi về đọc "
+              "thẳng Drive (CHẬM; nếu bất thường: Disconnect and delete runtime).")
+if COPY_KEYFRAMES_LOCAL and _kf_ok:
     LOCAL_DATA = Path("/content/data")
     LOCAL_DATA.mkdir(exist_ok=True)
     _ZCACHE = Path("/content/__zip_cache")
@@ -1171,8 +1198,22 @@ from cvp.config import load_settings
 from cvp.data.catalog import KeyframeCatalog
 from cvp.data.objects_compact import build_objects_index
 
+import time as _t
+from pathlib import Path as _P
+
 settings = load_settings()
 _pq = settings.paths.art("objects_index") / "objects.parquet"
+# round-28: stat lười trên VM mới từng nói parquet "không tồn tại" dù nó nằm
+# sẵn trên Drive → suýt rebuild vô ích (và chết nếu data_root chưa local).
+# Nudge-poll trước khi kết luận vắng mặt.
+for _w in range(6):
+    try:
+        list(_P(str(settings.paths.artifacts_root)).iterdir())   # nudge metadata
+    except OSError:
+        pass
+    if _pq.exists():
+        break
+    _t.sleep(5)
 if _pq.exists():
     print("objects.parquet: đã có —", _pq)
 else:
@@ -1648,6 +1689,10 @@ LOCAL_ART.mkdir(exist_ok=True)
 _READ_HOT = ("catalog", "embeddings", "indexes", "text_index", "objects_index",
              "asr", "checkpoints")
 _t0 = time.time()
+try:
+    list(ARTIFACTS.iterdir())    # round-28: nudge metadata trước loạt exists()
+except OSError:
+    _ensure_drive()
 for _d in _READ_HOT:
     src, dst = ARTIFACTS / _d, LOCAL_ART / _d
     if dst.exists():
