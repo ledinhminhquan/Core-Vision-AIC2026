@@ -22,3 +22,14 @@ def test_ui_cell_offers_team_tunnel():
     # the tunnel must never replace the battle-env inheritance
     assert "_env = dict(os.environ)" in frag
     assert "_env.pop" not in frag
+
+
+def test_run_pack_survives_missing_pack_dir():
+    """Round-34: on round night Run all fires BEFORE the organisers publish
+    the pack — a crash here would cut Run all and the UI cell would never
+    launch. Missing/empty pack dir must print-and-continue, not raise."""
+    src = (REPO / "notebooks" / "_build_notebooks.py").read_text(encoding="utf-8")
+    frag = src.split("NB3_RUN_PACK = r")[1].split("NB3_SCORE_GT")[0]
+    assert "Run all vẫn đi tiếp" in frag
+    assert 'any(_qdir.glob("*.txt"))' in frag
+    assert "elif RUN_PACK:" in frag

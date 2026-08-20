@@ -1865,10 +1865,15 @@ RUN_PACK   = False     # bật True khi đề đã nằm đúng chỗ
 REZIP_ONLY = False     # True: KHÔNG search lại — chỉ validate + zip lại các
                        # query-*.csv hiện có trong pack (dùng SAU khi soát tay
                        # bằng UI và ghi đè vài file CSV bằng bản người chọn)
-if RUN_PACK:
+_qdir = PROJECT / "queries" / QUERY_PACK
+if RUN_PACK and not (_qdir.is_dir() and any(_qdir.glob("*.txt"))):
+    # Round-34: đêm thi Run all chạy TRƯỚC giờ BTC phát đề — cell này crash
+    # là đứt Run all và cell UI phía dưới không bao giờ mở. Báo rồi đi tiếp.
+    print(f"⚠ Chưa thấy file query-*.txt trong {_qdir} — upload đề vào đó rồi "
+          "chạy lại RIÊNG cell này. (Run all vẫn đi tiếp, engine + UI không bị chặn.)")
+elif RUN_PACK:
     import shutil as _sh
 
-    _qdir = PROJECT / "queries" / QUERY_PACK
     _out = settings.paths.art("submissions", QUERY_PACK)
     if REZIP_ONLY:
         from cvp.submission.packager import has_errors, package_codabench, validate_file
