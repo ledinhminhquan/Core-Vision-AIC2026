@@ -41,3 +41,11 @@ def test_ui_pack_export_guard():
     assert '_dst("kis")' in APP and '_dst("qa")' in APP and '_dst("trake")' in APP
     # wrong-task overwrite is refused, not warned
     assert "chặn ghi nhầm task" in APP
+
+
+def test_engine_cell_has_cross_rerank_knob():
+    """Round-33: last unused weapon — Qwen3-VL cross-encoder knob (default
+    False until the trial leaderboard measures it; fail-open by design)."""
+    frag = BUILDER.split("NB3_ENGINE = r")[1].split("NB3_QUERIES")[0]
+    assert "CROSS_RERANK" in frag
+    assert '"qwen_reranker" if CROSS_RERANK else "none"' in frag

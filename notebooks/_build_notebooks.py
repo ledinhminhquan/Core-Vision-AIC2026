@@ -1727,11 +1727,18 @@ QUERY_PROVIDER = "gemini"           # ← cấu hình ra trận round 1
 # Gemini NHÌN top-24 ảnh ứng viên và xếp lại đầu bảng (UIT CVPRW'25: +10%
 # hit@1). Cần API trả phí; ~3–8s/query. Tắt (False) nếu cần UI phản hồi nhanh.
 VLM_RERANK = True
+# Khẩu pháo cuối: cross-encoder Qwen3-VL-Reranker-2B chạy LOCAL trên A100,
+# chấm lại từng cặp (câu, ảnh) trong top-100 rồi trộn 50/50 với điểm fusion
+# (recipe Unified-IMMR AIC-2025). Bổ trợ cho VLM rerank (pairwise ↔ listwise);
+# mọi đường lỗi tự trả về thứ hạng cũ. Đo ở vòng nháp 20/08: bật thử, điểm
+# tăng thì để True luôn cho round 1.
+CROSS_RERANK = False
 import os, time
 from pathlib import Path
 os.environ["CVP_EMBEDDING__MODEL"] = ENGINE_MODEL
 os.environ["CVP_QUERY__PROVIDER"]  = QUERY_PROVIDER
 os.environ["CVP_SEARCH__VLM_RERANK"] = "true" if VLM_RERANK else "false"
+os.environ["CVP_SEARCH__RERANKER"] = "qwen_reranker" if CROSS_RERANK else "none"
 # Ranking phẳng (top không tách khỏi đám đông) → tự tìm lại bằng các biến thể
 # Gemini đã cache rồi trộn RRF — không tốn thêm cuộc gọi API nào.
 os.environ["CVP_SEARCH__LOW_CONFIDENCE_RETRY"] = "true"
