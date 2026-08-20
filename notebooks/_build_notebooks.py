@@ -1730,9 +1730,9 @@ VLM_RERANK = True
 # Khẩu pháo cuối: cross-encoder Qwen3-VL-Reranker-2B chạy LOCAL trên A100,
 # chấm lại từng cặp (câu, ảnh) trong top-100 rồi trộn 50/50 với điểm fusion
 # (recipe Unified-IMMR AIC-2025). Bổ trợ cho VLM rerank (pairwise ↔ listwise);
-# mọi đường lỗi tự trả về thứ hạng cũ. Đo ở vòng nháp 20/08: bật thử, điểm
-# tăng thì để True luôn cho round 1.
-CROSS_RERANK = False
+# mọi đường lỗi tự trả về thứ hạng cũ. ĐÃ ĐO ở vòng nháp 20/08: 7.2 → 7.6
+# (VLM rerank trước đó: 6.4 → 7.2) — giữ True cho round 1.
+CROSS_RERANK = True
 import os, time
 from pathlib import Path
 os.environ["CVP_EMBEDDING__MODEL"] = ENGINE_MODEL
