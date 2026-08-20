@@ -59,6 +59,34 @@ def ensure_remote_code_compat() -> None:
         PreTrainedModel.all_tied_weights_keys = types.MappingProxyType({})
 
 
+def resilient_from_pretrained(load, model_id: str):
+    """Run ``load(model_id)``; on failure re-download to LOCAL disk and retry.
+
+    The shared HF cache lives on Drive FUSE in symlink-less "degraded" mode
+    and is read by several VMs — it can serve TORN files (live run 12 killed
+    the ASR pipeline load that way). Mirror of the round-22 ASR fix for any
+    from_pretrained-style loader: ``load`` is a callable taking a model id OR
+    a local snapshot path.
+    """
+    import logging
+
+    try:
+        return load(model_id)
+    except Exception as e:  # noqa: BLE001 — torn shared cache
+        import os
+        import tempfile
+
+        logging.getLogger(__name__).warning(
+            "HF load failed from the shared cache (%s) — re-downloading %s to "
+            "LOCAL disk and retrying", e, model_id)
+        from huggingface_hub import snapshot_download
+
+        local = snapshot_download(
+            model_id,
+            cache_dir=os.path.join(tempfile.gettempdir(), "hf_resilient_cache"))
+        return load(local)
+
+
 def load_tokenizer(model_id: str):
     """Tokenizer for remote-code models across transformers generations.
 

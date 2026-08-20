@@ -273,12 +273,36 @@ class LiTTrainer:
             )
 
     def _try_resume(self, model, optimizer, scheduler) -> tuple[int, float, int]:
-        import torch
+        """Resume from the NEWEST checkpoint that actually loads.
+
+        verify-R23: Drive FUSE can serve TORN checkpoint files — one bad
+        ``adapter_model.safetensors``/``extras.pt`` must fall back to the
+        previous step dir, not wedge every future Run-all on the same crash.
+        On total failure the virgin adapter weights are restored so a fresh
+        start really is fresh.
+        """
+        from peft.utils import get_peft_model_state_dict, set_peft_model_state_dict
 
         dirs = self._ckpt_dirs()
         if not dirs:
             return 0, -1.0, 0
-        ckpt = dirs[-1]
+        _virgin = {k: v.detach().clone()
+                   for k, v in get_peft_model_state_dict(model.text_model).items()}
+        for ckpt in reversed(dirs):
+            try:
+                return self._resume_from(model, optimizer, scheduler, ckpt)
+            except Exception as e:  # noqa: BLE001 — torn checkpoint → older one
+                log.warning(
+                    "Checkpoint %s không đọc được (%s) — thử checkpoint cũ hơn",
+                    ckpt.name, e)
+        log.warning("Không checkpoint nào đọc được — chạy lại từ đầu (adapter "
+                    "được khôi phục về trạng thái ban đầu)")
+        set_peft_model_state_dict(model.text_model, _virgin)
+        return 0, -1.0, 0
+
+    def _resume_from(self, model, optimizer, scheduler, ckpt) -> tuple[int, float, int]:
+        import torch
+
         state = read_json(ckpt / "state.json")
         self._warn_train_size_mismatch(state, ckpt.name)
 

@@ -99,11 +99,21 @@ class SearchEngine:
             built_tag = store.meta().get("model_tag")
             live_tag = getattr(model, "model_tag", None)
             if built_tag and live_tag and built_tag != live_tag:
-                log.warning(
+                # verify-R23 (HIGH): a torn Drive-cache read can make the hub
+                # loader silently fall back to a DIFFERENT checkpoint; querying
+                # this index with those vectors returns garbage (or a dim
+                # mismatch that fails EVERY query quietly). Disable the lane
+                # LOUDLY at startup instead.
+                errors.append(f"{name}: model_tag mismatch "
+                              f"(index {built_tag!r} vs loaded {live_tag!r})")
+                log.error(
                     "[%s] index was built by %r but this machine loaded %r — "
-                    "re-embed + rebuild the index before trusting results",
+                    "lane DISABLED (kết quả sẽ là rác nếu cứ dùng). Xóa cache "
+                    "của checkpoint này trong artifacts/hf_cache rồi chạy lại, "
+                    "hoặc re-embed với FORCE_EMBED=True.",
                     name, built_tag, live_tag,
                 )
+                continue
             self.members.append((model, store))
             self.member_weights.append(weight)
             self.member_names.append(name)

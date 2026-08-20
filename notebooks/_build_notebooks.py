@@ -1148,6 +1148,37 @@ if built:
     print("text index built: [" + ", ".join(built) + "]")
 else:
     print("text index up-to-date (signature match) — đặt FORCE_TEXT_INDEX=True để build lại")
+
+# verify-R23 (HIGH): thiếu objects.parquet thì ObjectBooster đọc ~500-1500
+# file json lẻ qua Drive FUSE MỖI QUERY lúc thi — gộp 177k json thành MỘT
+# parquet ngay tại đây (đọc từ đĩa local, ~vài phút, chỉ chạy một lần).
+from cvp.data.objects_compact import build_objects_index
+
+_pq = settings.paths.art("objects_index") / "objects.parquet"
+if _pq.exists():
+    print("objects.parquet: đã có")
+else:
+    with _log_stage("objects_index"):
+        print("objects.parquet built:", build_objects_index(settings, catalog))
+'''
+
+NB3_OBJECTS = r'''
+# ── 5b · Compact objects index (một lần, nếu nb01 chưa build) ──
+# verify-R23 (HIGH): thiếu objects.parquet thì ObjectBooster rơi về đọc từng
+# file json qua Drive FUSE — cộng thêm HÀNG PHÚT mỗi query. Build từ đĩa
+# local (ô 5 đã materialize) rồi ghi MỘT file parquet lên Drive artifacts.
+from cvp.config import load_settings
+from cvp.data.catalog import KeyframeCatalog
+from cvp.data.objects_compact import build_objects_index
+
+settings = load_settings()
+_pq = settings.paths.art("objects_index") / "objects.parquet"
+if _pq.exists():
+    print("objects.parquet: đã có —", _pq)
+else:
+    catalog = KeyframeCatalog(settings)
+    catalog.build()
+    print("objects.parquet built:", build_objects_index(settings, catalog))
 '''
 
 NB1_DOCTOR = r'''
@@ -1418,7 +1449,12 @@ else:
 ckpts = sorted((d for d in Path(cfg.run_dir).glob("step-*") if (d / "state.json").is_file()),
                key=lambda d: int(d.name.split("-")[1]))
 if ckpts:
-    state = json.loads((ckpts[-1] / "state.json").read_text(encoding="utf-8"))
+    try:                              # verify-R23: state.json rách không được
+        state = json.loads((ckpts[-1] / "state.json").read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):   # giết dashboard resume
+        state = {}
+        print("⚠ state.json của checkpoint mới nhất hỏng — trainer sẽ tự lùi "
+              "về checkpoint cũ hơn")
     print(f"last ckpt    : {ckpts[-1]}")
     print(f"               global_step={state.get('step')}  best R@5={state.get('best_r5', -1):.4f}  "
           f"evals_since_best={state.get('evals_since_best')}")
@@ -1733,10 +1769,15 @@ NB3_UI = r'''
 # Colab can't open localhost — use the built-in proxy:
 LAUNCH_UI = False
 if LAUNCH_UI:
-    import subprocess, time
+    import os, subprocess, time
+    # verify-R23: ô engine đặt CVP_QUERY__PROVIDER=none (test offline) — UI
+    # thi đấu phải chạy cấu hình THẬT, không được thừa hưởng env test đó.
+    _env = dict(os.environ)
+    _env.pop("CVP_QUERY__PROVIDER", None)
+    _env.pop("CVP_EMBEDDING__MODEL", None)
     proc = subprocess.Popen(
         ["streamlit", "run", str(REPO_DIR / "app" / "streamlit_app.py"),
-         "--server.port", "8501", "--server.headless", "true"])
+         "--server.port", "8501", "--server.headless", "true"], env=_env)
     time.sleep(8)
     from google.colab import output
     output.serve_kernel_port_as_window(8501)
@@ -1805,6 +1846,8 @@ def main() -> None:
         code(CELL_MOUNT),
         code(CELL_REPO_DEPS),
         code(CELL_ENV_GPU),
+        code(NB1_LOCAL_COPY),
+        code(NB3_OBJECTS),
         code(NB3_ENGINE),
         code(NB3_QUERIES),
         code(NB3_TRAKE_AVS),

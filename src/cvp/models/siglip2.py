@@ -39,8 +39,15 @@ class SigLIP2Model(EmbeddingModel):
 
         base_id = settings.finetuned.base_id if finetuned else cfg.siglip2_id
         log.info("Loading %s (%s, %s, %s)", base_id, self.key, self.device, self.dtype)
-        self.model = AutoModel.from_pretrained(base_id, torch_dtype=self.dtype).to(self.device).eval()
-        self.processor = AutoProcessor.from_pretrained(base_id)
+        from cvp.models.hf_compat import resilient_from_pretrained
+
+        # verify-R23: the competition-primary lane must survive a torn
+        # Drive-cache read (local re-download fallback, như ASR round-22).
+        self.model = resilient_from_pretrained(
+            lambda mid: AutoModel.from_pretrained(mid, torch_dtype=self.dtype),
+            base_id).to(self.device).eval()
+        self.processor = resilient_from_pretrained(
+            AutoProcessor.from_pretrained, base_id)
 
         if finetuned:
             self._load_finetuned_text_tower(self._resolve_checkpoint(settings))
