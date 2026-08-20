@@ -1225,6 +1225,29 @@ GPU: **H100 ≈ 30–60 min**; A100 ~2×, L4/T4 slower but works (auto-sized + O
 
 NB2_PARAMS_EXTRA = r'''
 # ── 5 · Training params (auto-sized by GPU; safe to leave as-is) ──
+# torchao clash (live nb02 run 1): image Colab cài sẵn torchao 0.10 nhưng
+# peft khi tiêm LoRA dò thấy torchao và TỪ CHỐI mọi bản < 0.16. Nâng cấp
+# (torch KHÔNG bị đụng — torchao là add-on rời); không có wheel phù hợp thì
+# gỡ hẳn: pipeline không dùng torchao, vắng mặt là peft bỏ qua luôn.
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _ta_ver
+
+def _ta_old():
+    try:
+        return tuple(int(x) for x in _ta_ver("torchao").split(".")[:2]) < (0, 16)
+    except PackageNotFoundError:
+        return False
+    except ValueError:
+        return True
+
+if _ta_old():
+    _pip(["install", "-q", "-U", "torchao>=0.16"])
+    if _ta_old():
+        _pip(["uninstall", "-q", "-y", "torchao"])
+        print("torchao cũ đã gỡ (peft không cần nó)")
+    else:
+        print("torchao →", _ta_ver("torchao"))
+
 EPOCHS            = 8
 TARGET_EFF_BATCH  = 2048       # micro_batch × grad_accum kept ≈ constant
 LR                = 1e-4

@@ -177,6 +177,7 @@ NB_MARKERS = {
         "đơn vị",                       # compute-budget warning in the title
     ),
     NB2: (
+        "torchao",                      # R25: peft refuses Colab's torchao 0.10
         "active_train_run.json",        # v12 run pointer
         "write_pointer(\"crashed\"",    # crash marking around trainer.train()
         "wiseft",                       # WiSE-FT eval row + winner alpha
