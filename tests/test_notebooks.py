@@ -31,7 +31,7 @@ NB2 = "02_train_vi_encoder_H100.ipynb"
 NB3 = "03_test_system.ipynb"
 ALL_NBS = (NB1, NB1B, NB1C, NB2, NB3)
 
-EXPECTED_CODE_CELLS = {NB1: 11, NB1B: 8, NB1C: 8, NB2: 13, NB3: 14}
+EXPECTED_CODE_CELLS = {NB1: 11, NB1B: 8, NB1C: 8, NB2: 13, NB3: 15}
 
 # import-detection: `import torch`, `import gc, torch`, `from torch... import`
 TORCH_IMPORT_RE = re.compile(r"^\s*(?:import\s+[^#\n]*\btorch\b|from\s+torch\b)", re.MULTILINE)
@@ -191,6 +191,9 @@ NB_MARKERS = {
         "ENSEMBLE_MEMBERS",             # exact env lines to use the model
     ),
     NB3: (
+        "_READ_HOT",                    # R26: read-hot artifacts staged locally
+        "ENGINE_MODEL",                 # R26: one-knob lane A/B (finetuned/ensemble)
+        "đồng bộ về Drive",             # R26: submissions synced back
         "build_objects_index",          # R23: compact objects before the engine
         "env=_env",                     # R23: UI must not inherit offline env
         "package_codabench",            # validate + package cell

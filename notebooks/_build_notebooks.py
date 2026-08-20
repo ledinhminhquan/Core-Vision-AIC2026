@@ -1634,12 +1634,55 @@ automatic track. The Streamlit UI can be served via a tunnel at the end.
 Prerequisite: notebook 01 (and optionally 02 for the fine-tuned tower).
 '''
 
+NB3_ARTIFACTS_LOCAL = r'''
+# ── 5c · Artifacts đọc-nhiều → đĩa LOCAL (round-26, live nb03 run 2) ──
+# Engine mmap embeddings/index từ Drive FUSE → query "lạnh" 114-130s, query
+# "ấm" 1.75s. Copy các thư mục CHỈ-ĐỌC về local (~4-6GB, vài phút) rồi trỏ
+# artifacts_root vào đó. Drive KHÔNG bị đụng — submissions được đồng bộ ngược
+# về Drive ở ô đóng gói.
+import os, shutil, time
+from pathlib import Path
+
+LOCAL_ART = Path("/content/artifacts")
+LOCAL_ART.mkdir(exist_ok=True)
+_READ_HOT = ("catalog", "embeddings", "indexes", "text_index", "objects_index",
+             "asr", "checkpoints")
+_t0 = time.time()
+for _d in _READ_HOT:
+    src, dst = ARTIFACTS / _d, LOCAL_ART / _d
+    if dst.exists():
+        print(f"   {_d}/: đã có local — skip")
+        continue
+    _ensure_drive()
+    if not src.exists():
+        continue
+    _tmp = LOCAL_ART / (_d + ".__tmp")
+    if _tmp.exists():
+        shutil.rmtree(_tmp)
+    shutil.copytree(src, _tmp)
+    _tmp.rename(dst)
+    print(f"   {_d}/ → local")
+(LOCAL_ART / "submissions").mkdir(parents=True, exist_ok=True)
+os.environ["CVP_PATHS__ARTIFACTS_ROOT"] = str(LOCAL_ART)
+print(f"artifacts_root now: {LOCAL_ART} ({time.time() - _t0:.0f}s)")
+'''
+
 NB3_ENGINE = r'''
 # ── 5 · Load the search engine ──
-# Pick the model for this session: "siglip2" | "finetuned" | "ensemble"
+# Chọn model cho phiên test này:
+#   "siglip2"    lane gốc (nhanh, ổn định — mặc định)
+#   "finetuned"  text tower tiếng Việt từ nb02 (cùng index ảnh siglip2)
+#   "ensemble"   finetuned + openclip (chất lượng cao nhất, chậm hơn ~2×)
+ENGINE_MODEL = "siglip2"
 import os, time
-os.environ["CVP_EMBEDDING__MODEL"] = "siglip2"     # ← change to test others
+from pathlib import Path
+os.environ["CVP_EMBEDDING__MODEL"] = ENGINE_MODEL
 os.environ["CVP_QUERY__PROVIDER"]  = "none"        # offline test (no Gemini needed)
+if ENGINE_MODEL in ("finetuned", "ensemble"):
+    os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
+        Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "checkpoints" / "vi_siglip2_best")
+if ENGINE_MODEL == "ensemble":
+    os.environ["CVP_EMBEDDING__ENSEMBLE_MEMBERS"] = '["finetuned", "openclip"]'
 
 from cvp.search.engine import SearchEngine
 from cvp.config import load_settings
@@ -1737,6 +1780,15 @@ else:
     print(f"\n📦 {zip_path.name}  sha256={manifest['zip_sha256'][:12]}…")
     for f in manifest["files"]:
         print(f"   {f['name']:24} task={f['task']:5} rows={f['rows']}")
+    # round-26: artifacts_root đang là LOCAL — đồng bộ submissions về Drive để
+    # zip/csv sống sót sau khi phiên tắt (chỉ THÊM/GHI ĐÈ file cùng tên của
+    # chính lượt chạy này, không xóa gì trên Drive).
+    import shutil as _sh
+    _drv_sub = ARTIFACTS / "submissions"
+    if Path(str(sub_dir)).resolve() != _drv_sub.resolve():
+        _ensure_drive()
+        _sh.copytree(sub_dir, _drv_sub, dirs_exist_ok=True)
+        print("submissions đồng bộ về Drive:", _drv_sub)
 '''
 
 NB3_SCORE_GT = r'''
@@ -1871,6 +1923,7 @@ def main() -> None:
         code(CELL_ENV_GPU),
         code(NB1_LOCAL_COPY),
         code(NB3_OBJECTS),
+        code(NB3_ARTIFACTS_LOCAL),
         code(NB3_ENGINE),
         code(NB3_QUERIES),
         code(NB3_TRAKE_AVS),
