@@ -98,13 +98,15 @@ search:
 query:
   provider: gemini    # none | google | gemini  (degrades automatically)
   gemini_model: gemini-3.5-flash    # stable mid-2026; fallbacks below cover retirement
-  gemini_model_fallbacks: [gemini-3-flash-preview, gemini-2.5-flash]
+  # "-latest" tail: pinned retired ids 404 for new users (the old 2.5 pin
+  # died that way live 20/08); the rolling alias can't retire.
+  gemini_model_fallbacks: [gemini-3-flash-preview, gemini-flash-latest]
   enhance: true       # rewrite the query as a concrete visual description
   enhance_english: true
   expansions: 2       # extra paraphrases for multi-query max-fusion
   multi_query_agg: max
   cache: true
-  timeout_s: 8.0
+  timeout_s: 15.0    # Gemini API rejects deadlines <10s (400, live 20/08) — keep ≥10
 
 temporal:             # TRAKE
   algo: dante         # dante (O(N·T) running-max DP) | beam (diverse beam DP)

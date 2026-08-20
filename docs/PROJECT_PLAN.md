@@ -189,7 +189,7 @@ Nền đã có: `pipeline/auto_agent.py` (đề → search/TRAKE/AVS → QA theo
    (reformulate + RRF-merge khi ranking phẳng), `CVP_SEARCH__TEMPORAL_BOOST=true`
    (đề "… sau khi …"), VQA dải frame `CVP_VQA__FRAMES_PER_ANSWER=3` (sửa lỗi "giải toán
    trong video" 2025) + Gemini fallback chain `gemini-3.5-flash → gemini-3-flash-preview →
-   gemini-2.5-flash` (đã là default config, degrade tiếp → Google Translate → raw).
+   gemini-flash-latest` (đã là default config, degrade tiếp → Google Translate → raw).
 
 **Nghiệm thu WS-4:** 89 câu dev chạy tự động 0 can thiệp, 0 CSV bị packager chối; vòng DRES
 local: submit top-1 đúng thứ tự, không retry sau reject; MEAN FINAL chế độ auto ≥ 90% chế độ

@@ -138,7 +138,7 @@ xử lý xong mới được nộp bài.
 | `HF_TOKEN` | Không | chỉ khi `PUSH_TO_HF_HUB=True` trong nb02 (đẩy model lên HF private) |
 
 Model Gemini mặc định `gemini-3.5-flash`, tự fallback theo chuỗi
-`gemini-3-flash-preview` → `gemini-2.5-flash` khi model bị nghỉ hưu/limit
+`gemini-3-flash-preview` → `gemini-flash-latest` khi model bị nghỉ hưu/limit
 (cấu hình `query.gemini_model` + `query.gemini_model_fallbacks` trong
 `configs/settings.yaml`).
 

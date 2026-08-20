@@ -96,7 +96,7 @@ làm phần delta).
 query VI
  ├─► QueryProcessor.process()      # 1 call Gemini: dịch + mô tả thị giác + N expansions (JSON)
  │                                 # cache đĩa theo (provider, model, query); degrade:
- │                                 # gemini-3.5-flash → gemini-3-flash-preview → gemini-2.5-flash
+ │                                 # gemini-3.5-flash → gemini-3-flash-preview → gemini-flash-latest
  │                                 # → Google Translate miễn phí → passthrough (không bao giờ chết)
  ├─► mỗi lane: encode các biến thể phù hợp (lane đa ngữ nhận cả câu VI gốc)
  │     └─► FAISS top-K (search.topk = 500) / biến thể ─► MAX theo biến thể

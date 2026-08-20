@@ -1715,15 +1715,15 @@ print(f"artifacts_root now: {LOCAL_ART} ({time.time() - _t0:.0f}s)")
 NB3_ENGINE = r'''
 # ── 5 · Load the search engine ──
 # Chọn model cho phiên test này:
-#   "siglip2"    lane gốc (nhanh, ổn định — mặc định)
+#   "siglip2"    lane gốc zero-shot (dự phòng)
 #   "finetuned"  text tower tiếng Việt từ nb02 (cùng index ảnh siglip2)
-#   "ensemble"   finetuned + openclip (chất lượng cao nhất, chậm hơn ~2×)
-ENGINE_MODEL   = "siglip2"
+#   "ensemble"   finetuned + openclip (nặng hơn, A/B 20/08 KHÔNG thắng finetuned)
+ENGINE_MODEL   = "finetuned"        # ← cấu hình ra trận round 1 (A/B 20/08)
 # "none"   = test offline, không gọi Gemini (nhanh, không tốn quota)
-# "gemini" = dịch + mở rộng query (CẦN secret GEMINI_API_KEY; lane openclip
-#            trong "ensemble" CHỈ phát huy sức mạnh khi bật cái này —
-#            provider=none thì openclip nhận tiếng Việt thô ≈ vô dụng)
-QUERY_PROVIDER = "none"
+# "gemini" = dịch + mở rộng query (CẦN secret GEMINI_API_KEY; tự rơi về
+#            Google-Translate miễn phí rồi passthrough nếu API lỗi — A/B 20/08:
+#            riêng bản dịch EN đã nâng chất lượng rõ rệt cho mọi lane)
+QUERY_PROVIDER = "gemini"           # ← cấu hình ra trận round 1
 import os, time
 from pathlib import Path
 os.environ["CVP_EMBEDDING__MODEL"] = ENGINE_MODEL

@@ -185,7 +185,7 @@ mỗi dòng CSV mang đúng answer của nhóm nó --- yêu cầu bắt buộc c
 một lần gọi kèm bỏ phiếu nhất quán, khắc phục lớp câu hỏi ``giải toán trong video'' của đề
 2025 mà một khung hình đơn không đủ ngữ cảnh. Chuỗi model VQA/enhance dùng Gemini với
 fallback tự động \texttt{gemini-3.5-flash} $\rightarrow$ \texttt{gemini-3-flash-preview}
-$\rightarrow$ \texttt{gemini-2.5-flash}, offline thì rơi về Vintern-1B; answer luôn được
+$\rightarrow$ \texttt{gemini-flash-latest}, offline thì rơi về Vintern-1B; answer luôn được
 sanitize về $\le$100 ký tự đúng thể lệ.
 
 \subsection{Tăng cường truy vấn thời gian và retry tự tin thấp}

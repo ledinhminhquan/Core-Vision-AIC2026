@@ -177,15 +177,19 @@ class QueryCfg(BaseModel):
     # Stable mid-2026 default; fallbacks cover preview retirement / regional
     # gaps so a stale id degrades to the next Gemini model, not to Translate.
     gemini_model: str = "gemini-3.5-flash"
+    # "-latest" tail: pinned retired ids 404 ("no longer available to new
+    # users" — gemini-2.5-flash died that way live), the rolling alias can't.
     gemini_model_fallbacks: list[str] = Field(default_factory=lambda: [
-        "gemini-3-flash-preview", "gemini-2.5-flash",
+        "gemini-3-flash-preview", "gemini-flash-latest",
     ])
     enhance: bool = True              # rewrite as concrete visual description
     enhance_english: bool = True      # also enhance pure-English queries
     expansions: int = 2              # extra paraphrase queries for multi-query fusion
     multi_query_agg: Literal["max", "mean"] = "max"  # over expanded queries (typo = loud)
     cache: bool = True
-    timeout_s: float = 8.0
+    # The Gemini API rejects client deadlines under 10s (400 INVALID_ARGUMENT,
+    # live nb03 gemini A/B) — keep this ≥10 or every call fails before running.
+    timeout_s: float = 15.0
 
 
 class TemporalCfg(BaseModel):

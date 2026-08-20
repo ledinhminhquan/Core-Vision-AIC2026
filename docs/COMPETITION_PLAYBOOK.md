@@ -174,7 +174,7 @@ trợ lý đề xuất — đó là những chi tiết nên chờ/đoán từ g�
 | Sự cố | Phản xạ |
 |---|---|
 | Mất mạng | Hệ tự chạy raw-query (SigLIP-2 đọc tiếng Việt) — cứ thi tiếp, thêm từ khóa OCR |
-| Gemini lỗi/limit | Chuỗi model tự fallback `gemini-3.5-flash → gemini-3-flash-preview → gemini-2.5-flash`, hết chuỗi → Google Translate → raw query — không cần làm gì |
+| Gemini lỗi/limit | Chuỗi model tự fallback `gemini-3.5-flash → gemini-3-flash-preview → gemini-flash-latest`, hết chuỗi → Google Translate → raw query — không cần làm gì |
 | App crash | `streamlit run` lại (~30s load); index/catalog bất biến nên không mất gì |
 | Query bí | Đổi chiến thuật: tìm bằng OCR text / object đếm được / metadata chương trình |
 | Chậm | Giảm `Results shown`; tắt rerank: `CVP_SEARCH__RERANK=false` (khởi động lại) |

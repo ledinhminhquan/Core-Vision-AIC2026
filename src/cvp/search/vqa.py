@@ -110,7 +110,7 @@ def gemini_wall_timeout(settings: Settings) -> float:
     3× the text-query timeout, floored at 30 s: image payloads are legitimately
     slower than text, but an unbounded hang is never acceptable.
     """
-    return max(30.0, float(getattr(settings.query, "timeout_s", 8.0)) * 3)
+    return max(30.0, float(getattr(settings.query, "timeout_s", 15.0)) * 3)
 
 
 def generate_with_fallback(client, models: list[str], contents,
