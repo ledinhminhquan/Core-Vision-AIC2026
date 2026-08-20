@@ -1954,8 +1954,12 @@ NB3_UI = r'''
 # ── 12 · (optional) Launch the Streamlit UI from Colab ──
 # Colab can't open localhost — use the built-in proxy:
 LAUNCH_UI = False
+SHARE_URL = True    # round-32: link tạm cho ĐỒNG ĐỘI cùng vào UI (cửa sổ
+                    # proxy của Colab CHỈ chủ phiên xem được). Link chỉ mở
+                    # giao diện tìm kiếm — KHÔNG lộ source/Drive/notebook.
+                    # Chỉ gửi link trong nhóm kín; tắt phiên là link chết.
 if LAUNCH_UI:
-    import os, subprocess, time
+    import os, re, subprocess, time
     # round-30 ĐẢO NGƯỢC verify-R23: ô engine giờ đặt sẵn CẤU HÌNH RA TRẬN
     # (finetuned + gemini + artifacts local) — UI PHẢI thừa hưởng env này;
     # pop như trước sẽ âm thầm hạ UI về siglip2 zero-shot đọc Drive.
@@ -1964,8 +1968,32 @@ if LAUNCH_UI:
         ["streamlit", "run", str(REPO_DIR / "app" / "streamlit_app.py"),
          "--server.port", "8501", "--server.headless", "true"], env=_env)
     time.sleep(8)
+    if SHARE_URL:
+        # cloudflared quick tunnel: không cần tài khoản, URL ngẫu nhiên dài
+        # khó đoán, tự chết khi phiên tắt.
+        _cf = "/content/cloudflared"
+        if not os.path.exists(_cf):
+            subprocess.run(
+                ["wget", "-q", "-O", _cf,
+                 "https://github.com/cloudflare/cloudflared/releases/"
+                 "latest/download/cloudflared-linux-amd64"], check=True)
+            os.chmod(_cf, 0o755)
+        _tun = subprocess.Popen([_cf, "tunnel", "--url", "http://localhost:8501"],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True)
+        _url, _t0 = None, time.time()
+        while _url is None and time.time() - _t0 < 90:
+            _m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com",
+                           _tun.stdout.readline() or "")
+            if _m:
+                _url = _m.group(0)
+        if _url:
+            print("🔗 LINK CHO ĐỒNG ĐỘI (gửi trong nhóm kín):", _url)
+        else:
+            print("⚠ Không lấy được URL tunnel sau 90s — chạy lại cell, "
+                  "hoặc dùng cửa sổ proxy bên dưới (chỉ mình bạn xem được).")
     from google.colab import output
-    output.serve_kernel_port_as_window(8501)
+    output.serve_kernel_port_as_window(8501)   # cửa sổ riêng của CHỦ PHIÊN
     # proc.terminate() when done
 else:
     print("Set LAUNCH_UI=True to serve the app (better: run it on your laptop).")
