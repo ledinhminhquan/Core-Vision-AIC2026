@@ -1841,6 +1841,41 @@ else:
         print("submissions đồng bộ về Drive:", _drv_sub)
 '''
 
+NB3_RUN_PACK = r'''
+# ── 9b · 🏁 THI ĐẤU THẬT: chạy CẢ PACK đề của BTC → CSV → validate → zip ──
+# Chuẩn bị: bung zip đề của BTC, upload các file query-*.txt vào
+# MyDrive/<project>/queries/<QUERY_PACK>/  (file .txt nằm TRỰC TIẾP trong
+# thư mục — đừng để lồng thêm một thư mục con sau khi bung zip).
+QUERY_PACK = "p1"      # tên thư mục con trong queries/
+RUN_PACK   = False     # bật True khi đề đã nằm đúng chỗ
+if RUN_PACK:
+    import shutil as _sh
+    from cvp.pipeline.auto_agent import run_auto
+
+    _qdir = PROJECT / "queries" / QUERY_PACK
+    _out = settings.paths.art("submissions", QUERY_PACK)
+    # engine_factory tái dùng engine ô 5 (đang nóng, đúng cấu hình ra trận) —
+    # để mặc định sẽ build engine THỨ HAI và nhân đôi RAM/VRAM.
+    rep = run_auto(_qdir, _out, settings, submit=False,
+                   engine_factory=lambda _s: engine)
+    print(f"\nCSV viết được: {len(rep.written)}")
+    if rep.failed:
+        print(f"⚠ {len(rep.failed)} query KHÔNG ra CSV (sẽ 0 điểm): {sorted(rep.failed)}")
+    for _i in rep.issues:
+        print("  ", _i)
+    if rep.zip_path:
+        _drv = PROJECT / "artifacts" / "submissions" / QUERY_PACK
+        _drv.mkdir(parents=True, exist_ok=True)
+        _sh.copytree(_out, _drv, dirs_exist_ok=True)
+        print(f"\n📦 {rep.zip_path.name} đã đồng bộ về Drive: {_drv}")
+        print("→ Tải submission.zip từ Drive về máy, nộp ở tab 'Nộp bài' của BTC.")
+    else:
+        print("⚠ KHÔNG có zip — sửa lỗi validate ở trên rồi chạy lại cell này "
+              "(đừng nộp tay CSV lẻ).")
+else:
+    print("RUN_PACK=False — upload đề vào queries/<PACK>/ rồi bật True và chạy lại.")
+'''
+
 NB3_SCORE_GT = r'''
 # ── 10 · (optional) Score against ground truth — official formulas ──
 # Drop a GT file at MyDrive/<project>/queries/gt.json to see the exact
@@ -1895,11 +1930,10 @@ NB3_UI = r'''
 LAUNCH_UI = False
 if LAUNCH_UI:
     import os, subprocess, time
-    # verify-R23: ô engine đặt CVP_QUERY__PROVIDER=none (test offline) — UI
-    # thi đấu phải chạy cấu hình THẬT, không được thừa hưởng env test đó.
+    # round-30 ĐẢO NGƯỢC verify-R23: ô engine giờ đặt sẵn CẤU HÌNH RA TRẬN
+    # (finetuned + gemini + artifacts local) — UI PHẢI thừa hưởng env này;
+    # pop như trước sẽ âm thầm hạ UI về siglip2 zero-shot đọc Drive.
     _env = dict(os.environ)
-    _env.pop("CVP_QUERY__PROVIDER", None)
-    _env.pop("CVP_EMBEDDING__MODEL", None)
     proc = subprocess.Popen(
         ["streamlit", "run", str(REPO_DIR / "app" / "streamlit_app.py"),
          "--server.port", "8501", "--server.headless", "true"], env=_env)
@@ -1979,6 +2013,7 @@ def main() -> None:
         code(NB3_TRAKE_AVS),
         code(NB3_SUBMISSION),
         code(NB3_PACKAGE),
+        code(NB3_RUN_PACK),
         code(NB3_SCORE_GT),
         code(NB3_AUTO_AGENT),
         code(NB3_UI),
