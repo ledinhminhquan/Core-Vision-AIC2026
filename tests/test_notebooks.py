@@ -193,6 +193,7 @@ NB_MARKERS = {
     NB3: (
         "_READ_HOT",                    # R26: read-hot artifacts staged locally
         "ENGINE_MODEL",                 # R26: one-knob lane A/B (finetuned/ensemble)
+        "QUERY_PROVIDER",               # R27: gemini on/off knob (ensemble needs it)
         "đồng bộ về Drive",             # R26: submissions synced back
         "build_objects_index",          # R23: compact objects before the engine
         "env=_env",                     # R23: UI must not inherit offline env

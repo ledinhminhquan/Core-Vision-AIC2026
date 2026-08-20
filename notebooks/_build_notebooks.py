@@ -1673,11 +1673,16 @@ NB3_ENGINE = r'''
 #   "siglip2"    lane gốc (nhanh, ổn định — mặc định)
 #   "finetuned"  text tower tiếng Việt từ nb02 (cùng index ảnh siglip2)
 #   "ensemble"   finetuned + openclip (chất lượng cao nhất, chậm hơn ~2×)
-ENGINE_MODEL = "siglip2"
+ENGINE_MODEL   = "siglip2"
+# "none"   = test offline, không gọi Gemini (nhanh, không tốn quota)
+# "gemini" = dịch + mở rộng query (CẦN secret GEMINI_API_KEY; lane openclip
+#            trong "ensemble" CHỈ phát huy sức mạnh khi bật cái này —
+#            provider=none thì openclip nhận tiếng Việt thô ≈ vô dụng)
+QUERY_PROVIDER = "none"
 import os, time
 from pathlib import Path
 os.environ["CVP_EMBEDDING__MODEL"] = ENGINE_MODEL
-os.environ["CVP_QUERY__PROVIDER"]  = "none"        # offline test (no Gemini needed)
+os.environ["CVP_QUERY__PROVIDER"]  = QUERY_PROVIDER
 if ENGINE_MODEL in ("finetuned", "ensemble"):
     os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
         Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "checkpoints" / "vi_siglip2_best")
