@@ -1724,10 +1724,17 @@ ENGINE_MODEL   = "finetuned"        # ← cấu hình ra trận round 1 (A/B 20/
 #            Google-Translate miễn phí rồi passthrough nếu API lỗi — A/B 20/08:
 #            riêng bản dịch EN đã nâng chất lượng rõ rệt cho mọi lane)
 QUERY_PROVIDER = "gemini"           # ← cấu hình ra trận round 1
+# Gemini NHÌN top-24 ảnh ứng viên và xếp lại đầu bảng (UIT CVPRW'25: +10%
+# hit@1). Cần API trả phí; ~3–8s/query. Tắt (False) nếu cần UI phản hồi nhanh.
+VLM_RERANK = True
 import os, time
 from pathlib import Path
 os.environ["CVP_EMBEDDING__MODEL"] = ENGINE_MODEL
 os.environ["CVP_QUERY__PROVIDER"]  = QUERY_PROVIDER
+os.environ["CVP_SEARCH__VLM_RERANK"] = "true" if VLM_RERANK else "false"
+# Ranking phẳng (top không tách khỏi đám đông) → tự tìm lại bằng các biến thể
+# Gemini đã cache rồi trộn RRF — không tốn thêm cuộc gọi API nào.
+os.environ["CVP_SEARCH__LOW_CONFIDENCE_RETRY"] = "true"
 if ENGINE_MODEL in ("finetuned", "ensemble"):
     os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
         Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "checkpoints" / "vi_siglip2_best")
@@ -1848,16 +1855,35 @@ NB3_RUN_PACK = r'''
 # thư mục — đừng để lồng thêm một thư mục con sau khi bung zip).
 QUERY_PACK = "p1"      # tên thư mục con trong queries/
 RUN_PACK   = False     # bật True khi đề đã nằm đúng chỗ
+REZIP_ONLY = False     # True: KHÔNG search lại — chỉ validate + zip lại các
+                       # query-*.csv hiện có trong pack (dùng SAU khi soát tay
+                       # bằng UI và ghi đè vài file CSV bằng bản người chọn)
 if RUN_PACK:
     import shutil as _sh
-    from cvp.pipeline.auto_agent import run_auto
 
     _qdir = PROJECT / "queries" / QUERY_PACK
     _out = settings.paths.art("submissions", QUERY_PACK)
-    # engine_factory tái dùng engine ô 5 (đang nóng, đúng cấu hình ra trận) —
-    # để mặc định sẽ build engine THỨ HAI và nhân đôi RAM/VRAM.
-    rep = run_auto(_qdir, _out, settings, submit=False,
-                   engine_factory=lambda _s: engine)
+    if REZIP_ONLY:
+        from cvp.submission.packager import has_errors, package_codabench, validate_file
+
+        class rep:  # noqa: N801 — cùng hình dạng với AutoRunReport phía dưới
+            written = sorted(_out.glob("query-*.csv"))
+            failed: dict = {}
+            issues = [i for p in written for i in validate_file(p, strict=True)]
+            zip_path = None
+        if rep.written and not has_errors(rep.issues):
+            _zp = _out / f"{settings.submission.package_name}.zip"
+            if not has_errors(package_codabench(
+                    _out, _zp, package_name=settings.submission.package_name,
+                    files=rep.written)):
+                rep.zip_path = _zp
+    else:
+        from cvp.pipeline.auto_agent import run_auto
+
+        # engine_factory tái dùng engine ô 5 (đang nóng, đúng cấu hình ra
+        # trận) — để mặc định sẽ build engine THỨ HAI và nhân đôi RAM/VRAM.
+        rep = run_auto(_qdir, _out, settings, submit=False,
+                       engine_factory=lambda _s: engine)
     print(f"\nCSV viết được: {len(rep.written)}")
     if rep.failed:
         print(f"⚠ {len(rep.failed)} query KHÔNG ra CSV (sẽ 0 điểm): {sorted(rep.failed)}")

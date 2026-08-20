@@ -199,6 +199,8 @@ NB_MARKERS = {
         "env=_env",                     # R30: UI inherits the BATTLE env
         "RUN_PACK",                     # R30: one-button organiser-pack cell
         "QUERY_PACK",
+        "REZIP_ONLY",                   # R31: re-zip after human curation
+        "CVP_SEARCH__VLM_RERANK",       # R31: Gemini listwise rerank knob
         "engine_factory=lambda _s: engine",  # reuse the warm cell-5 engine
         "package_codabench",            # validate + package cell
         "files=nb03_files",             # ONLY this run's CSVs — the submissions

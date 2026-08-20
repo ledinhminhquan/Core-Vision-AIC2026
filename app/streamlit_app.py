@@ -278,18 +278,55 @@ def _grid_results_for(tab: str):
     return []
 
 
+def _pack_target(out_dir: Path, task: str) -> Path | None | bool:
+    """Round-31: optional direct-to-pack export.
+
+    When the sidebar stem field is filled, the CSV is written STRAIGHT into
+    ``submissions/<pack>/<stem>.csv`` — overwriting the auto-pipeline file so
+    a human-curated ranking replaces it in the next REZIP_ONLY build. Guard:
+    the stem's task suffix must match the exporting tab (an operator exporting
+    the QA tab over a -kis stem would silently submit the wrong task).
+    Returns the target path, or False when no stem is set (use the default
+    date-stamped path), or None when the guard refused.
+    """
+    stem = (st.session_state.get("pack_stem_input") or "").strip()
+    if stem.endswith(".csv"):
+        stem = stem[: -len(".csv")]
+    if not stem:
+        return False
+    from cvp.submission.packager import infer_task
+
+    file_task = infer_task(f"{stem}.csv")
+    tab_task = "kis" if task == "kisc" else task
+    if file_task != tab_task:
+        st.error(f"Stem '{stem}' là bài {file_task.upper()} nhưng bạn đang export "
+                 f"tab {tab_task.upper()} — đổi stem hoặc đổi tab (chặn ghi nhầm task).")
+        return None
+    pack = (st.session_state.get("pack_dir_input") or "").strip().strip("/")
+    d = out_dir / pack if pack else out_dir
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{stem}.csv"
+
+
 def _export(task: str, engine) -> None:
     from cvp.submission.writer import write_kis, write_qa, write_trake
 
     settings = engine.settings
     out_dir = settings.paths.art("submissions")
+    target = _pack_target(out_dir, task)
+    if target is None:            # guard refused — error already shown
+        return
+
+    def _dst(t: str) -> Path:
+        return target if target else _export_path(out_dir, t)
+
     path = None
     if task == "kis":
         results = _current_results_for("kis")
         if st.session_state.basket_kis or results:
             ranked = [(v, f) for v, f, _ in st.session_state.basket_kis]
             ranked += [(r.video_id, r.frame_idx) for r in results]
-            path = write_kis(_export_path(out_dir, "kis"), ranked)
+            path = write_kis(_dst("kis"), ranked)
     elif task == "qa":
         results = _current_results_for("qa")
         if st.session_state.basket_qa or results:
@@ -303,20 +340,24 @@ def _export(task: str, engine) -> None:
                          "(hoặc đáp án riêng khi thêm basket) rồi export lại — "
                          "dòng QA thiếu answer chấm 0 điểm.")
                 return
-            path = write_qa(_export_path(out_dir, "qa"), ranked)
+            path = write_qa(_dst("qa"), ranked)
     elif task == "trake":
         if st.session_state.basket_trake or st.session_state.trake_results:
             ranked = list(st.session_state.basket_trake)
             ranked += [(c.video_id, c.frame_idxs) for c in st.session_state.trake_results]
-            path = write_trake(_export_path(out_dir, "trake"), ranked)
+            path = write_trake(_dst("trake"), ranked)
     elif task == "avs":
         results = _current_results_for("avs")
         if st.session_state.basket_avs or results:
             ranked = [(v, f) for v, f, _ in st.session_state.basket_avs]
             ranked += [(r.video_id, r.frame_idx) for r in results]
-            path = write_kis(_export_path(out_dir, "avs"), ranked)
+            path = write_kis(_dst("avs"), ranked)
     if path:
-        st.success(f"Exported → {path}")
+        if target:
+            st.success(f"GHI ĐÈ vào pack → {path} — nhớ chạy cell 9b với "
+                       "REZIP_ONLY=True để đóng zip mới trước khi nộp.")
+        else:
+            st.success(f"Exported → {path}")
         st.code(Path(path).read_text(encoding="utf-8")[:1500])
     else:
         st.warning("Nothing to export — search or add tiles to the basket first.")
@@ -336,6 +377,12 @@ def main() -> None:
             + ", ".join(m.key for m, _ in engine.members)
         )
         cols = st.slider("Grid columns", 3, 8, 5)
+        st.divider()
+        st.caption("📦 Xuất THẲNG vào pack đề (để trống = export thường)")
+        st.text_input("Pack (thư mục trong submissions/)", key="pack_dir_input",
+                      placeholder="p1")
+        st.text_input("Stem file đề (ghi đè!)", key="pack_stem_input",
+                      placeholder="query-p1-9-kis")
         display_k = st.slider("Results shown", 20, 300, engine.settings.search.display_k, step=20)
         st.checkbox("📺 Group by video (VISIONE-style)", key="group_by_video",
                     help="Videos ordered by best rank; each video's frames "
