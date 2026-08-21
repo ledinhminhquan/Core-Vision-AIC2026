@@ -33,3 +33,19 @@ def test_run_pack_survives_missing_pack_dir():
     assert "Run all vẫn đi tiếp" in frag
     assert 'any(_qdir.glob("*.txt"))' in frag
     assert "elif RUN_PACK:" in frag
+
+
+def test_keepalive_watchdog_is_last_cell():
+    """Round-35: the trial session idle-died mid-curation, killing the team
+    UI. A forever-running heartbeat cell keeps the kernel busy (Colab counts
+    that as activity) and doubles as a watchdog that revives streamlit/tunnel
+    and prints the fresh team link."""
+    src = (REPO / "notebooks" / "_build_notebooks.py").read_text(encoding="utf-8")
+    frag = src.split("NB3_KEEPALIVE = r")[1].split("def main")[0]
+    assert "KEEP_ALIVE" in frag
+    assert "KeyboardInterrupt" in frag           # stop button exits cleanly
+    assert "LINK MỚI CHO ĐỒNG ĐỘI" in frag       # tunnel revival prints link
+    assert '_alive(globals().get("proc"))' in frag
+    order = src.split('write_nb("03_test_system.ipynb"')[1].split("])")[0]
+    cells = [ln.strip() for ln in order.splitlines() if "code(" in ln]
+    assert cells[-1] == "code(NB3_KEEPALIVE),"   # forever-cell must sit LAST

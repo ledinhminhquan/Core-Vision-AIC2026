@@ -2012,6 +2012,56 @@ else:
 '''
 
 
+NB3_KEEPALIVE = r'''
+# ── 13 · 🫀 Giữ phiên + trông UI (chạy MÃI — bấm nút Dừng ⏹ của ô để thoát) ──
+# Colab thu hồi máy ảo "không hoạt động". Kernel đang bận chạy ô này = hoạt
+# động, nên phiên sống tới khi bạn tự dừng (trần cứng 24h của Colab vẫn áp
+# dụng). Kiêm watchdog: streamlit / tunnel chết là tự dựng lại và in link MỚI
+# (round-35 — phiên nháp 21/08 tự ngắt giữa buổi soát tay, đứt UI cả đội).
+KEEP_ALIVE = True
+if KEEP_ALIVE:
+    import os as _os, re as _re, subprocess as _sp, time as _tm
+
+    def _alive(p):
+        return p is not None and p.poll() is None
+
+    _n = 0
+    print("🫀 Watchdog chạy — phiên được giữ sống. Bấm nút Dừng (⏹) của ô này "
+          "khi muốn kết thúc.")
+    try:
+        while True:
+            if globals().get("LAUNCH_UI"):
+                if not _alive(globals().get("proc")):
+                    print(f"⚠ {_tm.strftime('%H:%M')} streamlit chết — dựng lại ...")
+                    proc = _sp.Popen(
+                        ["streamlit", "run", str(REPO_DIR / "app" / "streamlit_app.py"),
+                         "--server.port", "8501", "--server.headless", "true"],
+                        env=dict(_os.environ))
+                    _tm.sleep(8)
+                if (globals().get("SHARE_URL") and globals().get("_cf")
+                        and not _alive(globals().get("_tun"))):
+                    print(f"⚠ {_tm.strftime('%H:%M')} tunnel chết — mở lại ...")
+                    _tun = _sp.Popen([_cf, "tunnel", "--url", "http://localhost:8501"],
+                                     stdout=_sp.PIPE, stderr=_sp.STDOUT, text=True)
+                    _u, _t1 = None, _tm.time()
+                    while _u is None and _tm.time() - _t1 < 90:
+                        _m2 = _re.search(r"https://[a-z0-9-]+\.trycloudflare\.com",
+                                         _tun.stdout.readline() or "")
+                        if _m2:
+                            _u = _m2.group(0)
+                    print("🔗 LINK MỚI CHO ĐỒNG ĐỘI:", _u or "⚠ không lấy được — chạy lại ô UI")
+            _tm.sleep(30)
+            _n += 1
+            if _n % 10 == 0:   # ~5 phút một nhịp, giữ output gọn
+                print(f"🫀 {_tm.strftime('%H:%M')} phiên sống"
+                      + (" · UI ok" if _alive(globals().get("proc")) else ""))
+    except KeyboardInterrupt:
+        print("⏹ Đã dừng watchdog — từ giờ Colab tính phiên là nhàn rỗi.")
+else:
+    print("KEEP_ALIVE=False — phiên sẽ tự ngắt khi nhàn rỗi.")
+'''
+
+
 def main() -> None:
     write_nb("01_build_artifacts_colab.ipynb", [
         md(NB1_TITLE),
@@ -2083,6 +2133,7 @@ def main() -> None:
         code(NB3_SCORE_GT),
         code(NB3_AUTO_AGENT),
         code(NB3_UI),
+        code(NB3_KEEPALIVE),
     ])
 
 
