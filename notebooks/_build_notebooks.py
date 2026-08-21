@@ -2012,6 +2012,60 @@ else:
 '''
 
 
+NB3_FASTUI = r'''
+# ── 12b · ⚡ Web soát tay NHANH (tùy chọn 2 — SPA + API, không lag rerun) ──
+# Chạy NGAY TRONG kernel này, tái dùng engine ô 5 (không tốn thêm VRAM), phát
+# qua tunnel thứ hai. Cả đội đăng nhập MỘT tài khoản chung — ai không có
+# mật khẩu thì link cũng vô dụng. Streamlit (ô 12) vẫn là phương án dự phòng.
+LAUNCH_FAST_UI = True
+TEAM_USER = "aic2026-222"
+TEAM_PASS = ""            # để trống = tự sinh mật khẩu ngẫu nhiên và in ra
+if LAUNCH_FAST_UI:
+    import os, re, secrets, subprocess, sys, threading, time
+    try:
+        import fastapi, uvicorn  # noqa: F401
+    except ImportError:
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q",
+                        "fastapi", "uvicorn"], check=True)
+        import uvicorn  # noqa: F401
+    import uvicorn
+
+    from cvp.web.server import create_team_app
+
+    if not TEAM_PASS:
+        TEAM_PASS = secrets.token_urlsafe(6)
+    _webapp = create_team_app(engine, settings, TEAM_USER, TEAM_PASS)
+    threading.Thread(
+        target=lambda: uvicorn.run(_webapp, host="0.0.0.0", port=8600,
+                                   log_level="warning"),
+        daemon=True, name="cvp-fast-ui").start()
+    time.sleep(3)
+    _cf = "/content/cloudflared"
+    if not os.path.exists(_cf):
+        subprocess.run(["wget", "-q", "-O", _cf,
+                        "https://github.com/cloudflare/cloudflared/releases/"
+                        "latest/download/cloudflared-linux-amd64"], check=True)
+        os.chmod(_cf, 0o755)
+    _tun2 = subprocess.Popen([_cf, "tunnel", "--url", "http://localhost:8600"],
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True)
+    _u2, _t2 = None, time.time()
+    while _u2 is None and time.time() - _t2 < 90:
+        _m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com",
+                       _tun2.stdout.readline() or "")
+        if _m:
+            _u2 = _m.group(0)
+    if _u2:
+        print("⚡ LINK WEB NHANH CHO ĐỒNG ĐỘI:", _u2)
+        print(f"   Đăng nhập MỘT tài khoản chung: {TEAM_USER} / {TEAM_PASS}")
+        print("   (gửi cả link lẫn mật khẩu trong nhóm kín)")
+    else:
+        print("⚠ Không lấy được URL tunnel web nhanh — chạy lại cell, "
+              "hoặc cả đội dùng link Streamlit ô 12.")
+else:
+    print("LAUNCH_FAST_UI=False — đội chỉ dùng Streamlit (ô 12).")
+'''
+
 NB3_KEEPALIVE = r'''
 # ── 13 · 🫀 Giữ phiên + trông UI (chạy MÃI — bấm nút Dừng ⏹ của ô để thoát) ──
 # Colab thu hồi máy ảo "không hoạt động". Kernel đang bận chạy ô này = hoạt
@@ -2040,7 +2094,7 @@ if KEEP_ALIVE:
                     _tm.sleep(8)
                 if (globals().get("SHARE_URL") and globals().get("_cf")
                         and not _alive(globals().get("_tun"))):
-                    print(f"⚠ {_tm.strftime('%H:%M')} tunnel chết — mở lại ...")
+                    print(f"⚠ {_tm.strftime('%H:%M')} tunnel Streamlit chết — mở lại ...")
                     _tun = _sp.Popen([_cf, "tunnel", "--url", "http://localhost:8501"],
                                      stdout=_sp.PIPE, stderr=_sp.STDOUT, text=True)
                     _u, _t1 = None, _tm.time()
@@ -2050,6 +2104,20 @@ if KEEP_ALIVE:
                         if _m2:
                             _u = _m2.group(0)
                     print("🔗 LINK MỚI CHO ĐỒNG ĐỘI:", _u or "⚠ không lấy được — chạy lại ô UI")
+            if (globals().get("LAUNCH_FAST_UI") and globals().get("_cf")
+                    and globals().get("_tun2") is not None
+                    and not _alive(globals().get("_tun2"))):
+                # round-36: web nhanh (ô 12b) cũng được watchdog trông hộ
+                print(f"⚠ {_tm.strftime('%H:%M')} tunnel web nhanh chết — mở lại ...")
+                _tun2 = _sp.Popen([_cf, "tunnel", "--url", "http://localhost:8600"],
+                                  stdout=_sp.PIPE, stderr=_sp.STDOUT, text=True)
+                _u2, _t2 = None, _tm.time()
+                while _u2 is None and _tm.time() - _t2 < 90:
+                    _m3 = _re.search(r"https://[a-z0-9-]+\.trycloudflare\.com",
+                                     _tun2.stdout.readline() or "")
+                    if _m3:
+                        _u2 = _m3.group(0)
+                print("⚡ LINK WEB NHANH MỚI:", _u2 or "⚠ không lấy được — chạy lại ô 12b")
             _tm.sleep(30)
             _n += 1
             if _n % 10 == 0:   # ~5 phút một nhịp, giữ output gọn
@@ -2133,6 +2201,7 @@ def main() -> None:
         code(NB3_SCORE_GT),
         code(NB3_AUTO_AGENT),
         code(NB3_UI),
+        code(NB3_FASTUI),
         code(NB3_KEEPALIVE),
     ])
 

@@ -31,7 +31,7 @@ NB2 = "02_train_vi_encoder_H100.ipynb"
 NB3 = "03_test_system.ipynb"
 ALL_NBS = (NB1, NB1B, NB1C, NB2, NB3)
 
-EXPECTED_CODE_CELLS = {NB1: 11, NB1B: 8, NB1C: 8, NB2: 13, NB3: 17}
+EXPECTED_CODE_CELLS = {NB1: 11, NB1B: 8, NB1C: 8, NB2: 13, NB3: 18}
 
 # import-detection: `import torch`, `import gc, torch`, `from torch... import`
 TORCH_IMPORT_RE = re.compile(r"^\s*(?:import\s+[^#\n]*\btorch\b|from\s+torch\b)", re.MULTILINE)
@@ -201,6 +201,7 @@ NB_MARKERS = {
         "QUERY_PACK",
         "REZIP_ONLY",                   # R31: re-zip after human curation
         "KEEP_ALIVE",                   # R35: idle-death watchdog cell
+        "LAUNCH_FAST_UI",               # R36: SPA fast UI + team login
         "CVP_SEARCH__VLM_RERANK",       # R31: Gemini listwise rerank knob
         "engine_factory=lambda _s: engine",  # reuse the warm cell-5 engine
         "package_codabench",            # validate + package cell

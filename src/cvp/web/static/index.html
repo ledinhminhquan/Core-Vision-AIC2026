@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CVP · Soát Tay Nhanh</title>
+<style>
+  :root{
+    --bg:#0f1317; --panel:#161c22; --panel2:#1d252d; --line:#2a333d;
+    --ink:#e8edf2; --mut:#8d9aa6; --acc:#f0a93b; --acc-ink:#191104;
+    --ok:#3fb27f; --bad:#e85d4a; --pin:#f0a93b;
+    font-size:15px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:system-ui,'Segoe UI',Roboto,sans-serif;line-height:1.45}
+  button{font:inherit;cursor:pointer;border:1px solid var(--line);
+         background:var(--panel2);color:var(--ink);border-radius:6px;padding:.45em .9em}
+  button:hover{border-color:var(--acc)}
+  button.primary{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:700}
+  button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  input,textarea{font:inherit;background:var(--panel2);color:var(--ink);
+         border:1px solid var(--line);border-radius:6px;padding:.45em .6em;width:100%}
+  textarea{resize:vertical;min-height:84px}
+  label{font-size:.78rem;color:var(--mut);display:block;margin:0 0 .2em}
+
+  /* ── login ── */
+  #login{position:fixed;inset:0;background:var(--bg);display:flex;
+         align-items:center;justify-content:center;z-index:50}
+  #login form{background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--acc);
+         padding:28px 30px;width:320px;display:flex;flex-direction:column;gap:12px}
+  #login h1{font-size:1.15rem;margin:0}
+  #loginErr{color:var(--bad);font-size:.85rem;min-height:1.2em;margin:0}
+
+  /* ── header ── */
+  header{position:sticky;top:0;z-index:20;background:var(--panel);
+         border-bottom:2px solid var(--acc);padding:8px 14px;
+         display:flex;flex-wrap:wrap;gap:8px;align-items:end}
+  header .grow{flex:1 1 260px}
+  .modes{display:flex;gap:4px}
+  .modes button{border-radius:6px 6px 0 0}
+  .modes button.on{background:var(--acc);color:var(--acc-ink);font-weight:700}
+  .small{width:150px}
+  #status{font-size:.8rem;color:var(--mut);white-space:nowrap;padding-bottom:.5em}
+
+  /* ── pinned tray ── */
+  #tray{display:none;gap:8px;align-items:center;padding:8px 14px;
+        background:var(--panel2);border-bottom:1px solid var(--line);
+        overflow-x:auto}
+  #tray.has{display:flex}
+  #tray .lbl{font-size:.78rem;color:var(--acc);white-space:nowrap;font-weight:700}
+  .pinthumb{position:relative;flex:0 0 auto;cursor:pointer}
+  .pinthumb img{height:56px;border:2px solid var(--pin);border-radius:4px;display:block}
+  .pinthumb .no{position:absolute;top:-6px;left:-6px;background:var(--pin);color:var(--acc-ink);
+        font-size:.7rem;font-weight:800;width:18px;height:18px;border-radius:50%;
+        display:flex;align-items:center;justify-content:center}
+
+  /* ── panels ── */
+  main{padding:12px 14px 90px}
+  .qrow{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .qrow>div{flex:1 1 300px}
+  #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;position:relative}
+  .card img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;cursor:pointer}
+  .card.pinned{border-color:var(--pin);box-shadow:0 0 0 2px var(--pin)}
+  .card .no{position:absolute;top:6px;left:6px;background:var(--pin);color:var(--acc-ink);
+        font-weight:800;font-size:.8rem;min-width:22px;height:22px;border-radius:50%;
+        display:none;align-items:center;justify-content:center;padding:0 4px}
+  .card.pinned .no{display:flex}
+  .meta{padding:6px 8px 2px;font-size:.78rem;color:var(--mut)}
+  .meta b{color:var(--ink)}
+  .ans{padding:0 8px;font-size:.8rem;color:var(--acc)}
+  .acts{display:flex;gap:4px;padding:6px 8px 8px}
+  .acts button{padding:.2em .55em;font-size:.85rem}
+  .acts a{margin-left:auto;font-size:.78rem;color:var(--mut);align-self:center;text-decoration:none}
+  .acts a:hover{color:var(--acc)}
+
+  /* trake rows */
+  .seq{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+       padding:8px 10px;margin-bottom:10px}
+  .seq.pinned{border-color:var(--pin);box-shadow:0 0 0 2px var(--pin)}
+  .seq .head{display:flex;gap:10px;align-items:center;font-size:.85rem;margin-bottom:6px}
+  .seq .strip{display:flex;gap:6px;overflow-x:auto}
+  .seq .strip figure{margin:0;flex:0 0 170px}
+  .seq .strip img{width:170px;aspect-ratio:16/9;object-fit:cover;border-radius:4px;display:block}
+  .seq .strip figcaption{font-size:.72rem;color:var(--mut);text-align:center}
+
+  /* context modal */
+  #ctx{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;
+       align-items:center;justify-content:center;z-index:40}
+  #ctx.on{display:flex}
+  #ctx .box{background:var(--panel);border:1px solid var(--line);max-width:92vw;
+       max-height:86vh;overflow:auto;padding:14px}
+  #ctx .strip{display:flex;gap:8px;overflow-x:auto}
+  #ctx figure{margin:0;flex:0 0 220px}
+  #ctx img{width:220px;border-radius:4px;display:block;cursor:pointer}
+  #ctx figcaption{font-size:.75rem;color:var(--mut);text-align:center}
+
+  #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
+       background:var(--panel2);border:1px solid var(--ok);color:var(--ink);
+       padding:10px 18px;border-radius:8px;display:none;max-width:90vw;z-index:60;
+       font-size:.9rem}
+  #toast.bad{border-color:var(--bad)}
+  .hint{font-size:.8rem;color:var(--mut);margin:.3em 0 0}
+  @media (prefers-reduced-motion: no-preference){
+    .card{transition:box-shadow .12s ease}
+  }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <form onsubmit="doLogin(event)">
+    <h1>🎯 CVP — Soát Tay Nhanh</h1>
+    <div><label>Tài khoản đội</label><input id="lu" autocomplete="username" required></div>
+    <div><label>Mật khẩu đội</label><input id="lp" type="password" autocomplete="current-password" required></div>
+    <p id="loginErr"></p>
+    <button class="primary">Đăng nhập</button>
+  </form>
+</div>
+
+<header>
+  <div class="modes">
+    <button id="m-kis" class="on" onclick="setMode('kis')">🔎 KIS</button>
+    <button id="m-qa" onclick="setMode('qa')">❓ QA</button>
+    <button id="m-trake" onclick="setMode('trake')">⛓ TRAKE</button>
+  </div>
+  <div class="small"><label>Pack</label><input id="pack" value="p1"></div>
+  <div class="small" style="width:210px"><label>Stem file đề (ghi đè!)</label>
+    <input id="stem" placeholder="query-p1-9-kis"></div>
+  <div class="grow"></div>
+  <span id="status">chưa search</span>
+  <button class="primary" onclick="doExport()">📤 Export vào pack</button>
+</header>
+
+<div id="tray"><span class="lbl">🧺 Đã ghim (bấm để bỏ):</span></div>
+
+<main>
+  <div id="p-kis">
+    <div class="qrow">
+      <div style="flex:3 1 420px"><label>Mô tả cảnh cần tìm</label>
+        <input id="q-kis" placeholder="dán mô tả đề vào đây rồi Enter…"></div>
+      <div style="flex:0 0 auto;align-self:end"><button class="primary" onclick="searchKis()">🔎 Search</button></div>
+      <div style="flex:0 0 auto;align-self:end">
+        <button onclick="state.groupByVideo=!state.groupByVideo;renderGrid()" title="Ảnh cùng video đứng cạnh nhau">📺 Nhóm theo video</button></div>
+    </div>
+  </div>
+
+  <div id="p-qa" hidden>
+    <div class="qrow">
+      <div><label>Mô tả cảnh (để tìm khung hình)</label><input id="q-qa"></div>
+      <div><label>Câu hỏi</label><input id="q-question"></div>
+    </div>
+    <div class="qrow">
+      <div style="flex:2 1 380px"><label>Đáp án sẽ ghi vào CSV (≤100 ký tự)</label>
+        <input id="q-answer" maxlength="100"></div>
+      <div style="flex:0 0 auto;align-self:end"><button class="primary" onclick="searchQa(false)">🔎 Search</button></div>
+      <div style="flex:0 0 auto;align-self:end"><button onclick="searchQa(true)">💡 Gợi ý đáp án (VQA — chậm)</button></div>
+    </div>
+    <p class="hint">Gợi ý VQA hiện dưới từng ảnh — là manh mối, tự kiểm chứng (▶ xem video) rồi mới gõ đáp án chốt.</p>
+  </div>
+
+  <div id="p-trake" hidden>
+    <div class="qrow">
+      <div style="flex:3 1 420px"><label>Các sự kiện theo THỨ TỰ — mỗi dòng một sự kiện (bỏ "E1:", bỏ dòng mô tả chung)</label>
+        <textarea id="q-trake"></textarea></div>
+      <div style="flex:0 0 auto;align-self:end"><button class="primary" onclick="searchTrake()">⛓ Search sequences</button></div>
+    </div>
+  </div>
+
+  <div id="grid"></div>
+  <div id="seqs"></div>
+</main>
+
+<div id="ctx" onclick="if(event.target===this)this.classList.remove('on')">
+  <div class="box">
+    <p style="margin:0 0 8px;font-size:.85rem;color:var(--mut)">🎞 Ngữ cảnh video — bấm ảnh để ghim thẳng</p>
+    <div class="strip" id="ctxStrip"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+const state = {
+  mode: "kis",
+  results: [],            // [{gid, video, frame, n, t, score, answer, watch}]
+  sequences: [],          // trake: [{video_id, score, frames:[{gid,frame,t}]}]
+  pins: [],               // gids in rank order (kis/qa)  |  seq indexes (trake)
+  groupByVideo: false,
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {headers: {"Content-Type": "application/json"}, ...opts});
+  if (r.status === 401) { $("login").style.display = "flex"; throw new Error("Chưa đăng nhập"); }
+  if (!r.ok) {
+    let msg = r.statusText;
+    try { msg = (await r.json()).detail || msg; } catch (e) {}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+
+async function doLogin(ev) {
+  ev.preventDefault();
+  try {
+    await api("/login", {method: "POST",
+      body: JSON.stringify({username: $("lu").value.trim(), password: $("lp").value})});
+    $("login").style.display = "none";
+    toast("Đăng nhập thành công — vào việc thôi!");
+  } catch (e) { $("loginErr").textContent = e.message; }
+}
+
+// auto-skip login when the cookie is still valid
+api("/whoami").then(() => { $("login").style.display = "none"; }).catch(() => {});
+
+function setMode(m) {
+  state.mode = m;
+  for (const x of ["kis", "qa", "trake"]) {
+    $("m-" + x).classList.toggle("on", x === m);
+    $("p-" + x).hidden = x !== m;
+  }
+  clearResults();
+}
+
+function clearResults() {
+  state.results = []; state.sequences = []; state.pins = [];
+  renderGrid(); renderSeqs(); renderTray();
+  $("status").textContent = "chưa search";
+}
+
+function toast(msg, bad = false) {
+  const t = $("toast");
+  t.textContent = msg; t.className = bad ? "bad" : ""; t.style.display = "block";
+  clearTimeout(t._h); t._h = setTimeout(() => { t.style.display = "none"; }, bad ? 7000 : 4000);
+}
+
+let timer = null;
+function busy(on, label) {
+  clearInterval(timer);
+  if (on) {
+    const t0 = Date.now();
+    timer = setInterval(() => {
+      $("status").textContent = `${label} … ${((Date.now() - t0) / 1000).toFixed(0)}s`;
+    }, 250);
+  }
+}
+
+function mapItems(items) {
+  return items.map(r => ({gid: r.global_id, video: r.video_id, frame: r.frame_idx,
+    n: r.n, t: r.pts_time, score: r.score, answer: r.answer, watch: r.watch_url}));
+}
+
+async function searchKis() {
+  const q = $("q-kis").value.trim(); if (!q) return;
+  busy(true, "Đang search (Gemini + 2 tầng rerank)");
+  try {
+    const d = await api("/search/text", {method: "POST", body: JSON.stringify({query: q, display_k: 120})});
+    state.results = mapItems(d.results); state.pins = [];
+    renderGrid(); renderTray();
+    $("status").textContent = `${d.count} kết quả`;
+  } catch (e) { toast("Search lỗi: " + e.message, true); $("status").textContent = "lỗi"; }
+  busy(false);
+}
+
+async function searchQa(withAnswers) {
+  const q = $("q-qa").value.trim(); if (!q) return;
+  busy(true, withAnswers ? "VQA đang nhìn ảnh (chậm, ~1 phút)" : "Đang search");
+  try {
+    const d = await api("/search/qa", {method: "POST", body: JSON.stringify(
+      {query: q, question: $("q-question").value.trim() || null,
+       display_k: 120, answers: !!withAnswers})});
+    state.results = mapItems(d.results);
+    if (!withAnswers) state.pins = [];
+    renderGrid(); renderTray();
+    $("status").textContent = `${d.count} kết quả` + (withAnswers ? " · có gợi ý VQA" : "");
+  } catch (e) { toast("Lỗi: " + e.message, true); $("status").textContent = "lỗi"; }
+  busy(false);
+}
+
+async function searchTrake() {
+  const events = $("q-trake").value.split("\n").map(s => s.trim()).filter(Boolean);
+  if (events.length < 2) { toast("Nhập ít nhất 2 sự kiện.", true); return; }
+  busy(true, "Đang căn chuỗi sự kiện");
+  try {
+    const d = await api("/trake2", {method: "POST", body: JSON.stringify({events, max_results: 50})});
+    state.sequences = d.results; state.pins = [];
+    renderSeqs(); renderTray();
+    $("status").textContent = `${d.count} chuỗi ứng viên`;
+  } catch (e) { toast("Lỗi: " + e.message, true); $("status").textContent = "lỗi"; }
+  busy(false);
+}
+
+function fmtT(t) {
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function displayOrder() {
+  if (!state.groupByVideo) return state.results;
+  const seen = [], by = {};
+  for (const r of state.results) {
+    if (!by[r.video]) { by[r.video] = []; seen.push(r.video); }
+    by[r.video].push(r);
+  }
+  return seen.flatMap(v => by[v].sort((a, b) => a.n - b.n));
+}
+
+function renderGrid() {
+  const g = $("grid");
+  if (state.mode === "trake") { g.innerHTML = ""; return; }
+  g.innerHTML = displayOrder().map(r => {
+    const i = state.pins.indexOf(r.gid);
+    return `<div class="card ${i >= 0 ? "pinned" : ""}" id="c${r.gid}">
+      <span class="no">${i + 1}</span>
+      <img loading="lazy" src="/keyframe/${r.gid}" alt="" onclick="togglePin(${r.gid})">
+      <div class="meta"><b>${esc(r.video)}</b> · frame <b>${r.frame}</b> · ${fmtT(r.t)} · s=${r.score.toFixed(3)}</div>
+      ${r.answer ? `<div class="ans">💡 ${esc(r.answer)}</div>` : ""}
+      <div class="acts">
+        <button title="Ghim / bỏ ghim" onclick="togglePin(${r.gid})">🧺</button>
+        <button title="Ảnh giống" onclick="similar(${r.gid})">🔍</button>
+        <button title="Ngữ cảnh video" onclick="showCtx(${r.gid})">🎞</button>
+        ${r.watch ? `<a href="${esc(r.watch)}" target="_blank" rel="noopener">▶ ${fmtT(r.t)}</a>` : ""}
+      </div></div>`;
+  }).join("");
+}
+
+function renderSeqs() {
+  const el = $("seqs");
+  if (state.mode !== "trake") { el.innerHTML = ""; return; }
+  el.innerHTML = state.sequences.map((s, i) => {
+    const p = state.pins.indexOf(i);
+    return `<div class="seq ${p >= 0 ? "pinned" : ""}">
+      <div class="head"><button onclick="togglePin(${i})">🧺 ${p >= 0 ? "rank " + (p + 1) : "ghim"}</button>
+        <b>${esc(s.video_id)}</b> · score ${s.score.toFixed(3)} · frames [${s.frames.map(f => f.frame).join(", ")}]</div>
+      <div class="strip">${s.frames.map((f, j) =>
+        `<figure><img loading="lazy" src="/keyframe/${f.gid}" alt="">
+         <figcaption>E${j + 1} · f${f.frame} · ${fmtT(f.t)}</figcaption></figure>`).join("")}</div>
+    </div>`;
+  }).join("");
+}
+
+function togglePin(key) {
+  const i = state.pins.indexOf(key);
+  if (i >= 0) state.pins.splice(i, 1); else state.pins.push(key);
+  renderTray();
+  if (state.mode === "trake") renderSeqs(); else renderGrid();
+}
+
+function renderTray() {
+  const tray = $("tray");
+  const olds = tray.querySelectorAll(".pinthumb"); olds.forEach(x => x.remove());
+  tray.classList.toggle("has", state.pins.length > 0);
+  for (let i = 0; i < state.pins.length; i++) {
+    const key = state.pins[i];
+    const d = document.createElement("div");
+    d.className = "pinthumb"; d.title = "Bỏ ghim";
+    let gid = key;
+    if (state.mode === "trake") {
+      const s = state.sequences[key]; gid = s ? s.frames[0].gid : -1;
+    }
+    d.innerHTML = `<span class="no">${i + 1}</span><img src="/keyframe/${gid}" alt="">`;
+    d.onclick = () => togglePin(key);
+    tray.appendChild(d);
+  }
+}
+
+async function similar(gid) {
+  busy(true, "Tìm ảnh giống");
+  try {
+    const d = await api(`/nearest/${gid}?k=60`);
+    state.results = mapItems(d.results);
+    renderGrid();
+    $("status").textContent = `${d.count} ảnh giống (giữ nguyên ghim cũ)`;
+  } catch (e) { toast("Lỗi: " + e.message, true); }
+  busy(false);
+}
+
+async function showCtx(gid) {
+  try {
+    const d = await api(`/context/${gid}?window=6`);
+    $("ctxStrip").innerHTML = d.frames.map(f =>
+      `<figure><img src="/keyframe/${f.gid}" alt="" onclick="togglePin(${f.gid});this.style.outline='3px solid var(--pin)'">
+       <figcaption>f${f.frame} · ${fmtT(f.t)}${f.gid === gid ? " ◀ đang xem" : ""}</figcaption></figure>`).join("");
+    $("ctx").classList.add("on");
+  } catch (e) { toast("Lỗi: " + e.message, true); }
+}
+
+async function doExport() {
+  const stem = $("stem").value.trim();
+  if (!stem) { toast("Điền Stem file đề (vd query-p1-9-kis) rồi export.", true); return; }
+  const body = {task: state.mode, pack: $("pack").value.trim(), stem,
+                pins: [], results: [], answer: "", sequences: []};
+  if (state.mode === "trake") {
+    if (!state.sequences.length) { toast("Chưa có chuỗi nào — Search trước đã.", true); return; }
+    const order = [...state.pins, ...state.sequences.map((_, i) => i).filter(i => !state.pins.includes(i))];
+    body.sequences = order.map(i => ({video_id: state.sequences[i].video_id,
+                                      frames: state.sequences[i].frames.map(f => f.frame)}));
+  } else {
+    if (!state.results.length) { toast("Chưa có kết quả — Search trước đã.", true); return; }
+    body.pins = state.pins;
+    body.results = state.results.map(r => r.gid);
+    body.answer = state.mode === "qa" ? $("q-answer").value.trim() : "";
+  }
+  try {
+    const d = await api("/export", {method: "POST", body: JSON.stringify(body)});
+    toast(`✅ GHI ĐÈ ${d.path} (${d.rows} dòng, ${body.pins.length} ghim) — báo ✅ trong nhóm; `
+          + `trưởng nhóm nhớ REZIP_ONLY=True trước khi nộp.`);
+  } catch (e) { toast("Export bị chặn: " + e.message, true); }
+}
+
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Enter" && ev.target.id === "q-kis") searchKis();
+  if (ev.key === "Enter" && (ev.target.id === "q-qa" || ev.target.id === "q-question")) searchQa(false);
+  if (ev.key === "Escape") $("ctx").classList.remove("on");
+});
+</script>
+</body>
+</html>
