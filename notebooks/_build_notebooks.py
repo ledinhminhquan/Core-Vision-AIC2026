@@ -1687,7 +1687,7 @@ from pathlib import Path
 LOCAL_ART = Path("/content/artifacts")
 LOCAL_ART.mkdir(exist_ok=True)
 _READ_HOT = ("catalog", "embeddings", "indexes", "text_index", "objects_index",
-             "asr", "checkpoints")
+             "asr", "checkpoints", "thumbs")   # round-42: webp thumbs → lưới UI 10x
 _t0 = time.time()
 try:
     list(ARTIFACTS.iterdir())    # round-28: nudge metadata trước loạt exists()
@@ -1709,6 +1709,11 @@ for _d in _READ_HOT:
     print(f"   {_d}/ → local")
 (LOCAL_ART / "submissions").mkdir(parents=True, exist_ok=True)
 os.environ["CVP_PATHS__ARTIFACTS_ROOT"] = str(LOCAL_ART)
+# round-42: có kho thumbnail (chạy scripts/60_make_thumbs.py MỘT lần) → web
+# đội tải ảnh ~8KB thay vì 60-150KB — lưới hiện gần như tức thì qua tunnel.
+if (LOCAL_ART / "thumbs").is_dir():
+    os.environ["CVP_WEB__THUMBS_DIR"] = str(LOCAL_ART / "thumbs")
+    print("thumbs: BẬT (webp 320px)")
 print(f"artifacts_root now: {LOCAL_ART} ({time.time() - _t0:.0f}s)")
 '''
 

@@ -106,11 +106,34 @@ def create_team_app(engine, settings: Settings, username: str, password: str):
     def index():
         return FileResponse(str(static_dir / "index.html"), media_type="text/html")
 
+    import os as _os
+
+    _raw_thumbs = _os.environ.get("CVP_WEB__THUMBS_DIR", "")
+    # Path("") is the CWD — an empty env var must mean "no store", not "serve
+    # the working directory" (caught by the round-42 test suite).
+    thumbs_dir = Path(_raw_thumbs) if _raw_thumbs else None
+    has_thumbs = thumbs_dir is not None and thumbs_dir.is_dir()
+    if has_thumbs:
+        log.info("Thumbnail store: %s", thumbs_dir)
+
     @app.get("/whoami")
     def whoami():
         # Auth-gated no-op: the SPA probes it on load to skip the login form
-        # while the day-old cookie is still valid.
-        return {"ok": True, "username": username}
+        # while the day-old cookie is still valid. Round-42: also tells the
+        # SPA whether ~8KB webp thumbnails are available (10x faster grids).
+        return {"ok": True, "username": username, "thumbs": has_thumbs}
+
+    @app.get("/thumb/{video_id}/{n}.webp")
+    def thumb(video_id: str, n: int):
+        # Auth-gated like /keyframe — competition imagery never leaves the
+        # login wall. Immutable cache: a keyframe's thumb never changes.
+        if not has_thumbs or not _STEM_RE.match(video_id):
+            raise HTTPException(404, "no thumbnail store")
+        p = thumbs_dir / video_id / f"{int(n)}.webp"
+        if not p.is_file():
+            raise HTTPException(404, "thumb missing")
+        return FileResponse(str(p), media_type="image/webp",
+                            headers={"Cache-Control": "public, max-age=604800, immutable"})
 
     @app.get("/context/{global_id}")
     def context(global_id: int, window: int = 6):
@@ -142,8 +165,8 @@ def create_team_app(engine, settings: Settings, username: str, password: str):
                 gid_maps[c.video_id] = m
             out.append({
                 "video_id": c.video_id, "score": round(float(c.score), 4),
-                "frames": [{"gid": m.get(int(n), -1), "frame": int(f),
-                            "t": round(float(t), 2)}
+                "frames": [{"gid": m.get(int(n), -1), "n": int(n),
+                            "frame": int(f), "t": round(float(t), 2)}
                            for n, f, t in zip(c.ns, c.frame_idxs, c.pts_times)],
             })
         return {"count": len(out), "results": out}

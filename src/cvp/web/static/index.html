@@ -214,18 +214,27 @@ async function api(path, opts = {}) {
   return r.json();
 }
 
+let THUMBS = false;   // server has a webp thumbnail store (~8KB/ảnh, lưới nhanh 10x)
+function imgTag(video, n, gid, extra = "") {
+  const src = THUMBS ? `/thumb/${video}/${n}.webp` : `/keyframe/${gid}`;
+  return `<img loading="lazy" src="${src}" alt="" ` +
+         `onerror="this.onerror=null;this.src='/keyframe/${gid}'" ${extra}>`;
+}
+
 async function doLogin(ev) {
   ev.preventDefault();
   try {
     await api("/login", {method: "POST",
       body: JSON.stringify({username: $("lu").value.trim(), password: $("lp").value})});
     $("login").style.display = "none";
+    api("/whoami").then(d => { THUMBS = !!d.thumbs; }).catch(() => {});
     toast("Đăng nhập thành công — vào việc thôi!");
   } catch (e) { $("loginErr").textContent = e.message; }
 }
 
 // auto-skip login when the cookie is still valid
-api("/whoami").then(() => { $("login").style.display = "none"; }).catch(() => {});
+api("/whoami").then(d => { THUMBS = !!d.thumbs; $("login").style.display = "none"; })
+  .catch(() => {});
 
 function setMode(m) {
   state.mode = m;
@@ -338,7 +347,7 @@ function renderGrid() {
     const i = state.pins.indexOf(r.gid);
     return `<div class="card ${i >= 0 ? "pinned" : ""}" id="c${r.gid}">
       <span class="no">${i + 1}</span>
-      <img loading="lazy" src="/keyframe/${r.gid}" alt="" onclick="togglePin(${r.gid})">
+      ${imgTag(r.video, r.n, r.gid, `onclick="togglePin(${r.gid})"`)}
       <div class="meta"><b>${esc(r.video)}</b> · frame <b>${r.frame}</b> · ${fmtT(r.t)} · s=${r.score.toFixed(3)}</div>
       ${r.answer ? `<div class="ans">💡 ${esc(r.answer)}</div>` : ""}
       <div class="acts">
@@ -359,7 +368,7 @@ function renderSeqs() {
       <div class="head"><button onclick="togglePin(${i})">🧺 ${p >= 0 ? "rank " + (p + 1) : "ghim"}</button>
         <b>${esc(s.video_id)}</b> · score ${s.score.toFixed(3)} · frames [${s.frames.map(f => f.frame).join(", ")}]</div>
       <div class="strip">${s.frames.map((f, j) =>
-        `<figure><img loading="lazy" src="/keyframe/${f.gid}" alt="">
+        `<figure>${imgTag(s.video_id, f.n, f.gid)}
          <figcaption>E${j + 1} · f${f.frame} · ${fmtT(f.t)}</figcaption></figure>`).join("")}</div>
     </div>`;
   }).join("");
@@ -380,11 +389,15 @@ function renderTray() {
     const key = state.pins[i];
     const d = document.createElement("div");
     d.className = "pinthumb"; d.title = "Bỏ ghim";
-    let gid = key;
+    let gid = key, vid = "", n = 0;
     if (state.mode === "trake") {
-      const s = state.sequences[key]; gid = s ? s.frames[0].gid : -1;
+      const s = state.sequences[key];
+      if (s) { gid = s.frames[0].gid; vid = s.video_id; n = s.frames[0].n; }
+    } else {
+      const r = state.results.find(x => x.gid === key);
+      if (r) { vid = r.video; n = r.n; }
     }
-    d.innerHTML = `<span class="no">${i + 1}</span><img src="/keyframe/${gid}" alt="">`;
+    d.innerHTML = `<span class="no">${i + 1}</span>` + imgTag(vid, n, gid);
     d.onclick = () => togglePin(key);
     tray.appendChild(d);
   }
@@ -405,7 +418,8 @@ async function showCtx(gid) {
   try {
     const d = await api(`/context/${gid}?window=6`);
     $("ctxStrip").innerHTML = d.frames.map(f =>
-      `<figure><img src="/keyframe/${f.gid}" alt="" onclick="togglePin(${f.gid});this.style.outline='3px solid var(--pin)'">
+      `<figure>${imgTag(d.video_id, f.n, f.gid,
+        `onclick="togglePin(${f.gid});this.style.outline='3px solid var(--pin)'"`)}
        <figcaption>f${f.frame} · ${fmtT(f.t)}${f.gid === gid ? " ◀ đang xem" : ""}</figcaption></figure>`).join("");
     $("ctx").classList.add("on");
   } catch (e) { toast("Lỗi: " + e.message, true); }
