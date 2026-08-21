@@ -29,9 +29,10 @@ NB1B = "01b_caption_boost_colab.ipynb"
 NB1C = "01c_asr_boost_colab.ipynb"
 NB2 = "02_train_vi_encoder_H100.ipynb"
 NB3 = "03_test_system.ipynb"
-ALL_NBS = (NB1, NB1B, NB1C, NB2, NB3)
+NB4 = "04_lab_artifacts.ipynb"
+ALL_NBS = (NB1, NB1B, NB1C, NB2, NB3, NB4)
 
-EXPECTED_CODE_CELLS = {NB1: 11, NB1B: 8, NB1C: 8, NB2: 13, NB3: 18}
+EXPECTED_CODE_CELLS = {NB1: 11, NB1B: 8, NB1C: 8, NB2: 13, NB3: 18, NB4: 12}
 
 # import-detection: `import torch`, `import gc, torch`, `from torch... import`
 TORCH_IMPORT_RE = re.compile(r"^\s*(?:import\s+[^#\n]*\btorch\b|from\s+torch\b)", re.MULTILINE)
@@ -211,6 +212,15 @@ NB_MARKERS = {
         "RUN_AUTO_AGENT",               # automatic-track dry-run toggle
         "run_auto",
         "submit=False",
+    ),
+    NB4: (
+        "RUN_GT",                       # R44: bench GT from the 19.8 reference
+        "RUN_BENCH_FULL",               # full-weapons scoring on the bench
+        "RUN_TUNE",                     # signal dump + weight search
+        "RUN_METACLIP",                 # measured lane A/B before adoption
+        "RUN_ASR_LARGE",                # overnight PhoWhisper-large rebuild
+        "62_build_gt_from_reference.py",
+        "asr-medium-backup",            # the medium ASR keeps a retreat path
     ),
 }
 

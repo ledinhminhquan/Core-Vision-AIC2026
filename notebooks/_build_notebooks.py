@@ -1756,6 +1756,15 @@ os.environ["CVP_SEARCH__VLM_RERANK_TOPK"] = str(VLM_RERANK_TOPK)
 os.environ["CVP_SEARCH__VLM_RERANK_VOTES"] = str(VLM_VOTES)
 os.environ["CVP_VQA__SELF_CONSISTENCY"] = str(QA_VOTES)
 os.environ["CVP_SEARCH__RERANKER"] = "qwen_reranker" if CROSS_RERANK else "none"
+# Round-44: Lab (nb04) dò được bộ trọng số fusion thắng bench → tự nạp.
+_tw = PROJECT / "artifacts" / "tuning" / "best_weights.json"
+if _tw.exists():
+    import json as _json
+    _w = _json.loads(_tw.read_text(encoding="utf-8")).get("best", {}).get("weights")
+    if _w:
+        for _sig, _val in _w.items():
+            os.environ[f"CVP_SEARCH__WEIGHTS__{_sig.upper()}"] = str(_val)
+        print("⚖ Trọng số fusion TUNED (từ Lab):", _w)
 # Ranking phẳng (top không tách khỏi đám đông) → tự tìm lại bằng các biến thể
 # Gemini đã cache rồi trộn RRF — không tốn thêm cuộc gọi API nào.
 os.environ["CVP_SEARCH__LOW_CONFIDENCE_RETRY"] = "true"
@@ -2147,6 +2156,178 @@ else:
 '''
 
 
+NB4_TITLE = r'''
+# 🔬 Core Vision Perfect V1 — 04 · Lab: nâng chất artifacts CÓ ĐO LƯỜNG
+
+Phòng thí nghiệm giữa các vòng đấu (round-44). Mọi nâng cấp được CHẤM ĐIỂM
+trên bench GT (dựng từ bài tham chiếu 19.8/23 của vòng nháp) TRƯỚC khi nhận
+vào cấu hình ra trận. Các công tắc, bật từng cái tùy phiên:
+
+| Knob | Việc | Thời gian |
+|---|---|---|
+| `RUN_GT` | Dựng gt.json từ zip tham chiếu | vài giây |
+| `RUN_BENCH_FULL` | Chấm dàn vũ khí ĐẦY ĐỦ hiện tại trên đề nháp | ~45–60 phút |
+| `RUN_TUNE` | Dump tín hiệu + dò trọng số fusion → best_weights.json | ~30 phút |
+| `RUN_METACLIP` | Embed lane MetaCLIP-2 + A/B 3 đội hình retrieval | ~2 giờ |
+| `RUN_ASR_LARGE` | Ca đêm: ASR PhoWhisper-large toàn bộ 873 video | ~10–20 giờ |
+
+Chuẩn bị MỘT lần: upload zip bài tham chiếu 19.8 lên Drive thành
+`MyDrive/AIC2025/queries/thunghiem-ref.zip` (đề nháp đã nằm sẵn ở
+`queries/p1/` từ vòng thử nghiệm).
+'''
+
+LAB_GT = r'''
+# ── L1 · Bench GT từ bài tham chiếu 19.8 ──
+RUN_GT = True
+import subprocess, sys
+def _run(*args):
+    print("$", " ".join(map(str, args)))
+    subprocess.run([sys.executable, *map(str, args)], check=True)
+REF_ZIP   = PROJECT / "queries" / "thunghiem-ref.zip"
+TRIAL_DIR = PROJECT / "queries" / "p1"          # 24 đề vòng nháp (đã upload từ trước)
+GT_PATH   = PROJECT / "queries" / "gt-thunghiem.json"
+if RUN_GT:
+    if not REF_ZIP.exists():
+        print(f"⚠ Chưa thấy {REF_ZIP} — upload 'submission (3).zip' (bài 19.8) "
+              "lên Drive với tên đó rồi chạy lại cell này. Các cell sau vẫn chạy "
+              "được nếu GT đã dựng từ trước.")
+    else:
+        _run(REPO_DIR / "scripts" / "62_build_gt_from_reference.py",
+             "--reference", REF_ZIP, "--queries", TRIAL_DIR, "--out", GT_PATH)
+print("GT:", "sẵn sàng ✓" if GT_PATH.exists() else "CHƯA có")
+'''
+
+LAB_BENCH_FULL = r'''
+# ── L2 · Chấm dàn vũ khí ĐẦY ĐỦ trên đề nháp (baseline mới) ──
+# Đúng cấu hình ra trận nb03: finetuned + gemini + VLM48×3 + Qwen-8B + Pro-QA.
+RUN_BENCH_FULL = True
+import os, time
+from pathlib import Path
+if RUN_BENCH_FULL and GT_PATH.exists():
+    os.environ["CVP_EMBEDDING__MODEL"] = "finetuned"
+    os.environ["CVP_QUERY__PROVIDER"]  = "gemini"
+    os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
+        Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "checkpoints" / "vi_siglip2_best")
+    os.environ["CVP_SEARCH__VLM_RERANK"] = "true"
+    os.environ["CVP_SEARCH__VLM_RERANK_TOPK"] = "48"
+    os.environ["CVP_SEARCH__VLM_RERANK_VOTES"] = "3"
+    os.environ["CVP_VQA__SELF_CONSISTENCY"] = "3"
+    os.environ["CVP_SEARCH__RERANKER"] = "qwen_reranker"
+    os.environ["CVP_SEARCH__LOW_CONFIDENCE_RETRY"] = "true"
+    from cvp.config import load_settings
+    from cvp.eval.official import score_run
+    from cvp.pipeline.auto_agent import run_auto
+    settings = load_settings()
+    _t0 = time.time()
+    rep = run_auto(TRIAL_DIR, settings.paths.art("submissions", "lab_full"),
+                   settings, submit=False)
+    r = score_run(settings.paths.art("submissions", "lab_full"), GT_PATH)
+    print(f"\n⭐ BENCH FULL: mean_final={r.mean_final:.4f} "
+          f"({r.num_scored}/{r.num_gt} câu, {(time.time()-_t0)/60:.0f} phút)")
+    print("   Mốc cũ (bản 8.4 đợt nháp): 0.6413 · bản trộn 2 lần: 0.6587")
+    for stem, qs in sorted(r.per_query.items()):
+        print(f"   {stem:26s} final={qs.final:.3f}")
+elif RUN_BENCH_FULL:
+    print("⚠ Chưa có GT — chạy cell L1 trước.")
+'''
+
+LAB_TUNE = r'''
+# ── L3 · Dò trọng số fusion trên bench (dump 1 lần, thử hàng nghìn bộ) ──
+RUN_TUNE = True
+if RUN_TUNE and GT_PATH.exists():
+    import os
+    os.environ["CVP_EMBEDDING__MODEL"] = "finetuned"
+    _dump = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "signal_dumps" / "thunghiem"
+    _tune_out = PROJECT / "artifacts" / "tuning" / "best_weights.json"
+    _tune_out.parent.mkdir(parents=True, exist_ok=True)
+    _run(REPO_DIR / "scripts" / "23_dump_signals.py",
+         "--query-dir", TRIAL_DIR, "--out-dir", _dump)
+    _run(REPO_DIR / "scripts" / "21_tune_weights.py", "--signals-dir", _dump,
+         "--gt", GT_PATH, "--method", "random", "--trials", "400",
+         "--out", _tune_out)
+    print("\n📌 Trọng số thắng đã lưu:", _tune_out)
+    print("   nb03 (round-44) TỰ ĐỘNG nạp file này ở ô engine — không phải sửa gì.")
+elif RUN_TUNE:
+    print("⚠ Chưa có GT — chạy cell L1 trước.")
+'''
+
+LAB_METACLIP = r'''
+# ── L4 · Lane MetaCLIP-2: embed + A/B 3 đội hình retrieval (đo mới nhận) ──
+RUN_METACLIP = True
+if RUN_METACLIP and GT_PATH.exists():
+    import gc, os, shutil, torch
+    from pathlib import Path
+    _run(REPO_DIR / "scripts" / "02_embed_and_index.py", "--model", "metaclip2")
+    # đồng bộ thành quả embed về Drive để các phiên sau khỏi làm lại
+    _la = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"])
+    for _sub in ("embeddings", "indexes"):
+        for _f in (_la / _sub).glob("*metaclip2*"):
+            _dst = PROJECT / "artifacts" / _sub / _f.name
+            _dst.parent.mkdir(parents=True, exist_ok=True)
+            if not _dst.exists() or _dst.stat().st_size != _f.stat().st_size:
+                shutil.copy2(_f, _dst)
+                print("   → Drive:", _dst.name)
+    # A/B retrieval-only (tắt reranker nặng để so LANE cho sạch và nhanh)
+    from cvp.config import load_settings
+    from cvp.eval.official import score_run
+    from cvp.pipeline.run_queries import run_query_folder
+    os.environ["CVP_SEARCH__RERANKER"] = "none"
+    os.environ["CVP_SEARCH__VLM_RERANK"] = "false"
+    os.environ["CVP_QUERY__PROVIDER"] = "gemini"
+    CONFIGS = {
+        "finetuned": {"CVP_EMBEDDING__MODEL": "finetuned"},
+        "metaclip2": {"CVP_EMBEDDING__MODEL": "metaclip2"},
+        "ensemble(f+m)": {"CVP_EMBEDDING__MODEL": "ensemble",
+                          "CVP_EMBEDDING__ENSEMBLE_MEMBERS": '["finetuned", "metaclip2"]',
+                          "CVP_EMBEDDING__ENSEMBLE_WEIGHTS": "[0.6, 0.4]"},
+    }
+    print(f"\n{'đội hình':16s} mean_final (retrieval-only)")
+    for _name, _env in CONFIGS.items():
+        for k, v in _env.items():
+            os.environ[k] = v
+        _out = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "submissions" / f"lab_{_name[:4]}"
+        run_query_folder(load_settings(), TRIAL_DIR, _out, with_vqa=False)
+        _r = score_run(_out, GT_PATH)
+        print(f"{_name:16s} {_r.mean_final:.4f}")
+        gc.collect(); torch.cuda.empty_cache()
+    print("\nĐội hình thắng → báo Claude để khóa vào nb03.")
+elif RUN_METACLIP:
+    print("⚠ Chưa có GT — chạy cell L1 trước.")
+'''
+
+LAB_ASR_LARGE = r'''
+# ── L5 · CA ĐÊM: ASR PhoWhisper-large toàn bộ 873 video (~10–20 giờ) ──
+# Thoại là nguồn sống của track QA. Bật True rồi để chạy qua đêm; per-video
+# resume nên đứt phiên chạy lại là nối tiếp. Bản medium được giữ nguyên trên
+# Drive (asr-medium-backup) cho tới khi bạn hài lòng với bản large.
+RUN_ASR_LARGE = False
+if RUN_ASR_LARGE:
+    import os, shutil
+    from pathlib import Path
+    _drv_asr = PROJECT / "artifacts" / "asr"
+    _bak = PROJECT / "artifacts" / "asr-medium-backup"
+    if _drv_asr.exists() and not _bak.exists():
+        _drv_asr.rename(_bak)               # giữ bản medium làm đường lui
+        print("Đã cất bản medium →", _bak)
+    _la = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"])
+    if (_la / "asr").exists():
+        shutil.rmtree(_la / "asr")          # local phải trống để chạy large sạch
+    os.environ["CVP_ASR__MODEL"] = "vinai/PhoWhisper-large"
+    _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py", "--asr")
+    _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py",
+         "--text-index", "--force-text-index")
+    for _d in ("asr", "text_index"):
+        _dst = PROJECT / "artifacts" / _d
+        if _dst.exists():
+            shutil.rmtree(_dst)
+        shutil.copytree(_la / _d, _dst)
+        print("   → Drive:", _dst)
+    print("XONG — chạy lại cell L2 để đo bản large trên bench.")
+else:
+    print("RUN_ASR_LARGE=False — bật True cho ca đêm ASR.")
+'''
+
+
 def main() -> None:
     write_nb("01_build_artifacts_colab.ipynb", [
         md(NB1_TITLE),
@@ -2183,6 +2364,21 @@ def main() -> None:
         code(NB1_LOCAL_COPY),
         code(NB1_CATALOG),
         code(NB01C_ASR),
+    ])
+    write_nb("04_lab_artifacts.ipynb", [
+        md(NB4_TITLE),
+        code(CELL_PARAMS),
+        code(CELL_MOUNT),
+        code(CELL_REPO_DEPS),
+        code(CELL_ENV_GPU),
+        code(NB1_LOCAL_COPY),
+        code(NB3_OBJECTS),
+        code(NB3_ARTIFACTS_LOCAL),
+        code(LAB_GT),
+        code(LAB_BENCH_FULL),
+        code(LAB_TUNE),
+        code(LAB_METACLIP),
+        code(LAB_ASR_LARGE),
     ])
     write_nb("02_train_vi_encoder_H100.ipynb", [
         md(NB2_TITLE),

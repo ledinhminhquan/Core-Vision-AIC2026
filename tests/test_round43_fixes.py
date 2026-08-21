@@ -52,3 +52,16 @@ def test_rrf_merge_semantics():
     # TRAKE identity is the whole sequence — different frames never dedupe
     t = m.rrf_merge([["V1", "1", "2"]], [["V1", "1", "3"]], k=60, task="trake")
     assert len(t) == 2
+
+
+def test_r44_lab_notebook_and_tuned_weight_adoption():
+    """Round-44: nb04 'Lab' gates every artifact upgrade behind the bench, and
+    nb03's engine cell auto-loads Lab-tuned fusion weights from Drive."""
+    src = (REPO / "notebooks" / "_build_notebooks.py").read_text(encoding="utf-8")
+    assert 'write_nb("04_lab_artifacts.ipynb"' in src
+    for knob in ("RUN_GT", "RUN_BENCH_FULL", "RUN_TUNE", "RUN_METACLIP",
+                 "RUN_ASR_LARGE"):
+        assert knob in src
+    eng = src.split("NB3_ENGINE = r")[1].split("NB3_QUERIES")[0]
+    assert "best_weights.json" in eng
+    assert "CVP_SEARCH__WEIGHTS__" in eng
