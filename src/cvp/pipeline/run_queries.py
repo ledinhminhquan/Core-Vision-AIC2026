@@ -61,8 +61,15 @@ def load_query_lines(path: Path) -> list[str]:
 # like an empty string, but can never block packaging or trip format checks.
 QA_FALLBACK_ANSWER = "không rõ"
 
-# "E1:" / "e2." / "E3)" / "E4 -" event prefixes of the organiser TRAKE files.
-_EVENT_RE = re.compile(r"^\s*[Ee](\d{1,2})\s*[:.)\-]\s*")
+# "E1:" / "e2." / "E3)" / "E4 -" / "E1 <text>" event prefixes of the organiser
+# TRAKE files. Round-39 (LIVE round-1 loss, 21/08/2026): the real
+# query-p1-16-trake.txt wrote "E1 Khoảnh khắc…" with NO separator — the old
+# separator-required regex matched nothing, the header became phantom event #1,
+# every row carried 4 frames against 3 events, and BTC rejected the whole file
+# ("Expected 3 frame IDs, got 4" ×100). Bare whitespace now counts as the
+# separator; an event line that is just "E1" still yields empty text and is
+# dropped by the caller.
+_EVENT_RE = re.compile(r"^\s*[Ee](\d{1,2})\s*(?:[:.)\-]\s*|\s+)")
 # The question of a single-line organiser QA file starts at the LAST standalone
 # "Hỏi" / "Câu hỏi" (2025 packs: "<mô tả> … Hỏi xã này có tên là gì?").
 # CAPITAL-initial only (round-4 fix): the organiser marker always starts a
