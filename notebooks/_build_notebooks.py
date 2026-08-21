@@ -1733,11 +1733,16 @@ VLM_RERANK = True
 # mọi đường lỗi tự trả về thứ hạng cũ. ĐÃ ĐO ở vòng nháp 20/08: 7.2 → 7.6
 # (VLM rerank trước đó: 6.4 → 7.2) — giữ True cho round 1.
 CROSS_RERANK = True
+# Round-37, học từ bài 19.8/23 (vòng nháp): đáp án chuẩn hay đứng rank 25–79
+# trong bảng của ta — NGOÀI tầm nhìn top-24 của VLM rerank. Nới lên 48 để
+# Gemini với tới (vẫn MỘT cuộc gọi, chỉ nhiều ảnh hơn, thêm ~2–4s/query).
+VLM_RERANK_TOPK = 48
 import os, time
 from pathlib import Path
 os.environ["CVP_EMBEDDING__MODEL"] = ENGINE_MODEL
 os.environ["CVP_QUERY__PROVIDER"]  = QUERY_PROVIDER
 os.environ["CVP_SEARCH__VLM_RERANK"] = "true" if VLM_RERANK else "false"
+os.environ["CVP_SEARCH__VLM_RERANK_TOPK"] = str(VLM_RERANK_TOPK)
 os.environ["CVP_SEARCH__RERANKER"] = "qwen_reranker" if CROSS_RERANK else "none"
 # Ranking phẳng (top không tách khỏi đám đông) → tự tìm lại bằng các biến thể
 # Gemini đã cache rồi trộn RRF — không tốn thêm cuộc gọi API nào.

@@ -286,7 +286,7 @@ async function searchTrake() {
   if (events.length < 2) { toast("Nhập ít nhất 2 sự kiện.", true); return; }
   busy(true, "Đang căn chuỗi sự kiện");
   try {
-    const d = await api("/trake2", {method: "POST", body: JSON.stringify({events, max_results: 50})});
+    const d = await api("/trake2", {method: "POST", body: JSON.stringify({events, max_results: 100})});
     state.sequences = d.results; state.pins = [];
     renderSeqs(); renderTray();
     $("status").textContent = `${d.count} chuỗi ứng viên`;
