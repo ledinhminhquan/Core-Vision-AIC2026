@@ -131,3 +131,17 @@ def test_spa_ships_with_the_package():
     for marker in ("/login", "/search/text", "/search/qa", "/trake2",
                    "/export", "/keyframe/", "REZIP_ONLY"):
         assert marker in html, marker
+
+
+def test_r37_vlm_reach_extended_and_trake_depth():
+    """Round-37, mined from the 19.8/23 reference submission: ground truth sat
+    at ranks 25/38/79 in three KIS queries — outside the VLM reranker's old
+    top-24 window; one TRAKE truth sat at rank 91 — outside the SPA's old
+    50-row fetch."""
+    src = (REPO / "notebooks" / "_build_notebooks.py").read_text(encoding="utf-8")
+    frag = src.split("NB3_ENGINE = r")[1].split("NB3_QUERIES")[0]
+    assert "VLM_RERANK_TOPK = 48" in frag
+    assert "CVP_SEARCH__VLM_RERANK_TOPK" in frag
+    html = (REPO / "src" / "cvp" / "web" / "static" / "index.html").read_text(
+        encoding="utf-8")
+    assert "max_results: 100" in html
