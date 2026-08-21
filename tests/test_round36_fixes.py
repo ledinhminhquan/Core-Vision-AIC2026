@@ -145,3 +145,13 @@ def test_r37_vlm_reach_extended_and_trake_depth():
     html = (REPO / "src" / "cvp" / "web" / "static" / "index.html").read_text(
         encoding="utf-8")
     assert "max_results: 100" in html
+
+
+def test_r38_avs_tab_in_fast_ui():
+    """Round-38: AVS tab added to the SPA (the /search/avs endpoint already
+    existed); KIS-C stays Streamlit-only by design (stateful dialogue)."""
+    html = (REPO / "src" / "cvp" / "web" / "static" / "index.html").read_text(
+        encoding="utf-8")
+    assert "/search/avs" in html
+    assert "m-avs" in html and "searchAvs" in html
+    assert "limit: 100" in html

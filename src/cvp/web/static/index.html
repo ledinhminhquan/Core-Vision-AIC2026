@@ -124,6 +124,7 @@
     <button id="m-kis" class="on" onclick="setMode('kis')">🔎 KIS</button>
     <button id="m-qa" onclick="setMode('qa')">❓ QA</button>
     <button id="m-trake" onclick="setMode('trake')">⛓ TRAKE</button>
+    <button id="m-avs" onclick="setMode('avs')">🌊 AVS</button>
   </div>
   <div class="small"><label>Pack</label><input id="pack" value="p1"></div>
   <div class="small" style="width:210px"><label>Stem file đề (ghi đè!)</label>
@@ -166,6 +167,15 @@
         <textarea id="q-trake"></textarea></div>
       <div style="flex:0 0 auto;align-self:end"><button class="primary" onclick="searchTrake()">⛓ Search sequences</button></div>
     </div>
+  </div>
+
+  <div id="p-avs" hidden>
+    <div class="qrow">
+      <div style="flex:3 1 420px"><label>Mô tả chung — AVS chấm theo ĐỘ PHỦ: ghim CÀNG NHIỀU cảnh đúng càng tốt</label>
+        <input id="q-avs"></div>
+      <div style="flex:0 0 auto;align-self:end"><button class="primary" onclick="searchAvs()">🌊 Search (đã đa dạng hóa)</button></div>
+    </div>
+    <p class="hint">Kết quả đã tự giới hạn số cảnh mỗi video và cách nhau ≥10s. Đừng tiếc tay ghim — miễn là ĐÚNG mô tả.</p>
   </div>
 
   <div id="grid"></div>
@@ -219,7 +229,7 @@ api("/whoami").then(() => { $("login").style.display = "none"; }).catch(() => {}
 
 function setMode(m) {
   state.mode = m;
-  for (const x of ["kis", "qa", "trake"]) {
+  for (const x of ["kis", "qa", "trake", "avs"]) {
     $("m-" + x).classList.toggle("on", x === m);
     $("p-" + x).hidden = x !== m;
   }
@@ -277,6 +287,18 @@ async function searchQa(withAnswers) {
     if (!withAnswers) state.pins = [];
     renderGrid(); renderTray();
     $("status").textContent = `${d.count} kết quả` + (withAnswers ? " · có gợi ý VQA" : "");
+  } catch (e) { toast("Lỗi: " + e.message, true); $("status").textContent = "lỗi"; }
+  busy(false);
+}
+
+async function searchAvs() {
+  const q = $("q-avs").value.trim(); if (!q) return;
+  busy(true, "Đang search đa dạng hóa");
+  try {
+    const d = await api("/search/avs", {method: "POST", body: JSON.stringify({query: q, limit: 100})});
+    state.results = mapItems(d.results); state.pins = [];
+    renderGrid(); renderTray();
+    $("status").textContent = `${d.count} cảnh (đã đa dạng hóa)`;
   } catch (e) { toast("Lỗi: " + e.message, true); $("status").textContent = "lỗi"; }
   busy(false);
 }
@@ -414,6 +436,7 @@ async function doExport() {
 
 document.addEventListener("keydown", ev => {
   if (ev.key === "Enter" && ev.target.id === "q-kis") searchKis();
+  if (ev.key === "Enter" && ev.target.id === "q-avs") searchAvs();
   if (ev.key === "Enter" && (ev.target.id === "q-qa" || ev.target.id === "q-question")) searchQa(false);
   if (ev.key === "Escape") $("ctx").classList.remove("on");
 });
