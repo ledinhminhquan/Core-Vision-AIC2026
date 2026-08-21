@@ -50,7 +50,7 @@ việc đã xong được skip trong vài giây (chi tiết granularity ở mụ
 
 | Secret | Bắt buộc? | Dùng cho |
 |---|---|---|
-| `GEMINI_API_KEY` | Nên có | dịch + mô tả lại truy vấn, VQA, VLM rerank, trợ lý KIS-C. Model theo `configs/settings.yaml`: `gemini-3.5-flash`, tự fallback `gemini-3-flash-preview` → `gemini-flash-latest`; hết cả chuỗi → Google Translate → raw query (không bao giờ chặn thi đấu) |
+| `GEMINI_API_KEY` | Nên có | dịch + mô tả lại truy vấn, VQA, VLM rerank, trợ lý KIS-C. Model theo `configs/settings.yaml`: `gemini-3.7-flash`, tự fallback `gemini-3.5-flash` → `gemini-flash-latest`; hết cả chuỗi → Google Translate → raw query (không bao giờ chặn thi đấu) |
 | `HF_TOKEN` | Không | `PUSH_TO_HF_HUB=True` ở notebook 02 (đẩy checkpoint lên repo HF private); kéo dataset public khi HF yêu cầu đăng nhập |
 | `GITHUB_TOKEN` | Khi repo private | fine-grained PAT để cell 3 clone `Core-Vision_Perfect_V1` |
 

@@ -32,7 +32,7 @@
 **🆕 Đóng góp bổ sung Perfect-V1 (07/2026):**
 
 7. **Tầng rerank cross-encoder pairwise** (`search.reranker`): BLIP-2 ITM
-   (blueprint Unified-IMMR 76.4/88) HOẶC **Qwen3-VL-Reranker-2B** (model 01/2026)
+   (blueprint Unified-IMMR 76.4/88) HOẶC **Qwen3-VL-Reranker-8B** (model 01/2026)
    — theo khảo sát của ta là **lần dùng đầu tiên trong thi đấu AIC/VBS**; blend
    `(1−w)·fused + w·cross` sau min-max, đo bằng A9.
 8. **Multi-frame VQA strips** (`vqa.frames_per_answer`): mỗi nhóm ứng viên gửi

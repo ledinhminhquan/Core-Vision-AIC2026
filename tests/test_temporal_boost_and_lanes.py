@@ -114,7 +114,7 @@ def test_new_settings_defaults_are_wired():
     assert s.embedding.jina_id == "jinaai/jina-clip-v2"
     assert s.embedding.metaclip2_id == "facebook/metaclip-2-worldwide-huge-quickgelu"
     assert s.search.temporal_boost is False
-    assert s.query.gemini_model == "gemini-3.5-flash"
+    assert s.query.gemini_model == "gemini-3.7-flash"
     assert s.query.gemini_model_fallbacks[-1] == "gemini-flash-latest"
     assert s.vqa.frames_per_answer == 3
 

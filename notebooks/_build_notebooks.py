@@ -1737,12 +1737,19 @@ CROSS_RERANK = True
 # trong bảng của ta — NGOÀI tầm nhìn top-24 của VLM rerank. Nới lên 48 để
 # Gemini với tới (vẫn MỘT cuộc gọi, chỉ nhiều ảnh hơn, thêm ~2–4s/query).
 VLM_RERANK_TOPK = 48
+# Round-40 "suy nghĩ lâu hơn": gọi Gemini nhiều lần và biểu quyết. Bằng chứng
+# trận 21/08: cùng cấu hình ra 9.4 rồi 9.0 (xúc xắc VLM); QA q3 lật '300 kg'
+# ↔ '30 kg' giữa hai lần chạy. 3 phiếu đổi ~2× thời gian pack lấy độ ổn định.
+VLM_VOTES = 3      # VLM rerank: trung bình 3 lượt chấm (1 = tắt)
+QA_VOTES  = 3      # VQA: 3 lần trả lời, lấy đáp án đa số (1 = tắt)
 import os, time
 from pathlib import Path
 os.environ["CVP_EMBEDDING__MODEL"] = ENGINE_MODEL
 os.environ["CVP_QUERY__PROVIDER"]  = QUERY_PROVIDER
 os.environ["CVP_SEARCH__VLM_RERANK"] = "true" if VLM_RERANK else "false"
 os.environ["CVP_SEARCH__VLM_RERANK_TOPK"] = str(VLM_RERANK_TOPK)
+os.environ["CVP_SEARCH__VLM_RERANK_VOTES"] = str(VLM_VOTES)
+os.environ["CVP_VQA__SELF_CONSISTENCY"] = str(QA_VOTES)
 os.environ["CVP_SEARCH__RERANKER"] = "qwen_reranker" if CROSS_RERANK else "none"
 # Ranking phẳng (top không tách khỏi đám đông) → tự tìm lại bằng các biến thể
 # Gemini đã cache rồi trộn RRF — không tốn thêm cuộc gọi API nào.

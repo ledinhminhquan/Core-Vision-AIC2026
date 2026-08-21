@@ -21,7 +21,7 @@ tách theo ranh giới câu cho QA không marker); lệnh cài TransNetV2 local 
 **Kế thừa từ các repo tiền nhiệm (các delta chưa từng vào flagship):**
 1. **Cross-encoder rerank theo cặp** (`search/cross_rerank.py`) — công thức vô địch
    Unified-IMMR 76.4/88: `search.reranker: blip2_itm` (BLIP-2 ITM) **hoặc
-   `qwen_reranker`** = Qwen3-VL-Reranker-2B (01/2026 — cross-encoder đa phương thức
+   `qwen_reranker`** = Qwen3-VL-Reranker-8B (01/2026 — cross-encoder đa phương thức
    MỞ đầu tiên). Chạy TRƯỚC VLM listwise rerank; chỉ xáo đầu bảng; mọi lỗi → giữ nguyên.
 2. **Objects parquet** (`data/objects_compact.py` + `scripts/03 --objects-index`) —
    gộp ~178k JSON per-keyframe thành MỘT file zstd; `ObjectBooster` tự ưu tiên khi có
@@ -47,7 +47,7 @@ tách theo ranh giới câu cho QA không marker); lệnh cài TransNetV2 local 
 8. **Retry khi ranking "phẳng"** (`search.low_confidence_retry`, tắt mặc định) — đường
    batch/auto: điểm tin cậy = (top1 − median)/|top1|; thấp hơn ngưỡng thì re-search các
    expansion ĐÃ CACHE (không tốn call API) và RRF-merge.
-9. **Chuỗi fallback Gemini** `gemini-3.5-flash → gemini-3-flash-preview → flash-latest`
+9. **Chuỗi fallback Gemini** `gemini-3.7-flash → gemini-3.5-flash → flash-latest`
    (model id chết giữa mùa → tự rơi xuống model kế, không rơi thẳng về Google Translate).
 10. **Ops:** `scripts/26_run_ablations.py` (trận A1–A10 một lệnh, chấm bằng scorer
     chính thức) · `scripts/50_bench_latency.py` (gate p50≤200ms/p95≤500ms) ·
@@ -173,7 +173,7 @@ media-info + objects (Open Images)      ─┘            ──► kết quả 
 | Lane features BTC | OpenAI CLIP ViT-B/32 512-d | tức thì, không cần GPU |
 | Fine-tuned | LoRA-LiT text tower trên siglip2 (+ WiSE-FT) | dùng chung FAISS index với siglip2 |
 | Rerank chéo | BLIP-2 ITM / **VLM listwise** (Gemini hoặc Vintern, `search.vlm_rerank`) | UIT CVPRW'25: +10% H@1 |
-| VQA | Gemini 3.5 Flash (fallback 3-flash-preview → flash-latest) → Vintern-1B-v3.5 (offline) | trả lời theo NHÓM ứng viên, mỗi nhóm MỘT dải nhiều frame (`vqa.frames_per_answer`) |
+| VQA | Gemini 3.7 Flash (fallback 3-flash-preview → flash-latest) → Vintern-1B-v3.5 (offline) | trả lời theo NHÓM ứng viên, mỗi nhóm MỘT dải nhiều frame (`vqa.frames_per_answer`) |
 | Caption/OCR/ASR | Vintern-1B-v3.5 · EasyOCR vi+en · PhoWhisper | các kênh BM25 |
 
 **Chống lệch checkpoint:** lane `openclip` có thể resolve ra checkpoint khác nhau giữa các máy

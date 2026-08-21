@@ -172,7 +172,7 @@ video --- tin tức tái sử dụng b-roll rất nhiều --- kèm trần 3 dòn
 \subsection{Rerank cross-encoder pairwise}
 Tầng rerank mới của Perfect V1: \texttt{search.reranker} nhận \texttt{blip2\_itm}
 (đầu ITM của BLIP-2~\cite{li2023blip2}, đúng blueprint đội 76.4/88 AIC 2025) hoặc
-\texttt{qwen\_reranker} (\texttt{Qwen/Qwen3-VL-Reranker-2B}, model 01/2026, chấm cặp
+\texttt{qwen\_reranker} (\texttt{Qwen/Qwen3-VL-Reranker-8B}, model 01/2026, chấm cặp
 ảnh--văn bản đa ngữ trực tiếp bằng tiếng Việt, không cần dịch). Reranker chỉ chấm lại
 top đầu bảng, lỗi model thì giữ nguyên thứ hạng --- không bao giờ làm kết quả tệ hơn vì
 sự cố. Tầng này độc lập với VLM listwise rerank (\texttt{search.vlm\_rerank}, Gemini chấm

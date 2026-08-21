@@ -152,7 +152,7 @@ trợ lý đề xuất — đó là những chi tiết nên chờ/đoán từ g�
 - **Cross-encoder rerank** (`CVP_SEARCH__RERANKER=blip2_itm` hoặc `qwen_reranker`):
   chấm lại top-100 (`search.rerank_topk`) từng cặp (query, ảnh) — `blip2_itm`
   offline cần GPU (blueprint Unified-IMMR 76.4/88); `qwen_reranker` =
-  Qwen3-VL-Reranker-2B (model 01/2026). Blend `search.rerank_weight: 0.5`.
+  Qwen3-VL-Reranker-8B (model 01/2026). Blend `search.rerank_weight: 0.5`.
   **Chỉ bật sau khi A9 (scripts/26) cho số dương** trên bộ đề dev.
 - **Temporal boost** (`CVP_SEARCH__TEMPORAL_BOOST=true`): câu "… sau khi / trước
   khi …" được tách target/context bằng regex (không gọi LLM, deterministic) và
@@ -174,7 +174,7 @@ trợ lý đề xuất — đó là những chi tiết nên chờ/đoán từ g�
 | Sự cố | Phản xạ |
 |---|---|
 | Mất mạng | Hệ tự chạy raw-query (SigLIP-2 đọc tiếng Việt) — cứ thi tiếp, thêm từ khóa OCR |
-| Gemini lỗi/limit | Chuỗi model tự fallback `gemini-3.5-flash → gemini-3-flash-preview → gemini-flash-latest`, hết chuỗi → Google Translate → raw query — không cần làm gì |
+| Gemini lỗi/limit | Chuỗi model tự fallback `gemini-3.7-flash → gemini-3.5-flash → gemini-flash-latest`, hết chuỗi → Google Translate → raw query — không cần làm gì |
 | App crash | `streamlit run` lại (~30s load); index/catalog bất biến nên không mất gì |
 | Query bí | Đổi chiến thuật: tìm bằng OCR text / object đếm được / metadata chương trình |
 | Chậm | Giảm `Results shown`; tắt rerank: `CVP_SEARCH__RERANK=false` (khởi động lại) |

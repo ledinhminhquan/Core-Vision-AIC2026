@@ -96,7 +96,7 @@ làm phần delta).
 query VI
  ├─► QueryProcessor.process()      # 1 call Gemini: dịch + mô tả thị giác + N expansions (JSON)
  │                                 # cache đĩa theo (provider, model, query); degrade:
- │                                 # gemini-3.5-flash → gemini-3-flash-preview → gemini-flash-latest
+ │                                 # gemini-3.7-flash → gemini-3.5-flash → gemini-flash-latest
  │                                 # → Google Translate miễn phí → passthrough (không bao giờ chết)
  ├─► mỗi lane: encode các biến thể phù hợp (lane đa ngữ nhận cả câu VI gốc)
  │     └─► FAISS top-K (search.topk = 500) / biến thể ─► MAX theo biến thể
@@ -123,7 +123,7 @@ Ba tầng rerank **bổ trợ, không thay thế nhau**:
 | Tầng | Phạm vi | Cơ chế | Chi phí |
 |---|---|---|---|
 | SuperGlobal | top-500 / lane | thuần vector, không train | ~1 ms |
-| `cross_rerank` | top-100 sau fusion | cross-encoder pairwise (BLIP-2 ITM / Qwen3-VL-Reranker-2B) | ~100× 1 FAISS probe / cặp — cần GPU |
+| `cross_rerank` | top-100 sau fusion | cross-encoder pairwise (BLIP-2 ITM / Qwen3-VL-Reranker-8B) | ~100× 1 FAISS probe / cặp — cần GPU |
 | `vlm_rerank` | top-24 | VLM nhìn CẢ danh sách, chấm holistic | 1 call API / query |
 
 Mọi tầng tuỳ chọn đều **exception-wrapped và trả nguyên trạng khi lỗi** — một

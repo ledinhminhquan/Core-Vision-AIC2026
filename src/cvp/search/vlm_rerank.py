@@ -132,7 +132,20 @@ def vlm_rerank(
     paths = [r.ref.path for r in head]
     try:
         if provider == "gemini":
-            scores = _gemini_scores(query, paths, settings)
+            # Round-40: N independent scoring passes, element-wise mean — one
+            # pass is a dice roll (9.4 vs 9.0 live), the mean is a judgement.
+            votes = max(1, int(getattr(settings.search, "vlm_rerank_votes", 1)))
+            tallies: list[list[float]] = []
+            for v in range(votes):
+                try:
+                    s = _gemini_scores(query, paths, settings)
+                except Exception as e:  # noqa: BLE001 — a lost vote, not a lost query
+                    log.warning("VLM vote %d/%d failed (%s)", v + 1, votes, e)
+                    s = None
+                if s:
+                    tallies.append(s)
+            scores = ([sum(col) / len(tallies) for col in zip(*tallies)]
+                      if tallies else None)
         elif provider == "vintern":
             scores = _vintern_scores(query, paths, settings)
         else:

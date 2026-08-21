@@ -158,7 +158,7 @@ def test_settings_yaml_declares_reranker_keys():
     assert s.search.reranker == "none"
     assert s.search.rerank_topk == 100
     assert s.search.blip2_itm_id == "Salesforce/blip2-itm-vit-g"
-    assert s.search.qwen_reranker_id == "Qwen/Qwen3-VL-Reranker-2B"
+    assert s.search.qwen_reranker_id == "Qwen/Qwen3-VL-Reranker-8B"
 
 
 # ── review findings C3/C17/C4 regressions ────────────────────────────────────

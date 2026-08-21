@@ -200,12 +200,20 @@ class VqaAssistant:
                 imgs.append(img)
         if not imgs:
             raise RuntimeError("no readable frame in the strip")
+        # Round-41: QA answers ride the Pro model with its own (longer) wall
+        # cap — Pro thinks before answering; the chain degrades to Flash so a
+        # slow/retired Pro id costs one timeout, never the answer.
+        primary = (getattr(self.cfg, "answer_model", "") or self.cfg.gemini_model)
+        wall = max(float(getattr(self.cfg, "answer_timeout_s", 0.0)),
+                   gemini_wall_timeout(self.settings))
+        chain = gemini_model_chain(self.settings, primary)
+        if primary != self.cfg.gemini_model and self.cfg.gemini_model not in chain:
+            chain.insert(1, self.cfg.gemini_model)
         return generate_with_fallback(
-            self._gemini_client,
-            gemini_model_chain(self.settings, self.cfg.gemini_model),
+            self._gemini_client, chain,
             [_with_context(_VQA_STRIP_PROMPT.format(n=len(imgs), question=question),
                            context), *imgs],
-            timeout_s=gemini_wall_timeout(self.settings),
+            timeout_s=wall,
         )
 
     # ── public ───────────────────────────────────────────────────────────
@@ -223,10 +231,23 @@ class VqaAssistant:
         if not paths:
             return ""
         if self.cfg.provider == "gemini":
-            try:
-                return self._ask_gemini_strip(paths, question, context)[:MAX_QA_ANSWER_CHARS]
-            except Exception as e:  # noqa: BLE001 — degrade to local model
-                log.warning("Gemini strip-VQA failed (%s) — trying local model", e)
+            # Round-40 self-consistency: N answers, majority wins. One sample
+            # flip-flopped '300 kg' ↔ '30 kg' between live runs; votes don't.
+            votes = max(1, int(getattr(self.cfg, "self_consistency", 1)))
+            got: list[str] = []
+            for v in range(votes):
+                try:
+                    a = self._ask_gemini_strip(paths, question, context)
+                    if a and a.strip():
+                        got.append(a[:MAX_QA_ANSWER_CHARS])
+                except Exception as e:  # noqa: BLE001 — a lost vote, not a lost group
+                    log.warning("Gemini strip-VQA vote %d/%d failed (%s)", v + 1, votes, e)
+            if got:
+                from collections import Counter
+
+                best = Counter(g.strip().casefold() for g in got).most_common(1)[0][0]
+                return next(g for g in got if g.strip().casefold() == best)
+            log.warning("Gemini strip-VQA produced no answer — trying local model")
         if self.cfg.provider in ("gemini", "vintern"):
             try:
                 middle = paths[len(paths) // 2]

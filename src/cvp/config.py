@@ -159,11 +159,17 @@ class SearchCfg(BaseModel):
     rerank_weight: float = Field(0.5, ge=0.0, le=1.0)  # blend: (1-w)·fused + w·cross
     rerank_batch_size: int = 8
     blip2_itm_id: str = "Salesforce/blip2-itm-vit-g"
-    qwen_reranker_id: str = "Qwen/Qwen3-VL-Reranker-2B"
+    # Round-41: the 8B sibling scores 80.7 vs the 2B's 73.8 on MMEB-v2 image
+    # retrieval (same Apache-2.0 stack, ~18GB BF16 — comfortable on A100 80GB).
+    qwen_reranker_id: str = "Qwen/Qwen3-VL-Reranker-8B"
     # Optional listwise VLM re-rank of the head of the ranking (UIT CVPRW'25: +10% H@1).
     vlm_rerank: bool = False
     vlm_rerank_topk: int = 24
     vlm_rerank_provider: str = "gemini"   # gemini | vintern | none
+    # Round-40 test-time compute: call the VLM N times and AVERAGE the score
+    # vectors. Evidence: two same-config live runs scored 9.4 vs 9.0 purely on
+    # single-call sampling noise — averaging trades API calls for stability.
+    vlm_rerank_votes: int = Field(1, ge=1, le=5)
     # AVS diversification: MMR trade-off between relevance and novelty.
     avs_mmr_lambda: float = 0.7
     avs_per_video_cap: int = 3
@@ -174,13 +180,14 @@ class QueryCfg(BaseModel):
     """Vietnamese query understanding: translate + visually re-describe + expand."""
 
     provider: str = "gemini"          # none | google | gemini
-    # Stable mid-2026 default; fallbacks cover preview retirement / regional
-    # gaps so a stale id degrades to the next Gemini model, not to Translate.
-    gemini_model: str = "gemini-3.5-flash"
-    # "-latest" tail: pinned retired ids 404 ("no longer available to new
-    # users" — gemini-2.5-flash died that way live), the rolling alias can't.
+    # Round-41 (researched 22/08/2026): gemini-3.7-flash is the CURRENT Flash
+    # line — newer than 3.5-flash and half its price through 2026 ($0.75/$3.75
+    # promo vs $1.50/$9). Battle-proven 3.5-flash stays first fallback; the
+    # "-latest" tail can't retire (pinned ids 404 for new users — the old 2.5
+    # pin died that way live 20/08).
+    gemini_model: str = "gemini-3.7-flash"
     gemini_model_fallbacks: list[str] = Field(default_factory=lambda: [
-        "gemini-3-flash-preview", "gemini-flash-latest",
+        "gemini-3.5-flash", "gemini-flash-latest",
     ])
     enhance: bool = True              # rewrite as concrete visual description
     enhance_english: bool = True      # also enhance pure-English queries
@@ -268,12 +275,23 @@ class CaptionCfg(BaseModel):
 
 class VqaCfg(BaseModel):
     provider: str = "gemini"          # gemini | vintern | none
-    gemini_model: str = "gemini-3.5-flash"
+    gemini_model: str = "gemini-3.7-flash"
+    # Round-41 "nghiền ngẫm": the QA-track answer path (strip-VQA) runs on the
+    # strongest callable Pro (gemini-3.5-pro is still a closed Vertex preview
+    # as of Aug 2026). Pro thinks longer → its own wall timeout below. Empty
+    # string = use gemini_model (old behaviour). The chain still degrades
+    # Pro → 3.7-flash → 3.5-flash → flash-latest on failure.
+    answer_model: str = "gemini-3.1-pro-preview"
+    answer_timeout_s: float = 90.0
     local_model: str = "5CD-AI/Vintern-1B-v3_5"
     top_frames: int = 5               # frames sent to the VQA model per answer group
     # Frames per answer_group strip (ONE Gemini call sees the whole strip).
     # 1 = old single-frame behaviour; 3 covers text that spans several frames.
     frames_per_answer: int = 3
+    # Round-40: ask the strip-VQA N times, keep the MAJORITY answer. Evidence:
+    # live q3 flip-flopped '300 kg' ↔ '30 kg' between two same-config runs —
+    # one sample is a coin toss, three votes pick the stable reading.
+    self_consistency: int = Field(1, ge=1, le=5)
     # Batch/auto mode: answer the top-N distinct candidate groups instead of writing
     # one answer on every row (VQA R-Score needs the *right* row to carry the right answer).
     answers_per_query: int = 5
