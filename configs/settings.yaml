@@ -91,16 +91,18 @@ search:
   vlm_rerank: false      # listwise VLM re-rank of the top rows (needs API/GPU)
   vlm_rerank_topk: 24
   vlm_rerank_provider: gemini   # gemini | vintern | none
+  # round-45: listwise scorer on the cheap tier (thinking minimal, media low)
+  vlm_rerank_model: gemini-3.5-flash-lite
   avs_mmr_lambda: 0.7    # AVS: relevance-vs-novelty trade-off (1.0 = pure relevance)
   avs_per_video_cap: 3
   avs_min_gap_s: 10.0
 
 query:
   provider: gemini    # none | google | gemini  (degrades automatically)
-  gemini_model: gemini-3.7-flash    # round-41: current Flash line, half 3.5-flash price through 2026
+  gemini_model: gemini-3.5-flash-lite   # round-45: easy text task -> Lite tier, ~1/10 cost
   # "-latest" tail: pinned retired ids 404 for new users (the old 2.5 pin
   # died that way live 20/08); the rolling alias can't retire.
-  gemini_model_fallbacks: [gemini-3.5-flash, gemini-flash-latest]
+  gemini_model_fallbacks: [gemini-3.7-flash, gemini-3.5-flash, gemini-flash-latest]
   enhance: true       # rewrite the query as a concrete visual description
   enhance_english: true
   expansions: 2       # extra paraphrases for multi-query max-fusion

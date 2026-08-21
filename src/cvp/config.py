@@ -166,6 +166,10 @@ class SearchCfg(BaseModel):
     vlm_rerank: bool = False
     vlm_rerank_topk: int = 24
     vlm_rerank_provider: str = "gemini"   # gemini | vintern | none
+    # Round-45: the listwise scorer gets its own CHEAP model ($0.30/$2.50,
+    # thinking defaults to minimal) — this call family was ~80% of the live
+    # bill on gemini-3.5-flash defaults. Empty = follow vqa.gemini_model.
+    vlm_rerank_model: str = "gemini-3.5-flash-lite"
     # Round-40 test-time compute: call the VLM N times and AVERAGE the score
     # vectors. Evidence: two same-config live runs scored 9.4 vs 9.0 purely on
     # single-call sampling noise — averaging trades API calls for stability.
@@ -185,9 +189,11 @@ class QueryCfg(BaseModel):
     # promo vs $1.50/$9). Battle-proven 3.5-flash stays first fallback; the
     # "-latest" tail can't retire (pinned ids 404 for new users — the old 2.5
     # pin died that way live 20/08).
-    gemini_model: str = "gemini-3.7-flash"
+    # Round-45: translation/enhancement is an easy text task — the Lite tier
+    # ($0.30/$2.50, thinking already minimal) does it at ~1/10 the old cost.
+    gemini_model: str = "gemini-3.5-flash-lite"
     gemini_model_fallbacks: list[str] = Field(default_factory=lambda: [
-        "gemini-3.5-flash", "gemini-flash-latest",
+        "gemini-3.7-flash", "gemini-3.5-flash", "gemini-flash-latest",
     ])
     enhance: bool = True              # rewrite as concrete visual description
     enhance_english: bool = True      # also enhance pure-English queries

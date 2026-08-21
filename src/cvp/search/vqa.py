@@ -114,26 +114,42 @@ def gemini_wall_timeout(settings: Settings) -> float:
 
 
 def generate_with_fallback(client, models: list[str], contents,
-                           timeout_s: float | None = None) -> str:
+                           timeout_s: float | None = None,
+                           economical: bool = False) -> str:
     """One generate_content call, trying each model id until one answers.
 
     ``timeout_s`` adds a hard per-attempt wall-clock cap (on expiry the model
     id is treated as failed and the next fallback is tried) — the HTTP-level
     timeout alone cannot stop a stalled read on every transport.
+    ``economical=True`` applies :func:`economical_config`; a config the server
+    rejects falls back to a config-less retry of the SAME model before the
+    chain moves on (a billing knob must never cost the feature).
     """
-    from cvp.models.query_processor import _call_with_timeout
+    from cvp.models.query_processor import _call_with_timeout, economical_config
 
     last: Exception | None = None
     for model_id in models:
-        try:
-            def _do(mid=model_id):
-                return client.models.generate_content(model=mid, contents=contents)
+        cfgs: list = [None]
+        if economical:
+            ec = economical_config(model_id)
+            if ec is not None:
+                cfgs = [ec, None]      # economical first, plain as the rescue
+        for cfg in cfgs:
+            try:
+                def _do(mid=model_id, c=cfg):
+                    if c is not None:
+                        return client.models.generate_content(
+                            model=mid, contents=contents, config=c)
+                    return client.models.generate_content(model=mid, contents=contents)
 
-            resp = _call_with_timeout(_do, timeout_s) if timeout_s else _do()
-            return (resp.text or "").strip()
-        except Exception as e:  # noqa: BLE001 — try the next model id
-            last = e
-            log.warning("Gemini model %r failed (%s) — trying next fallback", model_id, e)
+                resp = _call_with_timeout(_do, timeout_s) if timeout_s else _do()
+                return (resp.text or "").strip()
+            except Exception as e:  # noqa: BLE001 — next config, then next model
+                last = e
+                log.warning("Gemini model %r%s failed (%s) — trying next",
+                            model_id, " (economical)" if cfg is not None else "", e)
+            if cfg is None:
+                break  # plain attempt done — move to the next model id
     raise last if last else RuntimeError("no Gemini model succeeded")
 
 
@@ -157,6 +173,7 @@ class VqaAssistant:
             gemini_model_chain(self.settings, self.cfg.gemini_model),
             [_with_context(_VQA_PROMPT.format(question=question), context), img],
             timeout_s=gemini_wall_timeout(self.settings),
+            economical=True,      # round-45: suggests are advisory — cheap tier
         )
 
     def _ask_local(self, image_path: str, question: str, context: str = "") -> str:

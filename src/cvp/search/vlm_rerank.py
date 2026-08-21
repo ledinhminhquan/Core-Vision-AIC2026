@@ -69,9 +69,14 @@ def _gemini_scores(query: str, paths: list[str], settings: Settings) -> list[flo
         img = Image.open(p).convert("RGB")
         img.thumbnail((448, 448))
         parts.append(img)
+    # Round-45: listwise scoring rides its OWN cheap model (JSON extraction
+    # needs no thinking) with economical config — live forensics showed this
+    # call family was ~80% of the whole bill on defaults.
+    primary = (getattr(settings.search, "vlm_rerank_model", "")
+               or settings.vqa.gemini_model)
     text = generate_with_fallback(
-        client, gemini_model_chain(settings, settings.vqa.gemini_model), parts,
-        timeout_s=gemini_wall_timeout(settings))
+        client, gemini_model_chain(settings, primary), parts,
+        timeout_s=gemini_wall_timeout(settings), economical=True)
     return _parse_scores(text, len(paths))
 
 

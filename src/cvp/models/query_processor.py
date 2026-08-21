@@ -59,6 +59,33 @@ def _call_with_timeout(fn, timeout_s: float):
         return value
     raise value
 
+def economical_config(model_id: str):
+    """Round-45: strip the two hidden-spend defaults from a Gemini call.
+
+    Live billing forensics (20/08: ₫227K in one day): default thinking
+    ("medium" ≈ ~6K tokens billed at OUTPUT rates — measured 75% of the bill)
+    and default image accounting (1120 tokens/image when 280 suffices for
+    keyframe thumbnails). This config floors both: thinking_level to the
+    model's minimum ("minimal"; gemini-3.7-flash only accepts "low") and
+    media_resolution to LOW. Returns None on SDKs that predate these fields —
+    callers then pass no config (old behaviour).
+
+    Deliberately NOT applied to the QA answer path: the Pro model's thinking
+    and full-resolution frames are the point there (reading scales/signs), and
+    those 4-5 queries are where spend buys score.
+    """
+    try:
+        from google.genai import types
+
+        level = "low" if "3.7" in model_id else "minimal"
+        return types.GenerateContentConfig(
+            thinking_level=level,
+            media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW)
+    except Exception:  # noqa: BLE001 — older SDK / renamed enum → no config
+        return None
+
+
+
 _GEMINI_PROMPT = """You help a video-retrieval team search Vietnamese videos with a CLIP-style model.
 Given a Vietnamese query, return STRICT JSON (no markdown) with keys:
   "translation": faithful English translation.
@@ -175,10 +202,19 @@ class QueryProcessor:
         last_err: Exception | None = None
         for model_id in models:
             try:
-                resp = _call_with_timeout(
-                    lambda m=model_id: client.models.generate_content(model=m, contents=prompt),
-                    self.cfg.timeout_s,
-                )
+                _ec = economical_config(model_id)
+
+                def _one(m=model_id, c=_ec):
+                    if c is not None:
+                        try:
+                            return client.models.generate_content(
+                                model=m, contents=prompt, config=c)
+                        except Exception as e:  # noqa: BLE001 — billing knob must
+                            log.warning("economical config rejected by %r (%s) — "
+                                        "plain retry", m, e)  # never cost the call
+                    return client.models.generate_content(model=m, contents=prompt)
+
+                resp = _call_with_timeout(_one, self.cfg.timeout_s)
                 break
             except Exception as e:  # noqa: BLE001 — fall through to next model id
                 last_err = e

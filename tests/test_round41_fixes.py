@@ -18,8 +18,8 @@ REPO = Path(__file__).resolve().parents[1]
 
 def test_round41_model_defaults():
     s = Settings()
-    assert s.query.gemini_model == "gemini-3.7-flash"
-    assert s.query.gemini_model_fallbacks[0] == "gemini-3.5-flash"
+    assert s.query.gemini_model == "gemini-3.5-flash-lite"
+    assert s.query.gemini_model_fallbacks[0] == "gemini-3.7-flash"
     assert s.query.gemini_model_fallbacks[-1].endswith("-latest")
     assert s.vqa.gemini_model == "gemini-3.7-flash"
     assert s.vqa.answer_model == "gemini-3.1-pro-preview"
@@ -45,12 +45,12 @@ def test_qa_answer_path_uses_pro_with_flash_inserted(monkeypatch):
     out = a._ask_gemini_strip(["/x.jpg"], "hỏi?")
     assert out == "đáp án"
     assert seen["models"][0] == "gemini-3.1-pro-preview"
-    assert "gemini-3.7-flash" in seen["models"]     # Flash inserted right after Pro
+    assert "gemini-3.7-flash" in seen["models"]     # VQA Flash inserted after Pro
     assert seen["timeout"] >= 90
 
 
 def test_yaml_mirrors_round41():
     y = (REPO / "configs" / "settings.yaml").read_text(encoding="utf-8")
-    assert "gemini_model: gemini-3.7-flash" in y
+    assert "gemini-3.5-flash-lite" in y
     assert "answer_model: gemini-3.1-pro-preview" in y
     assert "Qwen/Qwen3-VL-Reranker-8B" in y
