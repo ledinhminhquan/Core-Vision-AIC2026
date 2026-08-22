@@ -103,8 +103,12 @@ def test_stale_selfmade_marker_no_longer_vouches(tmp_path):
 
 # ── R7-3 · HTTP timeout aligned with the wall cap ────────────────────────────
 def test_http_client_timeout_uses_wall_cap():
+    # Round-46 refinement: the client budget is the MAX of every wall cap in
+    # play (generic 45s wall vs the QA Pro answer wall) — a smaller HTTP
+    # deadline starved the Pro answer path with 504s live.
     src = (REPO / "src" / "cvp" / "search" / "vqa.py").read_text(encoding="utf-8")
-    assert "int(gemini_wall_timeout(settings) * 1000)" in src
+    assert "max(gemini_wall_timeout(settings)" in src
+    assert "int(budget * 1000)" in src
     assert "timeout_s * 1000 * 3" not in src
 
 

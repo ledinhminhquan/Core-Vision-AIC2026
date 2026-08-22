@@ -58,3 +58,24 @@ def test_vlm_scorer_uses_its_own_cheap_model():
     vqa_src = open("src/cvp/search/vqa.py", encoding="utf-8").read()
     strip = vqa_src.split("_ask_gemini_strip")[1].split("def ")[0]
     assert "economical" not in strip      # QA answers stay full-depth Pro
+
+
+def test_r46_client_budget_covers_the_pro_answer_wall(monkeypatch):
+    """Live 504: the genai client HTTP deadline was built from the 45s generic
+    wall, so the Pro answer path's 90s budget never applied."""
+    captured = {}
+
+    class _FakeGenai:
+        class Client:
+            def __init__(self, api_key=None, http_options=None):
+                captured["timeout_ms"] = (http_options or {}).get("timeout")
+
+    import sys
+    monkeypatch.setitem(sys.modules, "google", type(sys)("google"))
+    monkeypatch.setitem(sys.modules, "google.genai", _FakeGenai)
+    sys.modules["google"].genai = _FakeGenai
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    from cvp.search.vqa import make_gemini_client
+    s = Settings()
+    make_gemini_client(s)
+    assert captured["timeout_ms"] >= int(s.vqa.answer_timeout_s * 1000)

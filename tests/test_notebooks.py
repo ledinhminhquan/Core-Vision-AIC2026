@@ -32,7 +32,7 @@ NB3 = "03_test_system.ipynb"
 NB4 = "04_lab_artifacts.ipynb"
 ALL_NBS = (NB1, NB1B, NB1C, NB2, NB3, NB4)
 
-EXPECTED_CODE_CELLS = {NB1: 11, NB1B: 8, NB1C: 8, NB2: 13, NB3: 18, NB4: 12}
+EXPECTED_CODE_CELLS = {NB1: 11, NB1B: 8, NB1C: 8, NB2: 13, NB3: 18, NB4: 13}
 
 # import-detection: `import torch`, `import gc, torch`, `from torch... import`
 TORCH_IMPORT_RE = re.compile(r"^\s*(?:import\s+[^#\n]*\btorch\b|from\s+torch\b)", re.MULTILINE)
@@ -221,6 +221,8 @@ NB_MARKERS = {
         "RUN_ASR_LARGE",                # overnight PhoWhisper-large rebuild
         "62_build_gt_from_reference.py",
         "asr-medium-backup",            # the medium ASR keeps a retreat path
+        "bench_full.json",              # R46: every stage result lands on Drive
+        "Lab watchkeeper",              # R46: post-run keep-alive
     ),
 }
 

@@ -2222,8 +2222,17 @@ if RUN_BENCH_FULL and GT_PATH.exists():
     rep = run_auto(TRIAL_DIR, settings.paths.art("submissions", "lab_full"),
                    settings, submit=False)
     r = score_run(settings.paths.art("submissions", "lab_full"), GT_PATH)
+    import json as _json
+    import shutil as _shd
+    _drv_lab = PROJECT / "artifacts" / "lab"
+    _drv_lab.mkdir(parents=True, exist_ok=True)
+    (_drv_lab / "bench_full.json").write_text(
+        _json.dumps(r.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+    _shd.copytree(settings.paths.art("submissions", "lab_full"),
+                  _drv_lab / "lab_full", dirs_exist_ok=True)
     print(f"\n⭐ BENCH FULL: mean_final={r.mean_final:.4f} "
-          f"({r.num_scored}/{r.num_gt} câu, {(time.time()-_t0)/60:.0f} phút)")
+          f"({r.num_scored}/{r.num_gt} câu, {(time.time()-_t0)/60:.0f} phút) "
+          f"— đã lưu Drive: {_drv_lab}")
     print("   Mốc cũ (bản 8.4 đợt nháp): 0.6413 · bản trộn 2 lần: 0.6587")
     for stem, qs in sorted(r.per_query.items()):
         print(f"   {stem:26s} final={qs.final:.3f}")
@@ -2264,7 +2273,12 @@ if RUN_METACLIP and GT_PATH.exists():
         for _f in (_la / _sub).glob("*metaclip2*"):
             _dst = PROJECT / "artifacts" / _sub / _f.name
             _dst.parent.mkdir(parents=True, exist_ok=True)
-            if not _dst.exists() or _dst.stat().st_size != _f.stat().st_size:
+            # round-46: embeddings/metaclip2 là THƯ MỤC (mỗi video một .npy) —
+            # copy2 lên thư mục từng làm sập cả cell (IsADirectoryError).
+            if _f.is_dir():
+                shutil.copytree(_f, _dst, dirs_exist_ok=True)
+                print("   → Drive:", _dst.name + "/")
+            elif not _dst.exists() or _dst.stat().st_size != _f.stat().st_size:
                 shutil.copy2(_f, _dst)
                 print("   → Drive:", _dst.name)
     # A/B retrieval-only (tắt reranker nặng để so LANE cho sạch và nhanh)
@@ -2281,6 +2295,7 @@ if RUN_METACLIP and GT_PATH.exists():
                           "CVP_EMBEDDING__ENSEMBLE_MEMBERS": '["finetuned", "metaclip2"]',
                           "CVP_EMBEDDING__ENSEMBLE_WEIGHTS": "[0.6, 0.4]"},
     }
+    _ab = {}
     print(f"\n{'đội hình':16s} mean_final (retrieval-only)")
     for _name, _env in CONFIGS.items():
         for k, v in _env.items():
@@ -2289,10 +2304,36 @@ if RUN_METACLIP and GT_PATH.exists():
         run_query_folder(load_settings(), TRIAL_DIR, _out, with_vqa=False)
         _r = score_run(_out, GT_PATH)
         print(f"{_name:16s} {_r.mean_final:.4f}")
+        _ab[_name] = _r.mean_final
         gc.collect(); torch.cuda.empty_cache()
-    print("\nĐội hình thắng → báo Claude để khóa vào nb03.")
+    import json as _json
+    _drv_lab = PROJECT / "artifacts" / "lab"
+    _drv_lab.mkdir(parents=True, exist_ok=True)
+    (_drv_lab / "lane_ab.json").write_text(
+        _json.dumps(_ab, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("\nĐội hình thắng → báo Claude để khóa vào nb03. (bảng đã lưu Drive)")
 elif RUN_METACLIP:
     print("⚠ Chưa có GT — chạy cell L1 trước.")
+'''
+
+LAB_KEEPALIVE = r'''
+# ── L6 · 🫀 Giữ phiên sống sau khi Lab xong (bấm ⏹ của ô này để dừng) ──
+# Round-46: phiên Lab từng bị Colab thu hồi vì "không hoạt động". Kernel bận
+# chạy ô này = hoạt động. Kết quả các stage đã được LƯU THẲNG LÊN DRIVE ngay
+# khi có (bench_full.json / best_weights.json / lane_ab.json / lab_full/),
+# nên dù phiên chết cũng không mất bài — ô này chỉ giữ máy ảo cho bạn quay
+# lại chạy thêm stage. GIỮ TAB TRÌNH DUYỆT MỞ trong lúc Lab chạy.
+import time as _tm
+print("🫀 Lab watchkeeper — phiên được giữ sống.")
+try:
+    _n = 0
+    while True:
+        _tm.sleep(30)
+        _n += 1
+        if _n % 10 == 0:
+            print(f"🫀 {_tm.strftime('%H:%M')} phiên sống")
+except KeyboardInterrupt:
+    print("⏹ Dừng — phiên sẽ tính là nhàn rỗi từ giờ.")
 '''
 
 LAB_ASR_LARGE = r'''
@@ -2379,6 +2420,7 @@ def main() -> None:
         code(LAB_TUNE),
         code(LAB_METACLIP),
         code(LAB_ASR_LARGE),
+        code(LAB_KEEPALIVE),
     ])
     write_nb("02_train_vi_encoder_H100.ipynb", [
         md(NB2_TITLE),
