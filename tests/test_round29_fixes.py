@@ -38,11 +38,13 @@ def test_settings_yaml_matches_the_fix():
     assert "gemini-flash-latest" in yaml_text
 
 
-def test_nb03_battle_defaults_are_finetuned_gemini():
-    """Round-1 lane decision (A/B of all 5 configs, Aug 20): finetuned +
-    provider=gemini. The shipped notebook must default to the battle config —
-    competition night is not the time to hand-edit knobs."""
+def test_nb03_battle_defaults_are_benched():
+    """The shipped notebook must default to the BENCH-chosen battle config.
+    Round-47 (Lab 23/08): ensemble finetuned+metaclip2 60/40 scored 0.5522
+    vs finetuned-alone 0.5370 retrieval-only; provider stays gemini."""
     src = (REPO / "notebooks" / "_build_notebooks.py").read_text(encoding="utf-8")
     frag = src.split("NB3_ENGINE = r")[1].split("NB3_QUERIES")[0]
-    assert 'ENGINE_MODEL   = "finetuned"' in frag
+    assert 'ENGINE_MODEL   = "ensemble"' in frag
+    assert "'[\"finetuned\", \"metaclip2\"]'" in frag
+    assert '"[0.6, 0.4]"' in frag
     assert 'QUERY_PROVIDER = "gemini"' in frag

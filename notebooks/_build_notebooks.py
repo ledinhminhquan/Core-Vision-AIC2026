@@ -1722,8 +1722,10 @@ NB3_ENGINE = r'''
 # Chọn model cho phiên test này:
 #   "siglip2"    lane gốc zero-shot (dự phòng)
 #   "finetuned"  text tower tiếng Việt từ nb02 (cùng index ảnh siglip2)
-#   "ensemble"   finetuned + openclip (nặng hơn, A/B 20/08 KHÔNG thắng finetuned)
-ENGINE_MODEL   = "finetuned"        # ← cấu hình ra trận round 1 (A/B 20/08)
+#   "ensemble"   round-47: finetuned + METACLIP2 60/40 — bench Lab 23/08:
+#                0.5522 vs finetuned đơn 0.5370 (retrieval-thuần, 23/23 câu).
+#                (Cặp cũ finetuned+openclip đã thua A/B 20/08 và bị thay.)
+ENGINE_MODEL   = "ensemble"         # ← cấu hình ra trận đợt 2 (bench 23/08)
 # "none"   = test offline, không gọi Gemini (nhanh, không tốn quota)
 # "gemini" = dịch + mở rộng query (CẦN secret GEMINI_API_KEY; tự rơi về
 #            Google-Translate miễn phí rồi passthrough nếu API lỗi — A/B 20/08:
@@ -1772,7 +1774,8 @@ if ENGINE_MODEL in ("finetuned", "ensemble"):
     os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
         Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "checkpoints" / "vi_siglip2_best")
 if ENGINE_MODEL == "ensemble":
-    os.environ["CVP_EMBEDDING__ENSEMBLE_MEMBERS"] = '["finetuned", "openclip"]'
+    os.environ["CVP_EMBEDDING__ENSEMBLE_MEMBERS"] = '["finetuned", "metaclip2"]'
+    os.environ["CVP_EMBEDDING__ENSEMBLE_WEIGHTS"] = "[0.6, 0.4]"
 
 from cvp.search.engine import SearchEngine
 from cvp.config import load_settings
@@ -2181,8 +2184,17 @@ LAB_GT = r'''
 RUN_GT = True
 import subprocess, sys
 def _run(*args):
-    print("$", " ".join(map(str, args)))
-    subprocess.run([sys.executable, *map(str, args)], check=True)
+    # Round-47: stream con-process output VÀO CELL — subprocess.run kế thừa
+    # fd thật của kernel nên log 10 giờ ASR từng "im lặng" trong cell (nó chảy
+    # vào runtime log, không phải notebook).
+    print("$", " ".join(map(str, args)), flush=True)
+    p = subprocess.Popen([sys.executable, "-u", *map(str, args)],
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True)
+    for _ln in p.stdout:
+        print(_ln, end="", flush=True)
+    if p.wait() != 0:
+        raise RuntimeError(f"lệnh lỗi (exit {p.returncode})")
 REF_ZIP   = PROJECT / "queries" / "thunghiem-ref.zip"
 TRIAL_DIR = PROJECT / "queries" / "p1"          # 24 đề vòng nháp (đã upload từ trước)
 GT_PATH   = PROJECT / "queries" / "gt-thunghiem.json"
