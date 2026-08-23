@@ -221,6 +221,7 @@ NB_MARKERS = {
         "RUN_ASR_LARGE",                # overnight PhoWhisper-large rebuild
         "62_build_gt_from_reference.py",
         "asr-medium-backup",            # the medium ASR keeps a retreat path
+        "asr-large-partial",            # R48: partial results live on Drive
         "bench_full.json",              # R46: every stage result lands on Drive
         "Lab watchkeeper",              # R46: post-run keep-alive
     ),

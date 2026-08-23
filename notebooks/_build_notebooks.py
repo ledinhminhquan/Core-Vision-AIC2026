@@ -2355,20 +2355,49 @@ LAB_ASR_LARGE = r'''
 # Drive (asr-medium-backup) cho tới khi bạn hài lòng với bản large.
 RUN_ASR_LARGE = False
 if RUN_ASR_LARGE:
-    import os, shutil
+    import os, shutil, threading
+    import time as _t2
     from pathlib import Path
     _drv_asr = PROJECT / "artifacts" / "asr"
     _bak = PROJECT / "artifacts" / "asr-medium-backup"
+    _partial = PROJECT / "artifacts" / "asr-large-partial"
     if _drv_asr.exists() and not _bak.exists():
         _drv_asr.rename(_bak)               # giữ bản medium làm đường lui
         print("Đã cất bản medium →", _bak)
     _la = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"])
     if (_la / "asr").exists():
-        shutil.rmtree(_la / "asr")          # local phải trống để chạy large sạch
+        shutil.rmtree(_la / "asr")          # xóa bản medium staging cho sạch
+    # Round-48: ca ASR dài hơn trần 24h của Colab — kết quả từng phần phải
+    # SỐNG TRÊN DRIVE. Seed lại từ partial (resume xuyên phiên) + thread nền
+    # đồng bộ mỗi 10 phút; phiên chết chỉ mất tối đa 10 phút công.
+    if _partial.exists():
+        shutil.copytree(_partial, _la / "asr", dirs_exist_ok=True)
+        print(f"Resume: {len(list((_la / 'asr').glob('*.json')))} video large đã xong từ phiên trước")
+    else:
+        _partial.mkdir(parents=True, exist_ok=True)
+    _stop_sync = False
+
+    def _syncer():
+        while not _stop_sync:
+            _t2.sleep(600)
+            try:
+                _n = 0
+                for _f in (_la / "asr").glob("*.json"):
+                    _d = _partial / _f.name
+                    if not _d.exists() or _d.stat().st_size != _f.stat().st_size:
+                        shutil.copy2(_f, _d)
+                        _n += 1
+                if _n:
+                    print(f"💾 {_t2.strftime('%H:%M')} sync {_n} video ASR → Drive")
+            except Exception:  # noqa: BLE001 — syncer chết lặng lẽ là chấp nhận được
+                pass
+
+    threading.Thread(target=_syncer, daemon=True).start()
     os.environ["CVP_ASR__MODEL"] = "vinai/PhoWhisper-large"
     _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py", "--asr")
     _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py",
          "--text-index", "--force-text-index")
+    _stop_sync = True
     for _d in ("asr", "text_index"):
         _dst = PROJECT / "artifacts" / _d
         if _dst.exists():
