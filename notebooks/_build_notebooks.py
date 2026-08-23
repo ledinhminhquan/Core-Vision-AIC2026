@@ -2181,7 +2181,6 @@ vào cấu hình ra trận. Các công tắc, bật từng cái tùy phiên:
 | `RUN_BENCH_FULL` | Chấm dàn vũ khí ĐẦY ĐỦ hiện tại trên đề nháp | ~45–60 phút |
 | `RUN_TUNE` | Dump tín hiệu + dò trọng số fusion → best_weights.json | ~30 phút |
 | `RUN_METACLIP` | Embed lane MetaCLIP-2 + A/B 3 đội hình retrieval | ~2 giờ |
-| `RUN_ASR_LARGE` | Ca đêm: ASR PhoWhisper-large toàn bộ 873 video | ~10–20 giờ |
 
 Chuẩn bị MỘT lần: upload zip bài tham chiếu 19.8 lên Drive thành
 `MyDrive/AIC2025/queries/thunghiem-ref.zip` (đề nháp đã nằm sẵn ở
@@ -2357,6 +2356,26 @@ except KeyboardInterrupt:
     print("⏹ Dừng — phiên sẽ tính là nhàn rỗi từ giờ.")
 '''
 
+LAB_KEEPALIVE = r'''
+# ── L6 · 🫀 Giữ phiên sống sau khi Lab xong (bấm ⏹ của ô này để dừng) ──
+# Round-46: phiên Lab từng bị Colab thu hồi vì "không hoạt động". Kernel bận
+# chạy ô này = hoạt động. Kết quả các stage đã được LƯU THẲNG LÊN DRIVE ngay
+# khi có (bench_full.json / best_weights.json / lane_ab.json / lab_full/),
+# nên dù phiên chết cũng không mất bài — ô này chỉ giữ máy ảo cho bạn quay
+# lại chạy thêm stage. GIỮ TAB TRÌNH DUYỆT MỞ trong lúc Lab chạy.
+import time as _tm
+print("🫀 Lab watchkeeper — phiên được giữ sống.")
+try:
+    _n = 0
+    while True:
+        _tm.sleep(30)
+        _n += 1
+        if _n % 10 == 0:
+            print(f"🫀 {_tm.strftime('%H:%M')} phiên sống")
+except KeyboardInterrupt:
+    print("⏹ Dừng — phiên sẽ tính là nhàn rỗi từ giờ.")
+'''
+
 LAB_ASR_LARGE = r'''
 # ── L5 · CA ĐÊM: ASR PhoWhisper-large toàn bộ 873 video (~10–20 giờ) ──
 # Thoại là nguồn sống của track QA. Bật True rồi để chạy qua đêm; per-video
@@ -2419,6 +2438,218 @@ else:
 '''
 
 
+NB5_TITLE = r'''
+# 🎙 Core Vision Perfect V1 — 05 · ASR LARGE (build chuyên biệt, shard song song)
+
+Nâng đôi tai của hệ: nghe lại TOÀN BỘ 873 video bằng **PhoWhisper-large**
+(ASR tiếng Việt mạnh nhất công khai). Tổng ~24–40 giờ GPU — chạy **N phiên
+song song** (N bản sao notebook, mỗi bản một `SHARD_INDEX`) để chia N lần
+thời gian. Kết quả sống trên Drive từng 10 phút; bản medium được giữ làm
+đường lui (`asr-medium-backup`). Phiên thấy kho đủ tự rebuild BM25 + hoán đổi.
+'''
+
+NB5_SWEEP = r'''
+# ── ⚒ ASR PhoWhisper-LARGE toàn bộ 873 video (shard song song) ──
+# Chạy SONG SONG nhiều phiên: tạo N bản sao notebook này trên Colab, mỗi bản
+# đặt SHARD_INDEX = 0..N-1 và SHARD_TOTAL = N. Mỗi phiên gánh 1/N số video;
+# kết quả từng video đổ chung về MỘT kho Drive (asr-large-partial) mỗi 10 phút —
+# phiên chết chỉ mất tối đa 10 phút công, chạy lại là tự nối tiếp.
+# Phiên nào hoàn tất mà thấy KHO ĐỦ toàn bộ video sẽ tự FINALIZE (rebuild
+# BM25 text-index + hoán đổi vào artifacts thật, có backup đường lui).
+SHARD_INDEX = 0
+SHARD_TOTAL = 1
+import os, shutil, subprocess, sys, threading
+import time as _tm
+from pathlib import Path
+
+def _run(*args):
+    print("$", " ".join(map(str, args)), flush=True)
+    _pp = subprocess.Popen([sys.executable, "-u", *map(str, args)],
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True)
+    for _ln in _pp.stdout:
+        print(_ln, end="", flush=True)
+    if _pp.wait() != 0:
+        raise RuntimeError(f"lệnh lỗi (exit {_pp.returncode})")
+
+_vids = sorted(_q.stem for _q in (PROJECT / "data" / "map-keyframes").glob("*.csv"))
+_my = _vids[SHARD_INDEX::SHARD_TOTAL]
+print(f"Shard {SHARD_INDEX + 1}/{SHARD_TOTAL}: {len(_my)}/{len(_vids)} video")
+
+_partial = PROJECT / "artifacts" / "asr-large-partial"
+_partial.mkdir(parents=True, exist_ok=True)
+_la = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"])
+_job_local = _la / "asr"
+if _job_local.exists():
+    shutil.rmtree(_job_local)            # xóa bản staging cũ cho sạch
+shutil.copytree(_partial, _job_local, dirs_exist_ok=True)   # resume xuyên phiên
+print(f"Resume: {len(list(_job_local.glob('*.json')))} video đã xong từ trước")
+
+_stop_sync = False
+
+def _syncer():
+    while not _stop_sync:
+        _tm.sleep(600)
+        try:
+            _n = 0
+            for _f in _job_local.glob("*.json"):
+                _d = _partial / _f.name
+                if not _d.exists() or _d.stat().st_size != _f.stat().st_size:
+                    shutil.copy2(_f, _d)
+                    _n += 1
+            if _n:
+                print(f"SYNC {_tm.strftime('%H:%M')}: {_n} video -> Drive", flush=True)
+        except Exception:  # noqa: BLE001 — syncer lặng lẽ là chấp nhận được
+            pass
+
+threading.Thread(target=_syncer, daemon=True).start()
+os.environ["CVP_ASR__MODEL"] = "vinai/PhoWhisper-large"
+_run(REPO_DIR / "scripts" / "03_build_aux_indexes.py", "--asr",
+     "--videos", *_my)
+_stop_sync = True
+for _f in _job_local.glob("*.json"):                 # đợt sync chốt của shard
+    _d = _partial / _f.name
+    if not _d.exists() or _d.stat().st_size != _f.stat().st_size:
+        shutil.copy2(_f, _d)
+print(f"Shard xong. Kho chung: {len(list(_partial.glob('*.json')))}/{len(_vids)} video")
+
+# ── FINALIZE: shard nào thấy kho đủ sẽ chốt hạ (có khóa chống chạy đôi) ──
+if len(list(_partial.glob("*.json"))) >= len(_vids):
+    _lock = _partial / "_finalize.lock"
+    if _lock.exists():
+        print("Finalize đã/đang được shard khác lo — bỏ qua.")
+    else:
+        _lock.write_text(_tm.strftime("%Y-%m-%d %H:%M"), encoding="utf-8")
+        print("FINALIZE: rebuild BM25 + hoán đổi artifacts ...")
+        shutil.copytree(_partial, _job_local, dirs_exist_ok=True)
+        for _aux in ("ocr", "asr", "captions"):      # BM25 cần đủ các kho aux
+            _src = PROJECT / "artifacts" / _aux
+            if _aux != "asr" and _src.is_dir() and not (_la / _aux).exists():
+                shutil.copytree(_src, _la / _aux)
+        _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py",
+             "--text-index", "--force-text-index")
+        _drv_job = PROJECT / "artifacts" / "asr"
+        _bak = PROJECT / "artifacts" / "asr-medium-backup"
+        if _drv_job.exists() and not _bak.exists():
+            _drv_job.rename(_bak)
+            print("Đã cất bản cũ →", _bak)
+        for _d in ("asr", "text_index"):
+            _dst = PROJECT / "artifacts" / _d
+            if _dst.exists():
+                shutil.rmtree(_dst)
+            shutil.copytree(_la / _d, _dst)
+            print("   → Drive:", _dst)
+        print("XONG TOÀN BỘ — artifacts đã nâng cấp. Đo lại bằng nb04 (L2).")
+else:
+    print("Kho chưa đủ — chờ các shard khác (hoặc chạy lại phiên để nối tiếp).")
+'''
+
+NB6_TITLE = r'''
+# 📝 Core Vision Perfect V1 — 06 · Captions DÀY (build chuyên biệt, shard song song)
+
+Caption hiện chỉ phủ ~1/4 số keyframe (stride 4 từ tuần build). Notebook này
+caption **MỌI keyframe** (stride 1) bằng Vintern — kho chữ cho BM25 dày gấp
+~4 lần (bộ tinh chỉnh trọng số đã "thích" tín hiệu caption). Tổng ~50–100
+giờ GPU — nên chạy 3–4 shard song song. Cùng cơ chế an toàn như notebook 05.
+'''
+
+NB6_SWEEP = r'''
+# ── ⚒ Captions Vintern DÀY — stride 1, mọi keyframe (shard song song) ──
+# Chạy SONG SONG nhiều phiên: tạo N bản sao notebook này trên Colab, mỗi bản
+# đặt SHARD_INDEX = 0..N-1 và SHARD_TOTAL = N. Mỗi phiên gánh 1/N số video;
+# kết quả từng video đổ chung về MỘT kho Drive (captions-dense-partial) mỗi 10 phút —
+# phiên chết chỉ mất tối đa 10 phút công, chạy lại là tự nối tiếp.
+# Phiên nào hoàn tất mà thấy KHO ĐỦ toàn bộ video sẽ tự FINALIZE (rebuild
+# BM25 text-index + hoán đổi vào artifacts thật, có backup đường lui).
+SHARD_INDEX = 0
+SHARD_TOTAL = 1
+import os, shutil, subprocess, sys, threading
+import time as _tm
+from pathlib import Path
+
+def _run(*args):
+    print("$", " ".join(map(str, args)), flush=True)
+    _pp = subprocess.Popen([sys.executable, "-u", *map(str, args)],
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           text=True)
+    for _ln in _pp.stdout:
+        print(_ln, end="", flush=True)
+    if _pp.wait() != 0:
+        raise RuntimeError(f"lệnh lỗi (exit {_pp.returncode})")
+
+_vids = sorted(_q.stem for _q in (PROJECT / "data" / "map-keyframes").glob("*.csv"))
+_my = _vids[SHARD_INDEX::SHARD_TOTAL]
+print(f"Shard {SHARD_INDEX + 1}/{SHARD_TOTAL}: {len(_my)}/{len(_vids)} video")
+
+_partial = PROJECT / "artifacts" / "captions-dense-partial"
+_partial.mkdir(parents=True, exist_ok=True)
+_la = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"])
+_job_local = _la / "captions"
+if _job_local.exists():
+    shutil.rmtree(_job_local)            # xóa bản staging cũ cho sạch
+shutil.copytree(_partial, _job_local, dirs_exist_ok=True)   # resume xuyên phiên
+print(f"Resume: {len(list(_job_local.glob('*.json')))} video đã xong từ trước")
+
+_stop_sync = False
+
+def _syncer():
+    while not _stop_sync:
+        _tm.sleep(600)
+        try:
+            _n = 0
+            for _f in _job_local.glob("*.json"):
+                _d = _partial / _f.name
+                if not _d.exists() or _d.stat().st_size != _f.stat().st_size:
+                    shutil.copy2(_f, _d)
+                    _n += 1
+            if _n:
+                print(f"SYNC {_tm.strftime('%H:%M')}: {_n} video -> Drive", flush=True)
+        except Exception:  # noqa: BLE001 — syncer lặng lẽ là chấp nhận được
+            pass
+
+threading.Thread(target=_syncer, daemon=True).start()
+# stride 1: caption MỌI keyframe (kho cũ stride 4 chỉ phủ ~1/4)
+_run(REPO_DIR / "scripts" / "03_build_aux_indexes.py", "--captions", "--caption-stride", "1",
+     "--videos", *_my)
+_stop_sync = True
+for _f in _job_local.glob("*.json"):                 # đợt sync chốt của shard
+    _d = _partial / _f.name
+    if not _d.exists() or _d.stat().st_size != _f.stat().st_size:
+        shutil.copy2(_f, _d)
+print(f"Shard xong. Kho chung: {len(list(_partial.glob('*.json')))}/{len(_vids)} video")
+
+# ── FINALIZE: shard nào thấy kho đủ sẽ chốt hạ (có khóa chống chạy đôi) ──
+if len(list(_partial.glob("*.json"))) >= len(_vids):
+    _lock = _partial / "_finalize.lock"
+    if _lock.exists():
+        print("Finalize đã/đang được shard khác lo — bỏ qua.")
+    else:
+        _lock.write_text(_tm.strftime("%Y-%m-%d %H:%M"), encoding="utf-8")
+        print("FINALIZE: rebuild BM25 + hoán đổi artifacts ...")
+        shutil.copytree(_partial, _job_local, dirs_exist_ok=True)
+        for _aux in ("ocr", "asr", "captions"):      # BM25 cần đủ các kho aux
+            _src = PROJECT / "artifacts" / _aux
+            if _aux != "captions" and _src.is_dir() and not (_la / _aux).exists():
+                shutil.copytree(_src, _la / _aux)
+        _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py",
+             "--text-index", "--force-text-index")
+        _drv_job = PROJECT / "artifacts" / "captions"
+        _bak = PROJECT / "artifacts" / "captions-stride4-backup"
+        if _drv_job.exists() and not _bak.exists():
+            _drv_job.rename(_bak)
+            print("Đã cất bản cũ →", _bak)
+        for _d in ("captions", "text_index"):
+            _dst = PROJECT / "artifacts" / _d
+            if _dst.exists():
+                shutil.rmtree(_dst)
+            shutil.copytree(_la / _d, _dst)
+            print("   → Drive:", _dst)
+        print("XONG TOÀN BỘ — artifacts đã nâng cấp. Đo lại bằng nb04 (L2).")
+else:
+    print("Kho chưa đủ — chờ các shard khác (hoặc chạy lại phiên để nối tiếp).")
+'''
+
+
 def main() -> None:
     write_nb("01_build_artifacts_colab.ipynb", [
         md(NB1_TITLE),
@@ -2469,7 +2700,26 @@ def main() -> None:
         code(LAB_BENCH_FULL),
         code(LAB_TUNE),
         code(LAB_METACLIP),
-        code(LAB_ASR_LARGE),
+        code(LAB_KEEPALIVE),
+    ])
+    write_nb("05_asr_large_colab.ipynb", [
+        md(NB5_TITLE),
+        code(CELL_PARAMS),
+        code(CELL_MOUNT),
+        code(CELL_REPO_DEPS),
+        code(CELL_ENV_GPU),
+        code(NB1_LOCAL_COPY),
+        code(NB5_SWEEP),
+        code(LAB_KEEPALIVE),
+    ])
+    write_nb("06_caption_dense_colab.ipynb", [
+        md(NB6_TITLE),
+        code(CELL_PARAMS),
+        code(CELL_MOUNT),
+        code(CELL_REPO_DEPS),
+        code(CELL_ENV_GPU),
+        code(NB1_LOCAL_COPY),
+        code(NB6_SWEEP),
         code(LAB_KEEPALIVE),
     ])
     write_nb("02_train_vi_encoder_H100.ipynb", [

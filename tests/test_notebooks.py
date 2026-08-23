@@ -30,9 +30,11 @@ NB1C = "01c_asr_boost_colab.ipynb"
 NB2 = "02_train_vi_encoder_H100.ipynb"
 NB3 = "03_test_system.ipynb"
 NB4 = "04_lab_artifacts.ipynb"
-ALL_NBS = (NB1, NB1B, NB1C, NB2, NB3, NB4)
+NB5 = "05_asr_large_colab.ipynb"
+NB6 = "06_caption_dense_colab.ipynb"
+ALL_NBS = (NB1, NB1B, NB1C, NB2, NB3, NB4, NB5, NB6)
 
-EXPECTED_CODE_CELLS = {NB1: 11, NB1B: 8, NB1C: 8, NB2: 13, NB3: 18, NB4: 13}
+EXPECTED_CODE_CELLS = {NB1: 11, NB1B: 8, NB1C: 8, NB2: 13, NB3: 18, NB4: 12, NB5: 7, NB6: 7}
 
 # import-detection: `import torch`, `import gc, torch`, `from torch... import`
 TORCH_IMPORT_RE = re.compile(r"^\s*(?:import\s+[^#\n]*\btorch\b|from\s+torch\b)", re.MULTILINE)
@@ -218,12 +220,24 @@ NB_MARKERS = {
         "RUN_BENCH_FULL",               # full-weapons scoring on the bench
         "RUN_TUNE",                     # signal dump + weight search
         "RUN_METACLIP",                 # measured lane A/B before adoption
-        "RUN_ASR_LARGE",                # overnight PhoWhisper-large rebuild
         "62_build_gt_from_reference.py",
-        "asr-medium-backup",            # the medium ASR keeps a retreat path
-        "asr-large-partial",            # R48: partial results live on Drive
         "bench_full.json",              # R46: every stage result lands on Drive
         "Lab watchkeeper",              # R46: post-run keep-alive
+    ),
+    NB5: (
+        "SHARD_INDEX",                  # R50: N parallel Colab sessions
+        "asr-large-partial",            # per-video results live on Drive
+        "asr-medium-backup",            # the medium ASR keeps a retreat path
+        "PhoWhisper-large",
+        "_finalize.lock",               # exactly one shard finalizes
+        "--force-text-index",
+    ),
+    NB6: (
+        "SHARD_INDEX",
+        "captions-dense-partial",
+        "captions-stride4-backup",
+        "--caption-stride",
+        "_finalize.lock",
     ),
 }
 

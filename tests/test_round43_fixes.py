@@ -59,8 +59,7 @@ def test_r44_lab_notebook_and_tuned_weight_adoption():
     nb03's engine cell auto-loads Lab-tuned fusion weights from Drive."""
     src = (REPO / "notebooks" / "_build_notebooks.py").read_text(encoding="utf-8")
     assert 'write_nb("04_lab_artifacts.ipynb"' in src
-    for knob in ("RUN_GT", "RUN_BENCH_FULL", "RUN_TUNE", "RUN_METACLIP",
-                 "RUN_ASR_LARGE"):
+    for knob in ("RUN_GT", "RUN_BENCH_FULL", "RUN_TUNE", "RUN_METACLIP"):
         assert knob in src
     eng = src.split("NB3_ENGINE = r")[1].split("NB3_QUERIES")[0]
     assert "best_weights.json" in eng
