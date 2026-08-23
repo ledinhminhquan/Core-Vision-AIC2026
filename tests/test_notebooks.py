@@ -30,8 +30,8 @@ NB1C = "01c_asr_boost_colab.ipynb"
 NB2 = "02_train_vi_encoder_H100.ipynb"
 NB3 = "03_test_system.ipynb"
 NB4 = "04_lab_artifacts.ipynb"
-NB5 = "05_asr_large_colab.ipynb"
-NB6 = "06_caption_dense_colab.ipynb"
+NB5 = "05a_asr_large_shard1.ipynb"      # 05b/05c: same body, baked shard
+NB6 = "06a_caption_dense_shard1.ipynb"  # 06b/06c: same body, baked shard
 ALL_NBS = (NB1, NB1B, NB1C, NB2, NB3, NB4, NB5, NB6)
 
 EXPECTED_CODE_CELLS = {NB1: 11, NB1B: 8, NB1C: 8, NB2: 13, NB3: 18, NB4: 12, NB5: 7, NB6: 7}
@@ -225,7 +225,7 @@ NB_MARKERS = {
         "Lab watchkeeper",              # R46: post-run keep-alive
     ),
     NB5: (
-        "SHARD_INDEX",                  # R50: N parallel Colab sessions
+        "SHARD_INDEX = 0",              # R51: shard baked into the file
         "asr-large-partial",            # per-video results live on Drive
         "asr-medium-backup",            # the medium ASR keeps a retreat path
         "PhoWhisper-large",
@@ -233,7 +233,7 @@ NB_MARKERS = {
         "--force-text-index",
     ),
     NB6: (
-        "SHARD_INDEX",
+        "SHARD_INDEX = 0",
         "captions-dense-partial",
         "captions-stride4-backup",
         "--caption-stride",
@@ -378,3 +378,12 @@ def test_nb1_model_tag_printed_before_embedding(builder):
             < embed.index("embed_all_keyframes(model"))
     assert "FORCE_EMBED=True" in embed                 # remediation hint
     assert "model tag mismatch" in embed               # names the embedder error
+
+
+def test_r51_shard_files_have_baked_indices(builder):
+    """Round-51: zero-edit UX — each shard notebook ships its own index."""
+    for fam, job in (("05", "asr_large"), ("06", "caption_dense")):
+        for i, letter in enumerate("abc"):
+            src = "\n".join(_code_sources(f"{fam}{letter}_{job}_shard{i + 1}.ipynb"))
+            assert f"SHARD_INDEX = {i}" in src
+            assert "SHARD_TOTAL = 3" in src

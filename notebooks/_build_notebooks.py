@@ -2450,8 +2450,8 @@ thời gian. Kết quả sống trên Drive từng 10 phút; bản medium đư�
 
 NB5_SWEEP = r'''
 # ── ⚒ ASR PhoWhisper-LARGE toàn bộ 873 video (shard song song) ──
-# Chạy SONG SONG nhiều phiên: tạo N bản sao notebook này trên Colab, mỗi bản
-# đặt SHARD_INDEX = 0..N-1 và SHARD_TOTAL = N. Mỗi phiên gánh 1/N số video;
+# Round-51: shard ĐÃ ĐẶT SẴN theo tên file (bản a/b/c) — không chỉnh gì cả,
+# chỉ Run all. Mỗi phiên gánh 1/N số video;
 # kết quả từng video đổ chung về MỘT kho Drive (asr-large-partial) mỗi 10 phút —
 # phiên chết chỉ mất tối đa 10 phút công, chạy lại là tự nối tiếp.
 # Phiên nào hoàn tất mà thấy KHO ĐỦ toàn bộ video sẽ tự FINALIZE (rebuild
@@ -2555,8 +2555,8 @@ giờ GPU — nên chạy 3–4 shard song song. Cùng cơ chế an toàn như n
 
 NB6_SWEEP = r'''
 # ── ⚒ Captions Vintern DÀY — stride 1, mọi keyframe (shard song song) ──
-# Chạy SONG SONG nhiều phiên: tạo N bản sao notebook này trên Colab, mỗi bản
-# đặt SHARD_INDEX = 0..N-1 và SHARD_TOTAL = N. Mỗi phiên gánh 1/N số video;
+# Round-51: shard ĐÃ ĐẶT SẴN theo tên file (bản a/b/c) — không chỉnh gì cả,
+# chỉ Run all. Mỗi phiên gánh 1/N số video;
 # kết quả từng video đổ chung về MỘT kho Drive (captions-dense-partial) mỗi 10 phút —
 # phiên chết chỉ mất tối đa 10 phút công, chạy lại là tự nối tiếp.
 # Phiên nào hoàn tất mà thấy KHO ĐỦ toàn bộ video sẽ tự FINALIZE (rebuild
@@ -2702,26 +2702,25 @@ def main() -> None:
         code(LAB_METACLIP),
         code(LAB_KEEPALIVE),
     ])
-    write_nb("05_asr_large_colab.ipynb", [
-        md(NB5_TITLE),
-        code(CELL_PARAMS),
-        code(CELL_MOUNT),
-        code(CELL_REPO_DEPS),
-        code(CELL_ENV_GPU),
-        code(NB1_LOCAL_COPY),
-        code(NB5_SWEEP),
-        code(LAB_KEEPALIVE),
-    ])
-    write_nb("06_caption_dense_colab.ipynb", [
-        md(NB6_TITLE),
-        code(CELL_PARAMS),
-        code(CELL_MOUNT),
-        code(CELL_REPO_DEPS),
-        code(CELL_ENV_GPU),
-        code(NB1_LOCAL_COPY),
-        code(NB6_SWEEP),
-        code(LAB_KEEPALIVE),
-    ])
+    # Round-51: shard notebooks đặt sẵn chỉ số — upload & Run all, zero chỉnh.
+    for _fam, _title, _sweep in (("05", NB5_TITLE, NB5_SWEEP),
+                                 ("06", NB6_TITLE, NB6_SWEEP)):
+        for _i, _letter in enumerate("abc"):
+            _src = _sweep.replace("SHARD_INDEX = 0", f"SHARD_INDEX = {_i}")
+            _src = _src.replace("SHARD_TOTAL = 1", "SHARD_TOTAL = 3")
+            _ttl = _title.replace("(build chuyên biệt, shard song song)",
+                                  f"— CA {_i + 1}/3 (bản {_letter})")
+            _job = "asr_large" if _fam == "05" else "caption_dense"
+            write_nb(f"{_fam}{_letter}_{_job}_shard{_i + 1}.ipynb", [
+                md(_ttl),
+                code(CELL_PARAMS),
+                code(CELL_MOUNT),
+                code(CELL_REPO_DEPS),
+                code(CELL_ENV_GPU),
+                code(NB1_LOCAL_COPY),
+                code(_src),
+                code(LAB_KEEPALIVE),
+            ])
     write_nb("02_train_vi_encoder_H100.ipynb", [
         md(NB2_TITLE),
         code(CELL_PARAMS),
