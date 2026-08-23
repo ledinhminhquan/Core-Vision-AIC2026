@@ -1764,9 +1764,18 @@ if _tw.exists():
     import json as _json
     _w = _json.loads(_tw.read_text(encoding="utf-8")).get("best", {}).get("weights")
     if _w:
+        # Round-49 SHRINKAGE 50% về baseline: tuner học trên vỏn vẹn 23 câu
+        # của pack NHÁP và kéo OCR về ≈0.01 — đề đợt sau phân bố khác, tin
+        # 100% cực trị đó là đánh bạc overfit. Trung bình với baseline giữ
+        # nguyên CHIỀU HƯỚNG đã học (hạ OCR/ASR, nâng caption/metadata)
+        # nhưng chỉ đi nửa biên độ — không tín hiệu nào bị giết hẳn.
+        _base = {"visual": 1.0, "ocr": 0.35, "asr": 0.30, "caption": 0.25,
+                 "metadata": 0.15, "object": 0.25}
+        _w = {k: round(0.5 * float(_w.get(k, v)) + 0.5 * v, 4)
+              for k, v in _base.items()}
         for _sig, _val in _w.items():
             os.environ[f"CVP_SEARCH__WEIGHTS__{_sig.upper()}"] = str(_val)
-        print("⚖ Trọng số fusion TUNED (từ Lab):", _w)
+        print("⚖ Trọng số fusion TUNED+shrinkage 50% (từ Lab):", _w)
 # Ranking phẳng (top không tách khỏi đám đông) → tự tìm lại bằng các biến thể
 # Gemini đã cache rồi trộn RRF — không tốn thêm cuộc gọi API nào.
 os.environ["CVP_SEARCH__LOW_CONFIDENCE_RETRY"] = "true"

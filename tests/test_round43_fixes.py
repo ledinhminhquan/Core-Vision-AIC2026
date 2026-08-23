@@ -65,3 +65,14 @@ def test_r44_lab_notebook_and_tuned_weight_adoption():
     eng = src.split("NB3_ENGINE = r")[1].split("NB3_QUERIES")[0]
     assert "best_weights.json" in eng
     assert "CVP_SEARCH__WEIGHTS__" in eng
+
+
+def test_r49_tuned_weights_load_with_shrinkage():
+    """Round-49: the tuner (23 trial queries, 400 random trials) drove OCR to
+    ~0.01 — adopting extremes verbatim is an overfit gamble on a NEW pack.
+    nb03 loads tuned weights averaged 50/50 with the baseline: direction kept,
+    amplitude halved, no signal ever killed outright."""
+    src = (REPO / "notebooks" / "_build_notebooks.py").read_text(encoding="utf-8")
+    eng = src.split("NB3_ENGINE = r")[1].split("NB3_QUERIES")[0]
+    assert "0.5 * float(_w.get(k, v)) + 0.5 * v" in eng
+    assert "shrinkage" in eng.lower()
