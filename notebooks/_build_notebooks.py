@@ -2477,7 +2477,32 @@ _my = _vids[SHARD_INDEX::SHARD_TOTAL]
 print(f"Shard {SHARD_INDEX + 1}/{SHARD_TOTAL}: {len(_my)}/{len(_vids)} video")
 
 _partial = PROJECT / "artifacts" / "asr-large-partial"
+# Round-52 (live 05 run 24/08): N phiên cùng mkdir một lúc → Google Drive tạo
+# NHIỀU thư mục TRÙNG TÊN (Drive cho phép trùng tên!), mỗi phiên đổ bài vào
+# một bản → không phiên nào đếm đủ, FINALIZE không bao giờ nổ. Hai lớp chống:
+# (1) chỉ ca 1 được TẠO kho — các ca sau ĐỢI thấy kho rồi mới vào;
+if not (SHARD_INDEX == 0 or _partial.exists()):
+    for _w in range(40):                     # tới 20 phút
+        if _partial.exists():
+            break
+        print(f"⏳ đợi ca 1 tạo kho chung ({_w * 30}s) — cứ để yên ...", flush=True)
+        _tm.sleep(30)
+    else:
+        print("⚠ 20 phút không thấy kho chung — đành tự tạo (hãy chắc ca 1 đang chạy).")
 _partial.mkdir(parents=True, exist_ok=True)
+# (2) lưới an toàn: gộp mọi kho sinh đôi "<tên> (1)"… về bản chính rồi xóa —
+# nhờ vậy chạy lại ô này trên MỘT phiên là tự lành + finalize được.
+for _dup in sorted(_partial.parent.glob(_partial.name + " (*")):
+    if not _dup.is_dir():
+        continue
+    _n_dup = 0
+    for _f in _dup.glob("*.json"):
+        _d = _partial / _f.name
+        if not _d.exists() or _d.stat().st_size < _f.stat().st_size:
+            shutil.copy2(_f, _d)
+            _n_dup += 1
+    shutil.rmtree(_dup, ignore_errors=True)
+    print(f"⚠ Gộp kho trùng tên '{_dup.name}': +{_n_dup} video", flush=True)
 _la = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"])
 _job_local = _la / "asr"
 if _job_local.exists():
@@ -2582,7 +2607,32 @@ _my = _vids[SHARD_INDEX::SHARD_TOTAL]
 print(f"Shard {SHARD_INDEX + 1}/{SHARD_TOTAL}: {len(_my)}/{len(_vids)} video")
 
 _partial = PROJECT / "artifacts" / "captions-dense-partial"
+# Round-52 (live 05 run 24/08): N phiên cùng mkdir một lúc → Google Drive tạo
+# NHIỀU thư mục TRÙNG TÊN (Drive cho phép trùng tên!), mỗi phiên đổ bài vào
+# một bản → không phiên nào đếm đủ, FINALIZE không bao giờ nổ. Hai lớp chống:
+# (1) chỉ ca 1 được TẠO kho — các ca sau ĐỢI thấy kho rồi mới vào;
+if not (SHARD_INDEX == 0 or _partial.exists()):
+    for _w in range(40):                     # tới 20 phút
+        if _partial.exists():
+            break
+        print(f"⏳ đợi ca 1 tạo kho chung ({_w * 30}s) — cứ để yên ...", flush=True)
+        _tm.sleep(30)
+    else:
+        print("⚠ 20 phút không thấy kho chung — đành tự tạo (hãy chắc ca 1 đang chạy).")
 _partial.mkdir(parents=True, exist_ok=True)
+# (2) lưới an toàn: gộp mọi kho sinh đôi "<tên> (1)"… về bản chính rồi xóa —
+# nhờ vậy chạy lại ô này trên MỘT phiên là tự lành + finalize được.
+for _dup in sorted(_partial.parent.glob(_partial.name + " (*")):
+    if not _dup.is_dir():
+        continue
+    _n_dup = 0
+    for _f in _dup.glob("*.json"):
+        _d = _partial / _f.name
+        if not _d.exists() or _d.stat().st_size < _f.stat().st_size:
+            shutil.copy2(_f, _d)
+            _n_dup += 1
+    shutil.rmtree(_dup, ignore_errors=True)
+    print(f"⚠ Gộp kho trùng tên '{_dup.name}': +{_n_dup} video", flush=True)
 _la = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"])
 _job_local = _la / "captions"
 if _job_local.exists():
