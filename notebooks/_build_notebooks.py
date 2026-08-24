@@ -2503,7 +2503,14 @@ for _dup in sorted(_partial.parent.glob(_partial.name + " (*")):
             _n_dup += 1
     shutil.rmtree(_dup, ignore_errors=True)
     print(f"⚠ Gộp kho trùng tên '{_dup.name}': +{_n_dup} video", flush=True)
-_la = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"])
+# Round-53 (live 05 run 24/08): CVP_PATHS__ARTIFACTS_ROOT của cell 4 vẫn trỏ
+# VÀO DRIVE → "staging local" hóa ra là artifacts/asr THẬT trên Drive: bản
+# medium bị rmtree bay mất, 3 phiên đua nhau tạo staging sinh đôi trùng tên,
+# và job còn ghi đè text_index trận đấu bằng bản nửa vời. Staging phải nằm
+# trên ĐĨA LOCAL của VM — Drive chỉ nhận kết quả qua syncer + FINALIZE.
+_la = Path("/content/artifacts")
+_la.mkdir(parents=True, exist_ok=True)
+os.environ["CVP_PATHS__ARTIFACTS_ROOT"] = str(_la)
 _job_local = _la / "asr"
 if _job_local.exists():
     shutil.rmtree(_job_local)            # xóa bản staging cũ cho sạch
@@ -2633,7 +2640,14 @@ for _dup in sorted(_partial.parent.glob(_partial.name + " (*")):
             _n_dup += 1
     shutil.rmtree(_dup, ignore_errors=True)
     print(f"⚠ Gộp kho trùng tên '{_dup.name}': +{_n_dup} video", flush=True)
-_la = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"])
+# Round-53 (live 05 run 24/08): CVP_PATHS__ARTIFACTS_ROOT của cell 4 vẫn trỏ
+# VÀO DRIVE → "staging local" hóa ra là artifacts/captions THẬT trên Drive:
+# store thật bị rmtree, N phiên đua nhau tạo staging sinh đôi trùng tên, và
+# job còn ghi đè text_index trận đấu bằng bản nửa vời. Staging phải nằm
+# trên ĐĨA LOCAL của VM — Drive chỉ nhận kết quả qua syncer + FINALIZE.
+_la = Path("/content/artifacts")
+_la.mkdir(parents=True, exist_ok=True)
+os.environ["CVP_PATHS__ARTIFACTS_ROOT"] = str(_la)
 _job_local = _la / "captions"
 if _job_local.exists():
     shutil.rmtree(_job_local)            # xóa bản staging cũ cho sạch
