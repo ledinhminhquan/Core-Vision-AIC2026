@@ -31,7 +31,11 @@ class VinternCaptioner:
         import torch
         from transformers import AutoModel
 
-        from cvp.models.hf_compat import ensure_remote_code_compat, load_tokenizer
+        from cvp.models.hf_compat import (
+            ensure_remote_code_compat,
+            load_tokenizer,
+            resilient_from_pretrained,
+        )
 
         self.settings = settings
         model_id = settings.caption.model
@@ -39,10 +43,19 @@ class VinternCaptioner:
         self.dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
         log.info("Loading captioner %s (%s)", model_id, self.device)
         ensure_remote_code_compat()
-        self.model = AutoModel.from_pretrained(
-            model_id, torch_dtype=self.dtype, trust_remote_code=True
-        ).to(self.device).eval()
-        self.tokenizer = load_tokenizer(model_id)
+
+        # Round-57 (audit): the shared HF cache on Drive FUSE can serve TORN
+        # files (live run 12 killed the ASR load that way, and the torn bytes
+        # PERSIST across reruns). ASR and SigLIP already fall back to a local
+        # re-download; the captioner was the last unguarded heavy loader —
+        # one bad cache file would crash-loop an entire 17-33h 06 session.
+        def _load(src: str):
+            model = AutoModel.from_pretrained(
+                src, torch_dtype=self.dtype, trust_remote_code=True
+            ).to(self.device).eval()
+            return model, load_tokenizer(src)
+
+        self.model, self.tokenizer = resilient_from_pretrained(_load, model_id)
 
     def caption(self, image_path: str) -> str:
         from cvp.auxindex.vintern_preprocess import load_image_tiles

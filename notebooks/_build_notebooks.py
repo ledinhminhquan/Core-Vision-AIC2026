@@ -2472,7 +2472,15 @@ def _run(*args):
     if _pp.wait() != 0:
         raise RuntimeError(f"lệnh lỗi (exit {_pp.returncode})")
 
-_vids = sorted(_q.stem for _q in (PROJECT / "data" / "map-keyframes").glob("*.csv"))
+# Round-57 (audit): danh sách video phải lấy từ bản LOCAL đã materialize + tự
+# vá (cell trước) — listing Drive FUSE có thể trả THIẾU/RỖNG (round-28), và
+# _vids ngắn sẽ khiến prune xóa nhầm bài thật + finalize giao kho thiếu bài.
+_mk_local = Path("/content/data/map-keyframes")
+_mk = _mk_local if _mk_local.is_dir() else (PROJECT / "data" / "map-keyframes")
+_vids = sorted(_q.stem for _q in _mk.glob("*.csv"))
+assert len(_vids) > 800, (
+    f"map-keyframes chỉ liệt kê {len(_vids)} video — listing bất thường, "
+    "chạy lại ô này (tuyệt đối không finalize với danh sách thiếu).")
 _my = _vids[SHARD_INDEX::SHARD_TOTAL]
 print(f"Shard {SHARD_INDEX + 1}/{SHARD_TOTAL}: {len(_my)}/{len(_vids)} video")
 
@@ -2515,25 +2523,60 @@ os.environ["CVP_PATHS__ARTIFACTS_ROOT"] = str(_la)
 # artifacts root — staging local rỗng phải kéo bản Drive về trước, không thì
 # chết ngay "Catalog missing" (di chứng của round-53).
 _drv_cat = PROJECT / "artifacts" / "catalog"
+_ensure_drive()                          # round-57: mount phải sống trước FUSE I/O
 assert (_drv_cat / "manifest.parquet").exists(), (
     "Thiếu artifacts/catalog/manifest.parquet trên Drive — chạy nb01 trước.")
-if not (_la / "catalog" / "manifest.parquet").exists():
-    shutil.copytree(_drv_cat, _la / "catalog", dirs_exist_ok=True)
-    print("catalog: staged về local")
+for _try in (1, 2, 3):                   # round-57: copy đầu phiên cũng phải lì đòn
+    try:
+        shutil.copytree(_drv_cat, _la / "catalog", dirs_exist_ok=True)
+        if (_la / "catalog" / "manifest.parquet").exists():
+            print("catalog: staged về local")
+            break
+    except OSError as _e:
+        print(f"   ⚠ copy catalog lỗi: {_e!r}")
+    _ensure_drive()
+    _tm.sleep(15)
+else:
+    raise RuntimeError("Không kéo được catalog về local sau 3 lần — chạy lại ô này.")
 _job_local = _la / "asr"
-if _job_local.exists():
-    shutil.rmtree(_job_local)            # xóa bản staging cũ cho sạch
-shutil.copytree(_partial, _job_local, dirs_exist_ok=True)   # resume xuyên phiên
+# Round-57 (audit): KHÔNG rmtree staging và KHÔNG đè file local bằng bản Drive
+# — bài local (ghi nguyên tử) là bản đáng tin nhất; sync chốt lỗi rồi chạy lại
+# ô này sẽ không mất bài nữa. Chỉ bù những file THIẾU từ kho chung.
+_job_local.mkdir(parents=True, exist_ok=True)
+for _try in (1, 2, 3):
+    try:
+        for _f in _partial.glob("*.json"):           # resume xuyên phiên
+            _d = _job_local / _f.name
+            if not _d.exists():
+                shutil.copy2(_f, _d)
+        break
+    except OSError as _e:
+        print(f"   ⚠ seed staging lỗi: {_e!r} — thử lại {_try}/3")
+        _ensure_drive()
+        _tm.sleep(15)
+else:
+    raise RuntimeError("Không seed được staging từ kho chung — chạy lại ô này.")
 _vidset = set(_vids)
 
 def _prune_staging():
     # Round-54: kho chung có thể lẫn rác sau các thao tác dọn tay trên Drive
     # web (bản trùng tên "xxx (1).json", file up nhầm chỗ…) — gạt khỏi staging
     # để store/text-index không nuốt phải video ma.
+    # Round-57 (audit): file RÁCH (phiên chết giữa lúc sync) cũng phải bị gạt
+    # — resume chỉ nhìn tên file, bản rách sẽ bị khóa vĩnh viễn vào kho trận
+    # đấu nếu để lọt; xóa để job tính lại rồi sync đè bản lành lên kho chung.
+    import json as _json
     for _p in list(_job_local.iterdir()):
-        if not (_p.is_file() and _p.suffix == ".json" and _p.stem in _vidset):
+        _ok = _p.is_file() and _p.suffix == ".json" and _p.stem in _vidset
+        if _ok:
+            try:
+                with open(_p, encoding="utf-8") as _fh:
+                    _json.load(_fh)
+            except Exception:
+                _ok = False
+        if not _ok:
             shutil.rmtree(_p, ignore_errors=True) if _p.is_dir() else _p.unlink()
-            print("   bỏ qua file lạ trong kho:", _p.name, flush=True)
+            print("   bỏ qua file lạ/rách trong kho:", _p.name, flush=True)
 
 _prune_staging()
 print(f"Resume: {len(list(_job_local.glob('*.json')))} video đã xong từ trước")
@@ -2541,9 +2584,13 @@ print(f"Resume: {len(list(_job_local.glob('*.json')))} video đã xong từ trư
 _stop_sync = False
 
 def _syncer():
+    # Round-57 (audit): daemon DriveFS có thể CHẾT giữa phiên dài (Errno 107)
+    # — syncer câm lặng sẽ âm thầm ngừng đổ bài về Drive hàng chục giờ. Giờ nó
+    # tự hồi sinh mount trước mỗi lượt và LA LỚN khi sync hỏng.
     while not _stop_sync:
         _tm.sleep(600)
         try:
+            _ensure_drive()
             _n = 0
             for _f in _job_local.glob("*.json"):
                 _d = _partial / _f.name
@@ -2552,18 +2599,29 @@ def _syncer():
                     _n += 1
             if _n:
                 print(f"SYNC {_tm.strftime('%H:%M')}: {_n} video -> Drive", flush=True)
-        except Exception:  # noqa: BLE001 — syncer lặng lẽ là chấp nhận được
-            pass
+        except Exception as _e:  # noqa: BLE001 — không được giết job vì sync
+            print(f"⚠ SYNC {_tm.strftime('%H:%M')} LỖI: {_e!r} — thử lại sau 10 phút",
+                  flush=True)
 
 threading.Thread(target=_syncer, daemon=True).start()
 os.environ["CVP_ASR__MODEL"] = "vinai/PhoWhisper-large"
 _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py", "--asr",
      "--videos", *_my)
 _stop_sync = True
-for _f in _job_local.glob("*.json"):                 # đợt sync chốt của shard
-    _d = _partial / _f.name
-    if not _d.exists() or _d.stat().st_size != _f.stat().st_size:
-        shutil.copy2(_f, _d)
+for _try in (1, 2, 3):                   # đợt sync chốt của shard — phải lì đòn
+    try:
+        _ensure_drive()                  # round-57: mount có thể đã chết giữa job
+        for _f in _job_local.glob("*.json"):
+            _d = _partial / _f.name
+            if not _d.exists() or _d.stat().st_size != _f.stat().st_size:
+                shutil.copy2(_f, _d)
+        break
+    except OSError as _e:
+        print(f"   ⚠ sync chốt lỗi: {_e!r} — thử lại {_try}/3")
+        _tm.sleep(20)
+else:
+    raise RuntimeError("Sync chốt về Drive thất bại — KHÔNG xóa runtime! "
+                       "Chạy lại ô này để đẩy nốt kết quả local lên Drive.")
 _done = {_p.stem for _p in _partial.glob("*.json")}
 _missing = [_v for _v in _vids if _v not in _done]
 print(f"Shard xong. Kho chung: {len(_vids) - len(_missing)}/{len(_vids)} video")
@@ -2574,30 +2632,123 @@ if _missing:
 # Round-54: đếm theo TÊN video (stem) — file trùng tên/lạ không thổi phồng số.
 if not _missing:
     _lock = _partial / "_finalize.lock"
+    _done_mark = _partial / "_finalize.done"
+    # Round-56: khóa phải phân biệt "đã xong" / "đang chạy" / "chết giữa chừng"
+    # — finalize crash không được để khóa mồ côi chặn vĩnh viễn.
+    # Round-57 (audit): exists→write KHÔNG nguyên tử qua FUSE (cache trễ giữa
+    # các máy) → khóa mang TOKEN riêng + xác nhận lại sau 90s + nhịp tim làm
+    # mới khóa giữa các bước dài (finalize thật có thể >2h) + ngưỡng cũ 6h.
+    import uuid as _uuid
+    _token = _uuid.uuid4().hex
+
+    def _touch_lock():
+        _lock.write_text(_token, encoding="utf-8")
+
+    _lock_fresh = False
     if _lock.exists():
-        print("Finalize đã/đang được shard khác lo — bỏ qua.")
+        try:
+            _lock_fresh = (_tm.time() - _lock.stat().st_mtime) < 6 * 3600
+        except OSError:
+            pass
+    if _done_mark.exists():
+        print("Finalize đã hoàn tất từ trước — không cần làm lại.")
+    elif _lock.exists() and _lock_fresh:
+        print("Finalize đang được phiên khác chạy (khóa <6h) — bỏ qua. Nếu chắc "
+              "chắn không phiên nào khác đang chạy: xóa _finalize.lock trong "
+              "kho chung trên Drive rồi chạy lại ô này.")
     else:
-        _lock.write_text(_tm.strftime("%Y-%m-%d %H:%M"), encoding="utf-8")
-        print("FINALIZE: rebuild BM25 + hoán đổi artifacts ...")
-        shutil.copytree(_partial, _job_local, dirs_exist_ok=True)
-        _prune_staging()
-        for _aux in ("ocr", "asr", "captions"):      # BM25 cần đủ các kho aux
-            _src = PROJECT / "artifacts" / _aux
-            if _aux != "asr" and _src.is_dir() and not (_la / _aux).exists():
-                shutil.copytree(_src, _la / _aux)
-        _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py",
-             "--text-index", "--force-text-index")
-        _drv_job = PROJECT / "artifacts" / "asr"
-        _bak = PROJECT / "artifacts" / "asr-medium-backup"
-        if _drv_job.exists() and not _bak.exists():
-            _drv_job.rename(_bak)
-            print("Đã cất bản cũ →", _bak)
-        for _d in ("asr", "text_index"):
-            _dst = PROJECT / "artifacts" / _d
-            if _dst.exists():
-                shutil.rmtree(_dst)
-            shutil.copytree(_la / _d, _dst)
-            print("   → Drive:", _dst)
+        if _lock.exists():
+            print("Khóa finalize cũ (>6h) mà chưa có dấu hoàn tất — tiếp quản chốt lại.")
+        _touch_lock()
+        print("FINALIZE: giành khóa — chờ 90s xác nhận không phiên nào giành cùng lúc ...")
+        try:
+            _tm.sleep(90)
+            _mine = False
+            try:
+                _mine = _lock.read_text(encoding="utf-8").strip() == _token
+            except OSError:
+                pass
+            if not _mine:
+                raise RuntimeError(
+                    "Phiên khác giành khóa finalize cùng lúc — phiên này NHƯỜNG "
+                    "(KHÔNG phải lỗi; theo dõi phiên kia là được).")
+            print("FINALIZE: rebuild BM25 + hoán đổi artifacts ...")
+            # Round-56: staging phải ĐẦY ĐỦ THẬT — copytree qua FUSE từng giao
+            # thiếu (863/873 live). Kéo lại vài lượt rồi tự ASR bù phần thiếu.
+            _ensure_drive()
+            _still = []
+            for _try in (1, 2, 3):
+                for _f in _partial.glob("*.json"):   # chỉ bù file THIẾU — không
+                    _d = _job_local / _f.name        # đè bản local lành bằng
+                    if not _d.exists():              # bản Drive có thể rách
+                        shutil.copy2(_f, _d)
+                _prune_staging()
+                _still = [_v for _v in _vids
+                          if not (_job_local / (_v + ".json")).is_file()]
+                if not _still:
+                    break
+                print(f"   staging thiếu {len(_still)} video (vd {_still[:3]}) — kéo lại {_try}/3 ...")
+                _tm.sleep(30)
+            if _still:
+                print(f"   tự chạy bù {len(_still)} video thiếu ...")
+                _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py", "--asr",
+                     "--videos", *_still)
+                for _v in _still:                    # trả bản bù về kho chung
+                    _f = _job_local / (_v + ".json")
+                    if _f.is_file():
+                        shutil.copy2(_f, _partial / _f.name)
+            # Round-56: kho aux nào kéo thiếu → index trận đấu âm thầm yếu đi.
+            for _aux in ("ocr", "asr", "captions"):  # BM25 cần đủ các kho aux
+                _src = PROJECT / "artifacts" / _aux
+                if _aux == "asr" or not _src.is_dir():
+                    continue
+                for _try in (1, 2, 3):
+                    shutil.copytree(_src, _la / _aux, dirs_exist_ok=True)
+                    # round-57: listing Drive có thể TRẢ THIẾU y hệt copy —
+                    # neo số cần vào danh sách video, không tin listing suông.
+                    _need = max(len(list(_src.glob("*.json"))), len(_vids))
+                    _got = len(list((_la / _aux).glob("*.json")))
+                    if _got >= _need:
+                        print(f"   staging {_aux}: {_got}/{_need} file")
+                        break
+                    print(f"   staging {_aux} thiếu ({_got}/{_need}) — thử lại {_try}/3 ...")
+                    _tm.sleep(60)
+                else:
+                    raise RuntimeError(
+                        f"Kéo kho {_aux} về máy mãi vẫn thiếu — Drive trục trặc; "
+                        "chạy lại ô này sau ít phút (khóa sẽ tự nhả).")
+            _touch_lock()                # nhịp tim khóa trước bước rebuild dài
+            _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py",
+                 "--text-index", "--force-text-index")
+            _ensure_drive()              # round-57: mount phải sống trước hoán đổi
+            _touch_lock()
+            _drv_job = PROJECT / "artifacts" / "asr"
+            _bak = PROJECT / "artifacts" / "asr-medium-backup"
+            if _drv_job.exists() and not _bak.exists():
+                _drv_job.rename(_bak)
+                print("Đã cất bản cũ →", _bak)
+            for _d in ("asr", "text_index"):
+                _dst = PROJECT / "artifacts" / _d
+                if _dst.exists():
+                    shutil.rmtree(_dst)
+                shutil.copytree(_la / _d, _dst)
+                # Round-56: upload cũng đếm lại — copy bù nếu Drive nuốt thiếu
+                _n_src = sum(1 for _q in (_la / _d).rglob("*") if _q.is_file())
+                _n_dst = sum(1 for _q in _dst.rglob("*") if _q.is_file())
+                if _n_dst < _n_src:
+                    shutil.copytree(_la / _d, _dst, dirs_exist_ok=True)
+                    _n_dst = sum(1 for _q in _dst.rglob("*") if _q.is_file())
+                print(f"   → Drive: {_dst} ({_n_dst}/{_n_src} file)")
+            _done_mark.write_text(_tm.strftime("%Y-%m-%d %H:%M"), encoding="utf-8")
+        except BaseException:
+            # round-57: chỉ nhả khóa nếu vẫn là khóa CỦA MÌNH — thua cuộc đua
+            # thì tuyệt đối không được gỡ khóa của phiên thắng.
+            try:
+                if _lock.read_text(encoding="utf-8").strip() == _token:
+                    _lock.unlink(missing_ok=True)   # nhả khóa để chạy lại được ngay
+            except OSError:
+                pass
+            raise
         print("XONG TOÀN BỘ — artifacts đã nâng cấp. Đo lại bằng nb04 (L2).")
 else:
     print("Kho chưa đủ — chờ các shard khác (hoặc chạy lại phiên để nối tiếp).")
@@ -2636,7 +2787,15 @@ def _run(*args):
     if _pp.wait() != 0:
         raise RuntimeError(f"lệnh lỗi (exit {_pp.returncode})")
 
-_vids = sorted(_q.stem for _q in (PROJECT / "data" / "map-keyframes").glob("*.csv"))
+# Round-57 (audit): danh sách video phải lấy từ bản LOCAL đã materialize + tự
+# vá (cell trước) — listing Drive FUSE có thể trả THIẾU/RỖNG (round-28), và
+# _vids ngắn sẽ khiến prune xóa nhầm bài thật + finalize giao kho thiếu bài.
+_mk_local = Path("/content/data/map-keyframes")
+_mk = _mk_local if _mk_local.is_dir() else (PROJECT / "data" / "map-keyframes")
+_vids = sorted(_q.stem for _q in _mk.glob("*.csv"))
+assert len(_vids) > 800, (
+    f"map-keyframes chỉ liệt kê {len(_vids)} video — listing bất thường, "
+    "chạy lại ô này (tuyệt đối không finalize với danh sách thiếu).")
 _my = _vids[SHARD_INDEX::SHARD_TOTAL]
 print(f"Shard {SHARD_INDEX + 1}/{SHARD_TOTAL}: {len(_my)}/{len(_vids)} video")
 
@@ -2679,25 +2838,60 @@ os.environ["CVP_PATHS__ARTIFACTS_ROOT"] = str(_la)
 # artifacts root — staging local rỗng phải kéo bản Drive về trước, không thì
 # chết ngay "Catalog missing" (di chứng của round-53).
 _drv_cat = PROJECT / "artifacts" / "catalog"
+_ensure_drive()                          # round-57: mount phải sống trước FUSE I/O
 assert (_drv_cat / "manifest.parquet").exists(), (
     "Thiếu artifacts/catalog/manifest.parquet trên Drive — chạy nb01 trước.")
-if not (_la / "catalog" / "manifest.parquet").exists():
-    shutil.copytree(_drv_cat, _la / "catalog", dirs_exist_ok=True)
-    print("catalog: staged về local")
+for _try in (1, 2, 3):                   # round-57: copy đầu phiên cũng phải lì đòn
+    try:
+        shutil.copytree(_drv_cat, _la / "catalog", dirs_exist_ok=True)
+        if (_la / "catalog" / "manifest.parquet").exists():
+            print("catalog: staged về local")
+            break
+    except OSError as _e:
+        print(f"   ⚠ copy catalog lỗi: {_e!r}")
+    _ensure_drive()
+    _tm.sleep(15)
+else:
+    raise RuntimeError("Không kéo được catalog về local sau 3 lần — chạy lại ô này.")
 _job_local = _la / "captions"
-if _job_local.exists():
-    shutil.rmtree(_job_local)            # xóa bản staging cũ cho sạch
-shutil.copytree(_partial, _job_local, dirs_exist_ok=True)   # resume xuyên phiên
+# Round-57 (audit): KHÔNG rmtree staging và KHÔNG đè file local bằng bản Drive
+# — bài local (ghi nguyên tử) là bản đáng tin nhất; sync chốt lỗi rồi chạy lại
+# ô này sẽ không mất bài nữa. Chỉ bù những file THIẾU từ kho chung.
+_job_local.mkdir(parents=True, exist_ok=True)
+for _try in (1, 2, 3):
+    try:
+        for _f in _partial.glob("*.json"):           # resume xuyên phiên
+            _d = _job_local / _f.name
+            if not _d.exists():
+                shutil.copy2(_f, _d)
+        break
+    except OSError as _e:
+        print(f"   ⚠ seed staging lỗi: {_e!r} — thử lại {_try}/3")
+        _ensure_drive()
+        _tm.sleep(15)
+else:
+    raise RuntimeError("Không seed được staging từ kho chung — chạy lại ô này.")
 _vidset = set(_vids)
 
 def _prune_staging():
     # Round-54: kho chung có thể lẫn rác sau các thao tác dọn tay trên Drive
     # web (bản trùng tên "xxx (1).json", file up nhầm chỗ…) — gạt khỏi staging
     # để store/text-index không nuốt phải video ma.
+    # Round-57 (audit): file RÁCH (phiên chết giữa lúc sync) cũng phải bị gạt
+    # — resume chỉ nhìn tên file, bản rách sẽ bị khóa vĩnh viễn vào kho trận
+    # đấu nếu để lọt; xóa để job tính lại rồi sync đè bản lành lên kho chung.
+    import json as _json
     for _p in list(_job_local.iterdir()):
-        if not (_p.is_file() and _p.suffix == ".json" and _p.stem in _vidset):
+        _ok = _p.is_file() and _p.suffix == ".json" and _p.stem in _vidset
+        if _ok:
+            try:
+                with open(_p, encoding="utf-8") as _fh:
+                    _json.load(_fh)
+            except Exception:
+                _ok = False
+        if not _ok:
             shutil.rmtree(_p, ignore_errors=True) if _p.is_dir() else _p.unlink()
-            print("   bỏ qua file lạ trong kho:", _p.name, flush=True)
+            print("   bỏ qua file lạ/rách trong kho:", _p.name, flush=True)
 
 _prune_staging()
 print(f"Resume: {len(list(_job_local.glob('*.json')))} video đã xong từ trước")
@@ -2705,9 +2899,13 @@ print(f"Resume: {len(list(_job_local.glob('*.json')))} video đã xong từ trư
 _stop_sync = False
 
 def _syncer():
+    # Round-57 (audit): daemon DriveFS có thể CHẾT giữa phiên dài (Errno 107)
+    # — syncer câm lặng sẽ âm thầm ngừng đổ bài về Drive hàng chục giờ. Giờ nó
+    # tự hồi sinh mount trước mỗi lượt và LA LỚN khi sync hỏng.
     while not _stop_sync:
         _tm.sleep(600)
         try:
+            _ensure_drive()
             _n = 0
             for _f in _job_local.glob("*.json"):
                 _d = _partial / _f.name
@@ -2716,18 +2914,29 @@ def _syncer():
                     _n += 1
             if _n:
                 print(f"SYNC {_tm.strftime('%H:%M')}: {_n} video -> Drive", flush=True)
-        except Exception:  # noqa: BLE001 — syncer lặng lẽ là chấp nhận được
-            pass
+        except Exception as _e:  # noqa: BLE001 — không được giết job vì sync
+            print(f"⚠ SYNC {_tm.strftime('%H:%M')} LỖI: {_e!r} — thử lại sau 10 phút",
+                  flush=True)
 
 threading.Thread(target=_syncer, daemon=True).start()
 # stride 1: caption MỌI keyframe (kho cũ stride 4 chỉ phủ ~1/4)
 _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py", "--captions", "--caption-stride", "1",
      "--videos", *_my)
 _stop_sync = True
-for _f in _job_local.glob("*.json"):                 # đợt sync chốt của shard
-    _d = _partial / _f.name
-    if not _d.exists() or _d.stat().st_size != _f.stat().st_size:
-        shutil.copy2(_f, _d)
+for _try in (1, 2, 3):                   # đợt sync chốt của shard — phải lì đòn
+    try:
+        _ensure_drive()                  # round-57: mount có thể đã chết giữa job
+        for _f in _job_local.glob("*.json"):
+            _d = _partial / _f.name
+            if not _d.exists() or _d.stat().st_size != _f.stat().st_size:
+                shutil.copy2(_f, _d)
+        break
+    except OSError as _e:
+        print(f"   ⚠ sync chốt lỗi: {_e!r} — thử lại {_try}/3")
+        _tm.sleep(20)
+else:
+    raise RuntimeError("Sync chốt về Drive thất bại — KHÔNG xóa runtime! "
+                       "Chạy lại ô này để đẩy nốt kết quả local lên Drive.")
 _done = {_p.stem for _p in _partial.glob("*.json")}
 _missing = [_v for _v in _vids if _v not in _done]
 print(f"Shard xong. Kho chung: {len(_vids) - len(_missing)}/{len(_vids)} video")
@@ -2738,30 +2947,124 @@ if _missing:
 # Round-54: đếm theo TÊN video (stem) — file trùng tên/lạ không thổi phồng số.
 if not _missing:
     _lock = _partial / "_finalize.lock"
+    _done_mark = _partial / "_finalize.done"
+    # Round-56: khóa phải phân biệt "đã xong" / "đang chạy" / "chết giữa chừng"
+    # — finalize crash không được để khóa mồ côi chặn vĩnh viễn.
+    # Round-57 (audit): exists→write KHÔNG nguyên tử qua FUSE (cache trễ giữa
+    # các máy) → khóa mang TOKEN riêng + xác nhận lại sau 90s + nhịp tim làm
+    # mới khóa giữa các bước dài (finalize thật có thể >2h) + ngưỡng cũ 6h.
+    import uuid as _uuid
+    _token = _uuid.uuid4().hex
+
+    def _touch_lock():
+        _lock.write_text(_token, encoding="utf-8")
+
+    _lock_fresh = False
     if _lock.exists():
-        print("Finalize đã/đang được shard khác lo — bỏ qua.")
+        try:
+            _lock_fresh = (_tm.time() - _lock.stat().st_mtime) < 6 * 3600
+        except OSError:
+            pass
+    if _done_mark.exists():
+        print("Finalize đã hoàn tất từ trước — không cần làm lại.")
+    elif _lock.exists() and _lock_fresh:
+        print("Finalize đang được phiên khác chạy (khóa <6h) — bỏ qua. Nếu chắc "
+              "chắn không phiên nào khác đang chạy: xóa _finalize.lock trong "
+              "kho chung trên Drive rồi chạy lại ô này.")
     else:
-        _lock.write_text(_tm.strftime("%Y-%m-%d %H:%M"), encoding="utf-8")
-        print("FINALIZE: rebuild BM25 + hoán đổi artifacts ...")
-        shutil.copytree(_partial, _job_local, dirs_exist_ok=True)
-        _prune_staging()
-        for _aux in ("ocr", "asr", "captions"):      # BM25 cần đủ các kho aux
-            _src = PROJECT / "artifacts" / _aux
-            if _aux != "captions" and _src.is_dir() and not (_la / _aux).exists():
-                shutil.copytree(_src, _la / _aux)
-        _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py",
-             "--text-index", "--force-text-index")
-        _drv_job = PROJECT / "artifacts" / "captions"
-        _bak = PROJECT / "artifacts" / "captions-stride4-backup"
-        if _drv_job.exists() and not _bak.exists():
-            _drv_job.rename(_bak)
-            print("Đã cất bản cũ →", _bak)
-        for _d in ("captions", "text_index"):
-            _dst = PROJECT / "artifacts" / _d
-            if _dst.exists():
-                shutil.rmtree(_dst)
-            shutil.copytree(_la / _d, _dst)
-            print("   → Drive:", _dst)
+        if _lock.exists():
+            print("Khóa finalize cũ (>6h) mà chưa có dấu hoàn tất — tiếp quản chốt lại.")
+        _touch_lock()
+        print("FINALIZE: giành khóa — chờ 90s xác nhận không phiên nào giành cùng lúc ...")
+        try:
+            _tm.sleep(90)
+            _mine = False
+            try:
+                _mine = _lock.read_text(encoding="utf-8").strip() == _token
+            except OSError:
+                pass
+            if not _mine:
+                raise RuntimeError(
+                    "Phiên khác giành khóa finalize cùng lúc — phiên này NHƯỜNG "
+                    "(KHÔNG phải lỗi; theo dõi phiên kia là được).")
+            print("FINALIZE: rebuild BM25 + hoán đổi artifacts ...")
+            # Round-56: staging phải ĐẦY ĐỦ THẬT — copytree qua FUSE từng giao
+            # thiếu (863/873 live). Kéo lại vài lượt rồi tự caption bù phần thiếu.
+            _ensure_drive()
+            _still = []
+            for _try in (1, 2, 3):
+                for _f in _partial.glob("*.json"):   # chỉ bù file THIẾU — không
+                    _d = _job_local / _f.name        # đè bản local lành bằng
+                    if not _d.exists():              # bản Drive có thể rách
+                        shutil.copy2(_f, _d)
+                _prune_staging()
+                _still = [_v for _v in _vids
+                          if not (_job_local / (_v + ".json")).is_file()]
+                if not _still:
+                    break
+                print(f"   staging thiếu {len(_still)} video (vd {_still[:3]}) — kéo lại {_try}/3 ...")
+                _tm.sleep(30)
+            if _still:
+                print(f"   tự chạy bù {len(_still)} video thiếu ...")
+                _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py",
+                     "--captions", "--caption-stride", "1",
+                     "--videos", *_still)
+                for _v in _still:                    # trả bản bù về kho chung
+                    _f = _job_local / (_v + ".json")
+                    if _f.is_file():
+                        shutil.copy2(_f, _partial / _f.name)
+            # Round-56: kho aux nào kéo thiếu → index trận đấu âm thầm yếu đi.
+            for _aux in ("ocr", "asr", "captions"):  # BM25 cần đủ các kho aux
+                _src = PROJECT / "artifacts" / _aux
+                if _aux == "captions" or not _src.is_dir():
+                    continue
+                for _try in (1, 2, 3):
+                    shutil.copytree(_src, _la / _aux, dirs_exist_ok=True)
+                    # round-57: listing Drive có thể TRẢ THIẾU y hệt copy —
+                    # neo số cần vào danh sách video, không tin listing suông.
+                    _need = max(len(list(_src.glob("*.json"))), len(_vids))
+                    _got = len(list((_la / _aux).glob("*.json")))
+                    if _got >= _need:
+                        print(f"   staging {_aux}: {_got}/{_need} file")
+                        break
+                    print(f"   staging {_aux} thiếu ({_got}/{_need}) — thử lại {_try}/3 ...")
+                    _tm.sleep(60)
+                else:
+                    raise RuntimeError(
+                        f"Kéo kho {_aux} về máy mãi vẫn thiếu — Drive trục trặc; "
+                        "chạy lại ô này sau ít phút (khóa sẽ tự nhả).")
+            _touch_lock()                # nhịp tim khóa trước bước rebuild dài
+            _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py",
+                 "--text-index", "--force-text-index")
+            _ensure_drive()              # round-57: mount phải sống trước hoán đổi
+            _touch_lock()
+            _drv_job = PROJECT / "artifacts" / "captions"
+            _bak = PROJECT / "artifacts" / "captions-stride4-backup"
+            if _drv_job.exists() and not _bak.exists():
+                _drv_job.rename(_bak)
+                print("Đã cất bản cũ →", _bak)
+            for _d in ("captions", "text_index"):
+                _dst = PROJECT / "artifacts" / _d
+                if _dst.exists():
+                    shutil.rmtree(_dst)
+                shutil.copytree(_la / _d, _dst)
+                # Round-56: upload cũng đếm lại — copy bù nếu Drive nuốt thiếu
+                _n_src = sum(1 for _q in (_la / _d).rglob("*") if _q.is_file())
+                _n_dst = sum(1 for _q in _dst.rglob("*") if _q.is_file())
+                if _n_dst < _n_src:
+                    shutil.copytree(_la / _d, _dst, dirs_exist_ok=True)
+                    _n_dst = sum(1 for _q in _dst.rglob("*") if _q.is_file())
+                print(f"   → Drive: {_dst} ({_n_dst}/{_n_src} file)")
+            _done_mark.write_text(_tm.strftime("%Y-%m-%d %H:%M"), encoding="utf-8")
+        except BaseException:
+            # round-57: chỉ nhả khóa nếu vẫn là khóa CỦA MÌNH — thua cuộc đua
+            # thì tuyệt đối không được gỡ khóa của phiên thắng.
+            try:
+                if _lock.read_text(encoding="utf-8").strip() == _token:
+                    _lock.unlink(missing_ok=True)   # nhả khóa để chạy lại được ngay
+            except OSError:
+                pass
+            raise
         print("XONG TOÀN BỘ — artifacts đã nâng cấp. Đo lại bằng nb04 (L2).")
 else:
     print("Kho chưa đủ — chờ các shard khác (hoặc chạy lại phiên để nối tiếp).")

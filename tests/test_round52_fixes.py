@@ -44,8 +44,9 @@ def test_r52_twin_store_merge_before_seed():
         assert 'glob(_partial.name + " (*")' in frag
         assert "Gộp kho trùng tên" in frag
         # merge must precede the resume seed so the staging copy gets the UNION
-        assert frag.index("Gộp kho trùng tên") < frag.index(
-            "copytree(_partial, _job_local")
+        # (round-57 turned the seed copytree into a fill-missing loop — anchor
+        # on its comment marker instead)
+        assert frag.index("Gộp kho trùng tên") < frag.index("resume xuyên phiên")
 
 
 def test_r52_baked_shards_keep_gate_literal():

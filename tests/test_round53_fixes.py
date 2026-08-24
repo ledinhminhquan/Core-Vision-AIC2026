@@ -51,7 +51,9 @@ def test_r53_repoint_happens_before_the_build_job():
         frag = _frag(start, end)
         repoint = frag.index('CVP_PATHS__ARTIFACTS_ROOT"] = str(_la)')
         assert repoint < frag.index("03_build_aux_indexes.py")
-        assert repoint < frag.index("if _job_local.exists():")
+        # r57 replaced the rmtree+copytree seed with a fill-missing loop; the
+        # invariant stands: staging is created only after the local repoint.
+        assert repoint < frag.index("_job_local.mkdir")
 
 
 def test_r53_generated_shards_carry_local_staging():
