@@ -2515,6 +2515,18 @@ _job_local = _la / "asr"
 if _job_local.exists():
     shutil.rmtree(_job_local)            # xóa bản staging cũ cho sạch
 shutil.copytree(_partial, _job_local, dirs_exist_ok=True)   # resume xuyên phiên
+_vidset = set(_vids)
+
+def _prune_staging():
+    # Round-54: kho chung có thể lẫn rác sau các thao tác dọn tay trên Drive
+    # web (bản trùng tên "xxx (1).json", file up nhầm chỗ…) — gạt khỏi staging
+    # để store/text-index không nuốt phải video ma.
+    for _p in list(_job_local.iterdir()):
+        if not (_p.is_file() and _p.suffix == ".json" and _p.stem in _vidset):
+            shutil.rmtree(_p, ignore_errors=True) if _p.is_dir() else _p.unlink()
+            print("   bỏ qua file lạ trong kho:", _p.name, flush=True)
+
+_prune_staging()
 print(f"Resume: {len(list(_job_local.glob('*.json')))} video đã xong từ trước")
 
 _stop_sync = False
@@ -2543,10 +2555,15 @@ for _f in _job_local.glob("*.json"):                 # đợt sync chốt của 
     _d = _partial / _f.name
     if not _d.exists() or _d.stat().st_size != _f.stat().st_size:
         shutil.copy2(_f, _d)
-print(f"Shard xong. Kho chung: {len(list(_partial.glob('*.json')))}/{len(_vids)} video")
+_done = {_p.stem for _p in _partial.glob("*.json")}
+_missing = [_v for _v in _vids if _v not in _done]
+print(f"Shard xong. Kho chung: {len(_vids) - len(_missing)}/{len(_vids)} video")
+if _missing:
+    print(f"   còn thiếu (vd): {_missing[:5]}")
 
 # ── FINALIZE: shard nào thấy kho đủ sẽ chốt hạ (có khóa chống chạy đôi) ──
-if len(list(_partial.glob("*.json"))) >= len(_vids):
+# Round-54: đếm theo TÊN video (stem) — file trùng tên/lạ không thổi phồng số.
+if not _missing:
     _lock = _partial / "_finalize.lock"
     if _lock.exists():
         print("Finalize đã/đang được shard khác lo — bỏ qua.")
@@ -2554,6 +2571,7 @@ if len(list(_partial.glob("*.json"))) >= len(_vids):
         _lock.write_text(_tm.strftime("%Y-%m-%d %H:%M"), encoding="utf-8")
         print("FINALIZE: rebuild BM25 + hoán đổi artifacts ...")
         shutil.copytree(_partial, _job_local, dirs_exist_ok=True)
+        _prune_staging()
         for _aux in ("ocr", "asr", "captions"):      # BM25 cần đủ các kho aux
             _src = PROJECT / "artifacts" / _aux
             if _aux != "asr" and _src.is_dir() and not (_la / _aux).exists():
@@ -2652,6 +2670,18 @@ _job_local = _la / "captions"
 if _job_local.exists():
     shutil.rmtree(_job_local)            # xóa bản staging cũ cho sạch
 shutil.copytree(_partial, _job_local, dirs_exist_ok=True)   # resume xuyên phiên
+_vidset = set(_vids)
+
+def _prune_staging():
+    # Round-54: kho chung có thể lẫn rác sau các thao tác dọn tay trên Drive
+    # web (bản trùng tên "xxx (1).json", file up nhầm chỗ…) — gạt khỏi staging
+    # để store/text-index không nuốt phải video ma.
+    for _p in list(_job_local.iterdir()):
+        if not (_p.is_file() and _p.suffix == ".json" and _p.stem in _vidset):
+            shutil.rmtree(_p, ignore_errors=True) if _p.is_dir() else _p.unlink()
+            print("   bỏ qua file lạ trong kho:", _p.name, flush=True)
+
+_prune_staging()
 print(f"Resume: {len(list(_job_local.glob('*.json')))} video đã xong từ trước")
 
 _stop_sync = False
@@ -2680,10 +2710,15 @@ for _f in _job_local.glob("*.json"):                 # đợt sync chốt của 
     _d = _partial / _f.name
     if not _d.exists() or _d.stat().st_size != _f.stat().st_size:
         shutil.copy2(_f, _d)
-print(f"Shard xong. Kho chung: {len(list(_partial.glob('*.json')))}/{len(_vids)} video")
+_done = {_p.stem for _p in _partial.glob("*.json")}
+_missing = [_v for _v in _vids if _v not in _done]
+print(f"Shard xong. Kho chung: {len(_vids) - len(_missing)}/{len(_vids)} video")
+if _missing:
+    print(f"   còn thiếu (vd): {_missing[:5]}")
 
 # ── FINALIZE: shard nào thấy kho đủ sẽ chốt hạ (có khóa chống chạy đôi) ──
-if len(list(_partial.glob("*.json"))) >= len(_vids):
+# Round-54: đếm theo TÊN video (stem) — file trùng tên/lạ không thổi phồng số.
+if not _missing:
     _lock = _partial / "_finalize.lock"
     if _lock.exists():
         print("Finalize đã/đang được shard khác lo — bỏ qua.")
@@ -2691,6 +2726,7 @@ if len(list(_partial.glob("*.json"))) >= len(_vids):
         _lock.write_text(_tm.strftime("%Y-%m-%d %H:%M"), encoding="utf-8")
         print("FINALIZE: rebuild BM25 + hoán đổi artifacts ...")
         shutil.copytree(_partial, _job_local, dirs_exist_ok=True)
+        _prune_staging()
         for _aux in ("ocr", "asr", "captions"):      # BM25 cần đủ các kho aux
             _src = PROJECT / "artifacts" / _aux
             if _aux != "captions" and _src.is_dir() and not (_la / _aux).exists():
