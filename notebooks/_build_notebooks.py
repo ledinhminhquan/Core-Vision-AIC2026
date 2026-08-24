@@ -2511,6 +2511,15 @@ for _dup in sorted(_partial.parent.glob(_partial.name + " (*")):
 _la = Path("/content/artifacts")
 _la.mkdir(parents=True, exist_ok=True)
 os.environ["CVP_PATHS__ARTIFACTS_ROOT"] = str(_la)
+# Round-55 (live 05a run 24/08): script aux ĐỌC catalog/manifest.parquet từ
+# artifacts root — staging local rỗng phải kéo bản Drive về trước, không thì
+# chết ngay "Catalog missing" (di chứng của round-53).
+_drv_cat = PROJECT / "artifacts" / "catalog"
+assert (_drv_cat / "manifest.parquet").exists(), (
+    "Thiếu artifacts/catalog/manifest.parquet trên Drive — chạy nb01 trước.")
+if not (_la / "catalog" / "manifest.parquet").exists():
+    shutil.copytree(_drv_cat, _la / "catalog", dirs_exist_ok=True)
+    print("catalog: staged về local")
 _job_local = _la / "asr"
 if _job_local.exists():
     shutil.rmtree(_job_local)            # xóa bản staging cũ cho sạch
@@ -2666,6 +2675,15 @@ for _dup in sorted(_partial.parent.glob(_partial.name + " (*")):
 _la = Path("/content/artifacts")
 _la.mkdir(parents=True, exist_ok=True)
 os.environ["CVP_PATHS__ARTIFACTS_ROOT"] = str(_la)
+# Round-55 (live 05a run 24/08): script aux ĐỌC catalog/manifest.parquet từ
+# artifacts root — staging local rỗng phải kéo bản Drive về trước, không thì
+# chết ngay "Catalog missing" (di chứng của round-53).
+_drv_cat = PROJECT / "artifacts" / "catalog"
+assert (_drv_cat / "manifest.parquet").exists(), (
+    "Thiếu artifacts/catalog/manifest.parquet trên Drive — chạy nb01 trước.")
+if not (_la / "catalog" / "manifest.parquet").exists():
+    shutil.copytree(_drv_cat, _la / "catalog", dirs_exist_ok=True)
+    print("catalog: staged về local")
 _job_local = _la / "captions"
 if _job_local.exists():
     shutil.rmtree(_job_local)            # xóa bản staging cũ cho sạch
