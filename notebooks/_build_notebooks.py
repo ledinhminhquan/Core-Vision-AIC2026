@@ -2597,8 +2597,15 @@ def _syncer():
                 if not _d.exists() or _d.stat().st_size != _f.stat().st_size:
                     shutil.copy2(_f, _d)
                     _n += 1
-            if _n:
-                print(f"SYNC {_tm.strftime('%H:%M')}: {_n} video -> Drive", flush=True)
+            _p_new = 0
+            for _f in _partial.glob("*.json"):   # round-58: KÉO chiều về — học
+                _d = _job_local / _f.name        # ngay bài các ca khác vừa xong
+                if not _d.exists():              # để job tự skip, không trùng việc
+                    shutil.copy2(_f, _d)
+                    _p_new += 1
+            if _n or _p_new:
+                print(f"SYNC {_tm.strftime('%H:%M')}: đẩy {_n} / kéo {_p_new} video",
+                      flush=True)
         except Exception as _e:  # noqa: BLE001 — không được giết job vì sync
             print(f"⚠ SYNC {_tm.strftime('%H:%M')} LỖI: {_e!r} — thử lại sau 10 phút",
                   flush=True)
@@ -2912,8 +2919,15 @@ def _syncer():
                 if not _d.exists() or _d.stat().st_size != _f.stat().st_size:
                     shutil.copy2(_f, _d)
                     _n += 1
-            if _n:
-                print(f"SYNC {_tm.strftime('%H:%M')}: {_n} video -> Drive", flush=True)
+            _p_new = 0
+            for _f in _partial.glob("*.json"):   # round-58: KÉO chiều về — học
+                _d = _job_local / _f.name        # ngay bài các ca khác vừa xong
+                if not _d.exists():              # để job tự skip, không trùng việc
+                    shutil.copy2(_f, _d)
+                    _p_new += 1
+            if _n or _p_new:
+                print(f"SYNC {_tm.strftime('%H:%M')}: đẩy {_n} / kéo {_p_new} video",
+                      flush=True)
         except Exception as _e:  # noqa: BLE001 — không được giết job vì sync
             print(f"⚠ SYNC {_tm.strftime('%H:%M')} LỖI: {_e!r} — thử lại sau 10 phút",
                   flush=True)
@@ -3070,6 +3084,16 @@ else:
     print("Kho chưa đủ — chờ các shard khác (hoặc chạy lại phiên để nối tiếp).")
 '''
 
+NB6D_TITLE = r'''
+# 🧹 Core Vision Perfect V1 — 06d · Captions NGƯỜI QUÉT DỌN (phiên thứ 4 tùy chọn)
+
+Chạy SONG SONG với 06a/b/c: đi NGƯỢC từ cuối danh sách, mỗi lượt nhận một mẻ
+nhỏ những video CHƯA AI làm; giữa các mẻ tự làm mới cái nhìn từ kho chung nên
+gần như không bao giờ trùng việc với 3 ca xuôi. Bốn mũi khoan gặp nhau ở giữa
+là cả gia đình về đích. Cùng kho chung, cùng khóa finalize, cùng resume — an
+toàn y hệt các ca kia; mở bất cứ lúc nào SAU khi kho chung đã tồn tại.
+'''
+
 
 def main() -> None:
     write_nb("01_build_artifacts_colab.ipynb", [
@@ -3142,6 +3166,73 @@ def main() -> None:
                 code(_src),
                 code(LAB_KEEPALIVE),
             ])
+    # Round-58: 06d "người quét dọn" — phiên thứ 4 TÙY CHỌN cho gia đình 06.
+    # Đi NGƯỢC danh sách theo mẻ 12 video CHƯA AI làm, làm mới cái nhìn từ kho
+    # chung giữa các mẻ (cộng hưởng với chiều KÉO mới trong syncer) → không
+    # trùng việc với 3 ca xuôi; bốn mũi khoan gặp nhau ở giữa là xong sớm.
+    _d_run_old = '''threading.Thread(target=_syncer, daemon=True).start()
+# stride 1: caption MỌI keyframe (kho cũ stride 4 chỉ phủ ~1/4)
+_run(REPO_DIR / "scripts" / "03_build_aux_indexes.py", "--captions", "--caption-stride", "1",
+     "--videos", *_my)
+_stop_sync = True'''
+    _d_run_new = '''threading.Thread(target=_syncer, daemon=True).start()
+# ── Round-58: vòng quét NGƯỢC — mỗi mẻ 12 video CHƯA AI làm ──
+while True:
+    try:
+        _ensure_drive()
+        for _f in _partial.glob("*.json"):       # làm mới cái nhìn từ kho chung
+            _d = _job_local / _f.name
+            if not _d.exists():
+                shutil.copy2(_f, _d)
+        _prune_staging()
+    except OSError as _e:
+        print(f"⚠ làm mới kho lỗi: {_e!r} — thử lại sau 30s", flush=True)
+        _tm.sleep(30)
+        continue
+    _todo = [_v for _v in reversed(_vids)
+             if not (_job_local / (_v + ".json")).is_file()]
+    if not _todo:
+        print("🧹 Kho đã phủ kín — người quét dọn hết việc.", flush=True)
+        break
+    _batch = _todo[:12]
+    print(f"🧹 còn {len(_todo)} video thiếu — nhận mẻ {len(_batch)}: "
+          f"{_batch[0]} … {_batch[-1]}", flush=True)
+    _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py",
+         "--captions", "--caption-stride", "1", "--videos", *_batch)
+    try:
+        _ensure_drive()
+        for _v in _batch:                        # đẩy NGAY mẻ vừa xong
+            _f = _job_local / (_v + ".json")
+            if _f.is_file():
+                _d = _partial / _f.name
+                if not _d.exists() or _d.stat().st_size != _f.stat().st_size:
+                    shutil.copy2(_f, _d)
+    except OSError:
+        pass                                     # syncer 10 phút sẽ đẩy bù
+_stop_sync = True'''
+    _d_src = NB6_SWEEP
+    for _old, _new in (
+        ("# ── ⚒ Captions Vintern DÀY — stride 1, mọi keyframe (shard song song) ──",
+         "# ── 🧹 Captions Vintern DÀY — NGƯỜI QUÉT DỌN (phiên thứ 4, đi ngược) ──"),
+        ("SHARD_INDEX = 0\nSHARD_TOTAL = 1",
+         "SHARD_INDEX = 3                # quét dọn: KHÔNG BAO GIỜ tạo kho chung\nSHARD_TOTAL = 4"),
+        ('_my = _vids[SHARD_INDEX::SHARD_TOTAL]\n'
+         'print(f"Shard {SHARD_INDEX + 1}/{SHARD_TOTAL}: {len(_my)}/{len(_vids)} video")',
+         'print(f"Người quét dọn: phủ nốt phần thiếu của {len(_vids)} video (đi ngược từ cuối)")'),
+        (_d_run_old, _d_run_new),
+    ):
+        assert _old in _d_src, f"NB6D surgery mất mốc: {_old[:50]!r}"
+        _d_src = _d_src.replace(_old, _new)
+    write_nb("06d_caption_dense_sweeper.ipynb", [
+        md(NB6D_TITLE),
+        code(CELL_PARAMS),
+        code(CELL_MOUNT),
+        code(CELL_REPO_DEPS),
+        code(CELL_ENV_GPU),
+        code(NB1_LOCAL_COPY),
+        code(_d_src),
+        code(LAB_KEEPALIVE),
+    ])
     write_nb("02_train_vi_encoder_H100.ipynb", [
         md(NB2_TITLE),
         code(CELL_PARAMS),
