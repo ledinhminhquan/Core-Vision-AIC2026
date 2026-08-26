@@ -49,21 +49,23 @@ class _PaddleEngine:
     def __init__(self, settings: Settings):
         from paddleocr import PaddleOCR
 
-        try:  # 2.x
-            self.ocr = PaddleOCR(use_angle_cls=True, lang="vi", show_log=False)
-        except TypeError:  # 3.x dropped show_log
+        # Round-67 (live 07a): paddleocr 3.x rejects unknown kwargs with
+        # ValueError ("Unknown argument: show_log"), NOT TypeError — the old
+        # 2.x-first chain never reached its 3.x branch and every init died.
+        # Try the 3.x signature FIRST (the 07 notebooks pin >=3.0,<4) and
+        # catch BOTH exception types at every step.
+        try:  # 3.x — doc-preprocessing off (round-60): useless for TV
+            # keyframes and it multiplies per-frame latency across ~177k frames
+            self.ocr = PaddleOCR(
+                lang="vi",
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+                use_textline_orientation=False,
+            )
+        except (TypeError, ValueError):  # 2.x signature
             try:
-                # Round-60 (audit): 3.x defaults switch ON document-preprocessing
-                # (orientation classify + unwarping + textline orientation) —
-                # useless for fixed-orientation TV keyframes and it multiplies
-                # per-frame latency across ~177k frames. Turn them off.
-                self.ocr = PaddleOCR(
-                    lang="vi",
-                    use_doc_orientation_classify=False,
-                    use_doc_unwarping=False,
-                    use_textline_orientation=False,
-                )
-            except TypeError:  # future API drift — fall back to bare defaults
+                self.ocr = PaddleOCR(use_angle_cls=True, lang="vi", show_log=False)
+            except (TypeError, ValueError):  # any other drift — bare defaults
                 self.ocr = PaddleOCR(lang="vi")
         self.min_conf = settings.ocr.min_confidence
 
