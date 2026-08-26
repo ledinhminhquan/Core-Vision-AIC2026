@@ -3094,6 +3094,16 @@ là cả gia đình về đích. Cùng kho chung, cùng khóa finalize, cùng re
 toàn y hệt các ca kia; mở bất cứ lúc nào SAU khi kho chung đã tồn tại.
 '''
 
+NB7_TITLE = r'''
+# 🔎 Core Vision Perfect V1 — 07 · OCR PaddleOCR (build chuyên biệt, shard song song)
+
+Nâng cấp đôi mắt đọc chữ: đọc lại TOÀN BỘ keyframe bằng **PaddleOCR (PP-OCRv5,
+tiếng Việt)** — thay kho EasyOCR cũ vốn nhiễu (bộ tinh chỉnh trọng số từng phải
+dìm kênh OCR xuống gần 0). Chữ nung trên khung hình (banner, tiêu đề, chyron)
+là tín hiệu KIS đắt giá nhất khi đọc CHUẨN dấu tiếng Việt. Nhanh hơn captions
+nhiều lần (~2–5 giờ/ca GPU); cùng bộ giáp an toàn round-52..58 như 05/06.
+'''
+
 
 def main() -> None:
     write_nb("01_build_artifacts_colab.ipynb", [
@@ -3233,6 +3243,83 @@ _stop_sync = True'''
         code(_d_src),
         code(LAB_KEEPALIVE),
     ])
+    # Round-59: gia đình 07 — OCR PaddleOCR đọc lại MỌI keyframe. Sinh từ
+    # NB6_SWEEP bằng phẫu thuật có assert (kế thừa nguyên bộ giáp round-52..58);
+    # kho chung MỚI: ocr-v2-partial; bản EasyOCR cũ cất thành ocr-easyocr-backup.
+    _7_install = '''# ── Cài PaddleOCR (PP-OCRv5) + smoke test 1 keyframe THẬT ──────────────
+print("Cài PaddleOCR ...", flush=True)
+_rc0 = subprocess.run([sys.executable, "-m", "pip", "install", "-q",
+                       "paddlepaddle-gpu", "paddleocr"]).returncode
+_gpu_ok = subprocess.run(
+    [sys.executable, "-c",
+     "import paddle; assert paddle.device.is_compiled_with_cuda()"],
+    capture_output=True).returncode == 0
+if _rc0 != 0 or not _gpu_ok:
+    print("⚠ paddlepaddle-gpu không nhận CUDA — chuyển bản CPU (chậm hơn nhưng "
+          "vẫn về đích).", flush=True)
+    subprocess.run([sys.executable, "-m", "pip", "uninstall", "-q", "-y",
+                    "paddlepaddle-gpu"])
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q",
+                    "paddlepaddle", "paddleocr"])
+_kf_smoke = sorted(Path("/content/data/keyframes").glob("*/*.jpg"))
+assert _kf_smoke, "Không thấy keyframe local — cell materialize chưa chạy?"
+_smoke = subprocess.run(
+    [sys.executable, "-c",
+     "import os; os.environ['CVP_OCR__ENGINE'] = 'paddle'; "
+     "from cvp.config import load_settings; "
+     "from cvp.auxindex.ocr import _build_engine; "
+     "eng = _build_engine(load_settings()); "
+     f"print('SMOKE OCR:', repr(eng.read({str(_kf_smoke[0])!r})[:150]))"])
+if _smoke.returncode != 0:
+    raise RuntimeError("PaddleOCR smoke test THẤT BẠI — dừng TRƯỚC khi tốn giờ "
+                       "GPU. Chụp log ô này gửi Claude.")
+print("✅ PaddleOCR sẵn sàng.", flush=True)
+threading.Thread(target=_syncer, daemon=True).start()
+# Round-59: PaddleOCR đọc tiếng Việt chuẩn hơn hẳn EasyOCR (kho cũ) — kỳ vọng
+# lật kênh OCR từ tín hiệu nhiễu (tuner từng dìm 0.35 → 0.01) thành vũ khí.
+os.environ["CVP_OCR__ENGINE"] = "paddle"
+_run(REPO_DIR / "scripts" / "03_build_aux_indexes.py", "--ocr",
+     "--videos", *_my)
+_stop_sync = True'''
+    _7_src = NB6_SWEEP
+    for _old, _new in (
+        ("# ── ⚒ Captions Vintern DÀY — stride 1, mọi keyframe (shard song song) ──",
+         "# ── 🔎 OCR PaddleOCR tiếng Việt — đọc lại MỌI keyframe (shard song song) ──"),
+        ("captions-dense-partial", "ocr-v2-partial"),
+        ('_job_local = _la / "captions"', '_job_local = _la / "ocr"'),
+        (_d_run_old, _7_install),
+        ('''                _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py",
+                     "--captions", "--caption-stride", "1",
+                     "--videos", *_still)''',
+         '''                _run(REPO_DIR / "scripts" / "03_build_aux_indexes.py",
+                     "--ocr",
+                     "--videos", *_still)'''),
+        ('if _aux == "captions" or not _src.is_dir():',
+         'if _aux == "ocr" or not _src.is_dir():'),
+        ('_drv_job = PROJECT / "artifacts" / "captions"',
+         '_drv_job = PROJECT / "artifacts" / "ocr"'),
+        ('_bak = PROJECT / "artifacts" / "captions-stride4-backup"',
+         '_bak = PROJECT / "artifacts" / "ocr-easyocr-backup"'),
+        ('for _d in ("captions", "text_index"):',
+         'for _d in ("ocr", "text_index"):'),
+    ):
+        assert _old in _7_src, f"NB7 surgery mất mốc: {_old[:50]!r}"
+        _7_src = _7_src.replace(_old, _new)
+    for _i, _letter in enumerate("abc"):
+        _src = _7_src.replace("SHARD_INDEX = 0", f"SHARD_INDEX = {_i}")
+        _src = _src.replace("SHARD_TOTAL = 1", "SHARD_TOTAL = 3")
+        _ttl = NB7_TITLE.replace("(build chuyên biệt, shard song song)",
+                                 f"— CA {_i + 1}/3 (bản {_letter})")
+        write_nb(f"07{_letter}_ocr_paddle_shard{_i + 1}.ipynb", [
+            md(_ttl),
+            code(CELL_PARAMS),
+            code(CELL_MOUNT),
+            code(CELL_REPO_DEPS),
+            code(CELL_ENV_GPU),
+            code(NB1_LOCAL_COPY),
+            code(_src),
+            code(LAB_KEEPALIVE),
+        ])
     write_nb("02_train_vi_encoder_H100.ipynb", [
         md(NB2_TITLE),
         code(CELL_PARAMS),
