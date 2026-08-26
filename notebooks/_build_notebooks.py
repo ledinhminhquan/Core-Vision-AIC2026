@@ -69,6 +69,9 @@ CELL_PARAMS = r'''
 # ║  1 · PARAMS — the ONLY cell you may need to edit                 ║
 # ╚══════════════════════════════════════════════════════════════════╝
 DRIVE_PROJECT_DIR = "AIC2025"        # MyDrive/<this>/{data, artifacts}
+FIRST_TIME_SETUP = False             # True CHỈ cho lần ĐẦU TIÊN tạo dự án trên
+#   Drive trống. Mặc định False: mount "lười metadata" sẽ KHÔNG BAO GIỜ được
+#   tự đẻ thư mục dự án sinh đôi nữa (round-66 — bài học 07 live).
 REPO_URL  = "https://github.com/ledinhminhquan/Core-Vision_Perfect_V1.git"
 REPO_REF  = "main"
 
@@ -181,9 +184,15 @@ while not PROJECT.exists() and time.time() - _t0p < 180:
     except OSError:
         pass
 if not PROJECT.exists():
-    print(f"⚠ 3 phút không thấy MyDrive/{DRIVE_PROJECT_DIR} — coi như lần setup "
-          "đầu tiên, tạo mới. (Nếu bạn CHẮC CHẮN dự án đã có trên Drive: dừng "
-          "ngay, Runtime ▸ Disconnect and delete runtime, chạy máy mới.)")
+    # round-66: KHÔNG BAO GIỜ tự tạo khi chưa được phép — chính là cỗ máy đẻ
+    # thư mục dự án sinh đôi. Lần setup đầu tiên THẬT thì bật cờ ở cell 1.
+    if not FIRST_TIME_SETUP:
+        raise RuntimeError(
+            f"3 phút vẫn không thấy MyDrive/{DRIVE_PROJECT_DIR} — máy ảo này "
+            "hỏng metadata Drive. Runtime ▸ Disconnect and delete runtime rồi "
+            "Run all lại máy mới (dữ liệu trên Drive vẫn nguyên vẹn). Nếu đây "
+            "THẬT SỰ là lần đầu tạo dự án: đặt FIRST_TIME_SETUP = True ở cell 1.")
+    print(f"⚠ FIRST_TIME_SETUP=True — tạo mới MyDrive/{DRIVE_PROJECT_DIR}.")
 for p in (DATA_DIR, ARTIFACTS):
     p.mkdir(parents=True, exist_ok=True)
 
@@ -3354,14 +3363,24 @@ _rc0 = _pip("install", "-q", "--no-cache-dir", "--no-deps",
             "paddlepaddle-gpu==3.2.*", "--extra-index-url", _idx)
 _pip("install", "-q", "--no-cache-dir", "decorator", "astor", "opt_einsum",
      "protobuf", "httpx", "typing_extensions")
-_pip("install", "-q", "--no-cache-dir", "paddleocr>=3.0,<4")
+for _try in (1, 2):                      # round-66: cây dep ~170 gói — retry 1 lần
+    _rc1 = _pip("install", "-q", "--no-cache-dir", "paddleocr>=3.0,<4")
+    if _rc1 == 0:
+        break
+    print(f"⚠ cài paddleocr lỗi (lần {_try}) — thử lại sau 20s ...", flush=True)
+    _tm.sleep(20)
+if _rc1 != 0:
+    raise RuntimeError("Cài paddleocr thất bại sau 2 lần — mạng trục trặc; "
+                       "chạy lại ô này.")
 # Chốt chặn round-65: torch phải còn SỐNG trong process mới — chính là vụ tai
 # nạn vừa rồi. Hỏng là dừng ngay tại đây, không đốt thêm phút nào.
-_th = subprocess.run(
-    [sys.executable, "-c",
-     "import torch; assert torch.cuda.is_available(); "
-     "print(torch.zeros(2).cuda().sum().item())"],
-    capture_output=True, text=True)
+# round-66: máy KHÔNG có GPU (hết quota, chọn nhầm CPU) thì chỉ kiểm import —
+# đừng chẩn oan "Paddle làm hỏng torch" rồi bắt người dùng đổi máy vô ích.
+_th_code = ("import torch; assert torch.cuda.is_available(); "
+            "print(torch.zeros(2).cuda().sum().item())") if _sm != (0, 0) else (
+    "import torch; print(torch.zeros(2).sum().item())")
+_th = subprocess.run([sys.executable, "-c", _th_code],
+                     capture_output=True, text=True)
 if _th.returncode != 0:
     raise RuntimeError(
         "torch của Colab đã bị bộ cài Paddle làm hỏng — máy ảo này kẹt vĩnh "

@@ -32,8 +32,10 @@ def test_r63_mkdir_waits_for_existing_project():
     # the wait must come BEFORE the mkdir loop
     assert frag.index("while not PROJECT.exists()") < frag.index(
         "for p in (DATA_DIR, ARTIFACTS):")
-    # first-time-setup escape hatch stays, with a loud warning
-    assert "coi như lần setup" in frag
+    # round-66 upgraded the escape hatch: creation requires the explicit
+    # FIRST_TIME_SETUP flag; otherwise the cell raises with the fresh-VM remedy
+    assert "FIRST_TIME_SETUP" in frag
+    assert "hỏng metadata Drive" in frag
 
 
 def test_r63_every_generated_notebook_carries_the_guard():
