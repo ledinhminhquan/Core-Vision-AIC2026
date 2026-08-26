@@ -166,6 +166,24 @@ assert Path("/content/drive/MyDrive").exists(), "Drive mount failed — rerun th
 PROJECT   = Path("/content/drive/MyDrive") / DRIVE_PROJECT_DIR
 DATA_DIR  = PROJECT / "data"           # organiser dataset (merged packages)
 ARTIFACTS = PROJECT / "artifacts"      # everything we build → survives disconnects
+# Round-63 (live 07): mkdir NGAY trên mount còn "lười metadata" từng ĐẺ RA một
+# AIC2025 SINH ĐÔI rỗng (Drive cho phép trùng tên) — từ đó mỗi phiên mới bind
+# ngẫu nhiên vào bản thật hay bản rỗng và "không thấy data". Dự án đã tồn tại
+# thì KHÔNG BAO GIỜ mkdir; chỉ khi chờ 3 phút vẫn không thấy (lần setup đầu
+# tiên trong đời) mới được tạo.
+_t0p = time.time()
+while not PROJECT.exists() and time.time() - _t0p < 180:
+    print(f"⏳ chưa thấy MyDrive/{DRIVE_PROJECT_DIR} — đợi metadata "
+          f"({int(time.time() - _t0p)}s; TUYỆT ĐỐI không tự tạo vội) ...")
+    time.sleep(10)
+    try:
+        list(Path("/content/drive/MyDrive").iterdir())   # cú hích ép nạp metadata
+    except OSError:
+        pass
+if not PROJECT.exists():
+    print(f"⚠ 3 phút không thấy MyDrive/{DRIVE_PROJECT_DIR} — coi như lần setup "
+          "đầu tiên, tạo mới. (Nếu bạn CHẮC CHẮN dự án đã có trên Drive: dừng "
+          "ngay, Runtime ▸ Disconnect and delete runtime, chạy máy mới.)")
 for p in (DATA_DIR, ARTIFACTS):
     p.mkdir(parents=True, exist_ok=True)
 
