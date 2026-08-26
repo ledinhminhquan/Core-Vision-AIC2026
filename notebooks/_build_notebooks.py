@@ -2501,7 +2501,11 @@ _partial.mkdir(parents=True, exist_ok=True)
 # (2) lưới an toàn: gộp mọi kho sinh đôi "<tên> (1)"… về bản chính rồi xóa —
 # nhờ vậy chạy lại ô này trên MỘT phiên là tự lành + finalize được.
 for _dup in sorted(_partial.parent.glob(_partial.name + " (*")):
-    if not _dup.is_dir():
+    _suf = _dup.name[len(_partial.name):]
+    # round-61 (audit): chỉ nhận đúng dạng " (N)" Drive tự sinh khi trùng tên —
+    # folder người dùng tự đặt kiểu " (backup)" không bị gộp-rồi-xóa nhầm.
+    if not (_dup.is_dir() and _suf.startswith(" (")
+            and _suf.endswith(")") and _suf[2:-1].isdigit()):
         continue
     _n_dup = 0
     for _f in _dup.glob("*.json"):
@@ -2704,6 +2708,14 @@ if not _missing:
                     _f = _job_local / (_v + ".json")
                     if _f.is_file():
                         shutil.copy2(_f, _partial / _f.name)
+                _still2 = [_v for _v in _still
+                           if not (_job_local / (_v + ".json")).is_file()]
+                if _still2:
+                    # round-61 (audit): TUYỆT ĐỐI không chốt kho thiếu bài —
+                    # chạy bù mà vẫn thiếu thì dừng (khóa tự nhả), chạy lại sau.
+                    raise RuntimeError(
+                        f"Chạy bù xong vẫn thiếu {len(_still2)} video "
+                        f"(vd {_still2[:3]}) — không chốt kho thiếu; chạy lại ô này.")
             # Round-56: kho aux nào kéo thiếu → index trận đấu âm thầm yếu đi.
             for _aux in ("ocr", "asr", "captions"):  # BM25 cần đủ các kho aux
                 _src = PROJECT / "artifacts" / _aux
@@ -2823,7 +2835,11 @@ _partial.mkdir(parents=True, exist_ok=True)
 # (2) lưới an toàn: gộp mọi kho sinh đôi "<tên> (1)"… về bản chính rồi xóa —
 # nhờ vậy chạy lại ô này trên MỘT phiên là tự lành + finalize được.
 for _dup in sorted(_partial.parent.glob(_partial.name + " (*")):
-    if not _dup.is_dir():
+    _suf = _dup.name[len(_partial.name):]
+    # round-61 (audit): chỉ nhận đúng dạng " (N)" Drive tự sinh khi trùng tên —
+    # folder người dùng tự đặt kiểu " (backup)" không bị gộp-rồi-xóa nhầm.
+    if not (_dup.is_dir() and _suf.startswith(" (")
+            and _suf.endswith(")") and _suf[2:-1].isdigit()):
         continue
     _n_dup = 0
     for _f in _dup.glob("*.json"):
@@ -3027,6 +3043,14 @@ if not _missing:
                     _f = _job_local / (_v + ".json")
                     if _f.is_file():
                         shutil.copy2(_f, _partial / _f.name)
+                _still2 = [_v for _v in _still
+                           if not (_job_local / (_v + ".json")).is_file()]
+                if _still2:
+                    # round-61 (audit): TUYỆT ĐỐI không chốt kho thiếu bài —
+                    # chạy bù mà vẫn thiếu thì dừng (khóa tự nhả), chạy lại sau.
+                    raise RuntimeError(
+                        f"Chạy bù xong vẫn thiếu {len(_still2)} video "
+                        f"(vd {_still2[:3]}) — không chốt kho thiếu; chạy lại ô này.")
             # Round-56: kho aux nào kéo thiếu → index trận đấu âm thầm yếu đi.
             for _aux in ("ocr", "asr", "captions"):  # BM25 cần đủ các kho aux
                 _src = PROJECT / "artifacts" / _aux
@@ -3282,12 +3306,29 @@ print(f"Cài PaddleOCR GPU (wheel {_idx.rsplit('/', 2)[-2]}) ...", flush=True)
 _rc0 = _pip("install", "-q", "--no-cache-dir", "paddlepaddle-gpu==3.2.*",
             "--extra-index-url", _idx)
 _pip("install", "-q", "--no-cache-dir", "paddleocr>=3.0,<4")
-_gpu_ok = _rc0 == 0 and subprocess.run(
+_probe = subprocess.run(
     [sys.executable, "-c",
      "import paddle; paddle.set_device('gpu'); "
      "x = paddle.ones([64, 64]); print(float((x @ x).sum()))"],
-    capture_output=True).returncode == 0
-if not (_gpu_ok and _smoke_rc() == 0):
+    capture_output=True, text=True)
+_gpu_ok = _rc0 == 0 and _probe.returncode == 0
+if _rc0 == 0 and _probe.returncode != 0:
+    # round-61: đừng nuốt chứng cứ — dòng lỗi này phân biệt "wheel thiếu
+    # kernel cho GPU này" với "driver/cuDNN trục trặc".
+    print("   probe GPU lỗi:", (_probe.stderr or "").strip()[-400:], flush=True)
+# Round-61: smoke fail KHÔNG đồng nghĩa GPU hỏng (hay gặp: mạng tải model
+# PP-OCR chớp nhoáng) — thử lại 1 lần trước khi hạ cấp CPU, kẻo phiên A100
+# âm thầm chạy CPU chậm 10-30 lần.
+_ok = False
+if _gpu_ok:
+    for _try in (1, 2):
+        if _smoke_rc() == 0:
+            _ok = True
+            break
+        print(f"⚠ smoke GPU lần {_try} lỗi (mạng tải model?) — thử lại sau 30s ...",
+              flush=True)
+        _tm.sleep(30)
+if not _ok:
     print("⚠ Paddle GPU không chạy được trên máy này — chuyển bản CPU "
           "(chậm hơn nhưng vẫn về đích).", flush=True)
     _pip("uninstall", "-q", "-y", "paddlepaddle-gpu")

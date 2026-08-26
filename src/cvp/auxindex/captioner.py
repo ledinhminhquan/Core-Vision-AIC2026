@@ -102,10 +102,14 @@ def caption_all_keyframes(settings: Settings, catalog: KeyframeCatalog,
             processed += 1
             if cap:
                 n_to_caption[str(int(row["n"]))] = cap
-        if done == 0 and len(wanted) > 0 and processed == 0 and last_err is not None:
+        if vid == todo_videos[0] and len(wanted) > 0 and processed == 0 and last_err is not None:
             # Round-13: all-fail on the FIRST video = systemic breakage (e.g.
             # a transformers-5 semantics change inside the remote code) — fail
             # loud now, not after hours of empty artifacts.
+            # Round-61 (audit): anchored on the first video of the todo LIST —
+            # a single video with corrupt local keyframes gets re-attempted
+            # first on every rerun (the rest resume-skip) and must not be
+            # misdiagnosed as systemic, wedging the shard forever.
             raise RuntimeError(
                 f"Captioning failed on every frame of the first video ({vid}) — "
                 "systemic failure, aborting the sweep"

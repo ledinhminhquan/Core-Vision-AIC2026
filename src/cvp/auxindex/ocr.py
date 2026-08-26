@@ -135,11 +135,16 @@ def ocr_all_keyframes(settings: Settings, catalog: KeyframeCatalog,
             processed += 1
             if text:
                 n_to_text[str(int(row["n"]))] = text
-        if done == 0 and len(grp) > 0 and processed == 0 and last_err is not None:
+        if vid == todo_videos[0] and len(grp) > 0 and processed == 0 and last_err is not None:
             # Round-13: EVERY frame of the very first video failing is a
             # SYSTEMIC breakage (API drift, broken weights) — fail loud in a
             # minute instead of spending hours writing empty artifacts that
             # report as success.
+            # Round-61 (audit): anchor on the FIRST video of the todo LIST, not
+            # "first processed this run" — otherwise one video with locally
+            # corrupt keyframes (skipped by the round-60 guard, so retried
+            # every run after everything else resume-skips) masquerades as a
+            # systemic failure forever and wedges the whole shard.
             raise RuntimeError(
                 f"OCR failed on every frame of the first video ({vid}) — "
                 "systemic failure, aborting the sweep"
