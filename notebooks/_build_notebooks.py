@@ -3246,33 +3246,55 @@ _stop_sync = True'''
     # Round-59: gia đình 07 — OCR PaddleOCR đọc lại MỌI keyframe. Sinh từ
     # NB6_SWEEP bằng phẫu thuật có assert (kế thừa nguyên bộ giáp round-52..58);
     # kho chung MỚI: ocr-v2-partial; bản EasyOCR cũ cất thành ocr-easyocr-backup.
-    _7_install = '''# ── Cài PaddleOCR (PP-OCRv5) + smoke test 1 keyframe THẬT ──────────────
-print("Cài PaddleOCR ...", flush=True)
-_rc0 = subprocess.run([sys.executable, "-m", "pip", "install", "-q",
-                       "paddlepaddle-gpu", "paddleocr"]).returncode
-_gpu_ok = subprocess.run(
+    _7_install = '''# ── Cài PaddleOCR 3.x GPU từ index CHÍNH THỨC + smoke test ──────────────
+# Round-60 (audit): PyPI đóng băng paddlepaddle-gpu ở 2.6.2/CUDA-10.2 — wheel
+# GPU 3.x chỉ nằm trên index riêng của Paddle, chọn theo kiến trúc GPU. Gate
+# GPU phải chạy PHÉP TÍNH THẬT (cờ compile-time không lộ wheel thiếu kernel
+# cho GPU đời mới). Smoke fail trên GPU → tự thử đường CPU (pin 3.2.* né bug
+# oneDNN/PIR của 3.3) trước khi bỏ cuộc.
+import torch as _th
+_sm = _th.cuda.get_device_capability(0) if _th.cuda.is_available() else (0, 0)
+_idx = ("https://www.paddlepaddle.org.cn/packages/stable/cu129/" if _sm[0] >= 12
+        else "https://www.paddlepaddle.org.cn/packages/stable/cu126/")
+
+def _pip(*_a):
+    return subprocess.run([sys.executable, "-m", "pip", *_a]).returncode
+
+_kf_smoke = None
+for _kd in (Path("/content/data/keyframes"), PROJECT / "data" / "keyframes"):
+    if _kd.is_dir():
+        _kf_smoke = next(iter(_kd.glob("*/*.jpg")), None)
+        if _kf_smoke:
+            break
+assert _kf_smoke is not None, (
+    "Không thấy keyframe nào (local lẫn Drive) — chạy lại cell materialize.")
+
+def _smoke_rc():
+    return subprocess.run(
+        [sys.executable, "-c",
+         "import os; os.environ['CVP_OCR__ENGINE'] = 'paddle'; "
+         "from cvp.config import load_settings; "
+         "from cvp.auxindex.ocr import _build_engine; "
+         "eng = _build_engine(load_settings()); "
+         f"print('SMOKE OCR:', repr(eng.read({str(_kf_smoke)!r})[:150]))"]).returncode
+
+print(f"Cài PaddleOCR GPU (wheel {_idx.rsplit('/', 2)[-2]}) ...", flush=True)
+_rc0 = _pip("install", "-q", "--no-cache-dir", "paddlepaddle-gpu==3.2.*",
+            "--extra-index-url", _idx)
+_pip("install", "-q", "--no-cache-dir", "paddleocr>=3.0,<4")
+_gpu_ok = _rc0 == 0 and subprocess.run(
     [sys.executable, "-c",
-     "import paddle; assert paddle.device.is_compiled_with_cuda()"],
+     "import paddle; paddle.set_device('gpu'); "
+     "x = paddle.ones([64, 64]); print(float((x @ x).sum()))"],
     capture_output=True).returncode == 0
-if _rc0 != 0 or not _gpu_ok:
-    print("⚠ paddlepaddle-gpu không nhận CUDA — chuyển bản CPU (chậm hơn nhưng "
-          "vẫn về đích).", flush=True)
-    subprocess.run([sys.executable, "-m", "pip", "uninstall", "-q", "-y",
-                    "paddlepaddle-gpu"])
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q",
-                    "paddlepaddle", "paddleocr"])
-_kf_smoke = sorted(Path("/content/data/keyframes").glob("*/*.jpg"))
-assert _kf_smoke, "Không thấy keyframe local — cell materialize chưa chạy?"
-_smoke = subprocess.run(
-    [sys.executable, "-c",
-     "import os; os.environ['CVP_OCR__ENGINE'] = 'paddle'; "
-     "from cvp.config import load_settings; "
-     "from cvp.auxindex.ocr import _build_engine; "
-     "eng = _build_engine(load_settings()); "
-     f"print('SMOKE OCR:', repr(eng.read({str(_kf_smoke[0])!r})[:150]))"])
-if _smoke.returncode != 0:
-    raise RuntimeError("PaddleOCR smoke test THẤT BẠI — dừng TRƯỚC khi tốn giờ "
-                       "GPU. Chụp log ô này gửi Claude.")
+if not (_gpu_ok and _smoke_rc() == 0):
+    print("⚠ Paddle GPU không chạy được trên máy này — chuyển bản CPU "
+          "(chậm hơn nhưng vẫn về đích).", flush=True)
+    _pip("uninstall", "-q", "-y", "paddlepaddle-gpu")
+    _pip("install", "-q", "--no-cache-dir", "paddlepaddle==3.2.*")
+    if _smoke_rc() != 0:
+        raise RuntimeError("PaddleOCR smoke test THẤT BẠI cả GPU lẫn CPU — dừng "
+                           "TRƯỚC khi tốn giờ GPU. Chụp log ô này gửi Claude.")
 print("✅ PaddleOCR sẵn sàng.", flush=True)
 threading.Thread(target=_syncer, daemon=True).start()
 # Round-59: PaddleOCR đọc tiếng Việt chuẩn hơn hẳn EasyOCR (kho cũ) — kỳ vọng

@@ -52,7 +52,19 @@ class _PaddleEngine:
         try:  # 2.x
             self.ocr = PaddleOCR(use_angle_cls=True, lang="vi", show_log=False)
         except TypeError:  # 3.x dropped show_log
-            self.ocr = PaddleOCR(lang="vi")
+            try:
+                # Round-60 (audit): 3.x defaults switch ON document-preprocessing
+                # (orientation classify + unwarping + textline orientation) —
+                # useless for fixed-orientation TV keyframes and it multiplies
+                # per-frame latency across ~177k frames. Turn them off.
+                self.ocr = PaddleOCR(
+                    lang="vi",
+                    use_doc_orientation_classify=False,
+                    use_doc_unwarping=False,
+                    use_textline_orientation=False,
+                )
+            except TypeError:  # future API drift — fall back to bare defaults
+                self.ocr = PaddleOCR(lang="vi")
         self.min_conf = settings.ocr.min_confidence
 
     def read(self, image_path: str) -> str:
@@ -98,6 +110,7 @@ def ocr_all_keyframes(settings: Settings, catalog: KeyframeCatalog,
     todo_videos = videos or [str(v) for v in df["video_id"].unique()]
     engine = None
     done = 0
+    consecutive_failures = 0
     for vid in todo_videos:
         out_path = out_dir / f"{vid}.json"
         grp = df[df["video_id"] == vid].sort_values("n")
@@ -131,6 +144,23 @@ def ocr_all_keyframes(settings: Settings, catalog: KeyframeCatalog,
                 f"OCR failed on every frame of the first video ({vid}) — "
                 "systemic failure, aborting the sweep"
             ) from last_err
+        if len(grp) > 0 and processed == 0 and last_err is not None:
+            # Round-60 (audit): a mid-run sticky engine death (CUDA error/OOM)
+            # fails EVERY later video in minutes. Writing those as empty jsons
+            # would poison the shared store — the shard gates count by file
+            # NAME, so finalize would swap in a store with no text for that
+            # slice. Skip the write (resume retries the video next run) and
+            # abort early after 3 consecutive all-fail videos.
+            consecutive_failures += 1
+            log.warning("OCR %s: engine failed on every frame — not writing, "
+                        "will retry next run", vid)
+            if consecutive_failures >= 3:
+                raise RuntimeError(
+                    "OCR engine failed on every frame of 3 consecutive videos — "
+                    "aborting early to keep the store clean (rerun resumes)"
+                ) from last_err
+            continue
+        consecutive_failures = 0
         atomic_write_json(out_path, {"n_to_text": n_to_text, "processed_count": processed})
         done += 1
         log.info("OCR %s: %d/%d frames had text (%d/%d videos)",
