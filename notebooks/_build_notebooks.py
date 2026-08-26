@@ -3343,9 +3343,31 @@ def _smoke_rc():
     return _r.returncode
 
 print(f"Cài PaddleOCR GPU (wheel {_idx.rsplit('/', 2)[-2]}) ...", flush=True)
-_rc0 = _pip("install", "-q", "--no-cache-dir", "paddlepaddle-gpu==3.2.*",
-            "--extra-index-url", _idx)
+# Round-65 (live 07a, traceback bắt được nhờ round-64): wheel GPU của Paddle
+# kéo theo bộ nvidia-* CŨ HƠN đè lên đúng bộ torch Colab đang dùng → torch
+# chết ở MỌI process mới ("undefined symbol: ncclCommShrink") → smoke fail cả
+# GPU lẫn CPU (chuỗi import paddleocr→paddlex→modelscope→torch). Luật sắt
+# "không đụng torch Colab" áp cả GIÁN TIẾP: cài paddle GPU với --no-deps
+# (dùng chung bộ nvidia-* mới hơn của torch — tương thích xuôi chiều) và tự
+# bù các dep python thuần vô hại.
+_rc0 = _pip("install", "-q", "--no-cache-dir", "--no-deps",
+            "paddlepaddle-gpu==3.2.*", "--extra-index-url", _idx)
+_pip("install", "-q", "--no-cache-dir", "decorator", "astor", "opt_einsum",
+     "protobuf", "httpx", "typing_extensions")
 _pip("install", "-q", "--no-cache-dir", "paddleocr>=3.0,<4")
+# Chốt chặn round-65: torch phải còn SỐNG trong process mới — chính là vụ tai
+# nạn vừa rồi. Hỏng là dừng ngay tại đây, không đốt thêm phút nào.
+_th = subprocess.run(
+    [sys.executable, "-c",
+     "import torch; assert torch.cuda.is_available(); "
+     "print(torch.zeros(2).cuda().sum().item())"],
+    capture_output=True, text=True)
+if _th.returncode != 0:
+    raise RuntimeError(
+        "torch của Colab đã bị bộ cài Paddle làm hỏng — máy ảo này kẹt vĩnh "
+        "viễn: " + ((_th.stderr or "").strip()[-300:]) +
+        " → Runtime ▸ Disconnect and delete runtime rồi Run all lại máy mới.")
+print("✅ torch nguyên vẹn sau khi cài Paddle.", flush=True)
 _probe = subprocess.run(
     [sys.executable, "-c",
      "import paddle; paddle.set_device('gpu'); "
