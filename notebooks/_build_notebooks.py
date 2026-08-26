@@ -675,15 +675,17 @@ def _kf_visible() -> bool:
 
 _kf_ok = False
 if COPY_KEYFRAMES_LOCAL:
-    for _w in range(12):                       # tới 2 phút
-        if _kf_visible():
+    for _w in range(30):                       # tới 5 phút (round-62: VM "lười
+        if _kf_visible():                      # metadata" từng cần hơn 2 phút)
             _kf_ok = True
             break
         print(f"⏳ DriveFS chưa thấy keyframes/ hay Keyframes*.zip — đợi ({_w * 10}s) ...")
         time.sleep(10)
     if not _kf_ok:
-        print("⚠ 2 phút vẫn không thấy keyframes/ lẫn zip nguồn — rơi về đọc "
-              "thẳng Drive (CHẬM; nếu bất thường: Disconnect and delete runtime).")
+        print("⚠ 5 phút vẫn không thấy keyframes/ lẫn zip nguồn — máy ảo này dính "
+              "DriveFS hỏng metadata. KHUYÊN MẠNH: Runtime ▸ Disconnect and "
+              "delete runtime rồi Run all lại trên máy mới (dữ liệu Drive vẫn "
+              "nguyên). Tạm thời rơi về đọc thẳng Drive (RẤT chậm).")
 if COPY_KEYFRAMES_LOCAL and _kf_ok:
     LOCAL_DATA = Path("/content/data")
     LOCAL_DATA.mkdir(exist_ok=True)
@@ -2479,8 +2481,10 @@ _mk_local = Path("/content/data/map-keyframes")
 _mk = _mk_local if _mk_local.is_dir() else (PROJECT / "data" / "map-keyframes")
 _vids = sorted(_q.stem for _q in _mk.glob("*.csv"))
 assert len(_vids) > 800, (
-    f"map-keyframes chỉ liệt kê {len(_vids)} video — listing bất thường, "
-    "chạy lại ô này (tuyệt đối không finalize với danh sách thiếu).")
+    f"map-keyframes chỉ liệt kê {len(_vids)} video — máy ảo này dính DriveFS "
+    "hỏng metadata (tuyệt đối không chạy với danh sách thiếu). Cách xử: "
+    "Runtime ▸ Disconnect and delete runtime rồi Run all lại trên máy mới — "
+    "dữ liệu trên Drive vẫn nguyên vẹn.")
 _my = _vids[SHARD_INDEX::SHARD_TOTAL]
 print(f"Shard {SHARD_INDEX + 1}/{SHARD_TOTAL}: {len(_my)}/{len(_vids)} video")
 
@@ -2813,8 +2817,10 @@ _mk_local = Path("/content/data/map-keyframes")
 _mk = _mk_local if _mk_local.is_dir() else (PROJECT / "data" / "map-keyframes")
 _vids = sorted(_q.stem for _q in _mk.glob("*.csv"))
 assert len(_vids) > 800, (
-    f"map-keyframes chỉ liệt kê {len(_vids)} video — listing bất thường, "
-    "chạy lại ô này (tuyệt đối không finalize với danh sách thiếu).")
+    f"map-keyframes chỉ liệt kê {len(_vids)} video — máy ảo này dính DriveFS "
+    "hỏng metadata (tuyệt đối không chạy với danh sách thiếu). Cách xử: "
+    "Runtime ▸ Disconnect and delete runtime rồi Run all lại trên máy mới — "
+    "dữ liệu trên Drive vẫn nguyên vẹn.")
 _my = _vids[SHARD_INDEX::SHARD_TOTAL]
 print(f"Shard {SHARD_INDEX + 1}/{SHARD_TOTAL}: {len(_my)}/{len(_vids)} video")
 
