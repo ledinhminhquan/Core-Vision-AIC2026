@@ -3306,7 +3306,14 @@ _idx = ("https://www.paddlepaddle.org.cn/packages/stable/cu129/" if _sm[0] >= 12
         else "https://www.paddlepaddle.org.cn/packages/stable/cu126/")
 
 def _pip(*_a):
-    return subprocess.run([sys.executable, "-m", "pip", *_a]).returncode
+    # round-64: subprocess thừa kế fd của kernel → output rơi vào runtime log
+    # (bài round-47) — phải bắt và in TAIL ra cell, nhất là khi lỗi.
+    _r = subprocess.run([sys.executable, "-m", "pip", *_a],
+                        capture_output=True, text=True)
+    if _r.returncode != 0:
+        print("   pip lỗi:", ((_r.stderr or _r.stdout) or "").strip()[-500:],
+              flush=True)
+    return _r.returncode
 
 _kf_smoke = None
 for _kd in (Path("/content/data/keyframes"), PROJECT / "data" / "keyframes"):
@@ -3318,13 +3325,22 @@ assert _kf_smoke is not None, (
     "Không thấy keyframe nào (local lẫn Drive) — chạy lại cell materialize.")
 
 def _smoke_rc():
-    return subprocess.run(
+    # round-64: BẮT output — không capture thì lỗi rơi vào runtime log vô hình
+    # (round-47) và ta mù tịt lý do smoke fail.
+    _r = subprocess.run(
         [sys.executable, "-c",
          "import os; os.environ['CVP_OCR__ENGINE'] = 'paddle'; "
          "from cvp.config import load_settings; "
          "from cvp.auxindex.ocr import _build_engine; "
          "eng = _build_engine(load_settings()); "
-         f"print('SMOKE OCR:', repr(eng.read({str(_kf_smoke)!r})[:150]))"]).returncode
+         f"print('SMOKE OCR:', repr(eng.read({str(_kf_smoke)!r})[:150]))"],
+        capture_output=True, text=True)
+    if _r.returncode != 0:
+        print("   smoke lỗi chi tiết:",
+              ((_r.stderr or _r.stdout) or "(im lặng)").strip()[-700:], flush=True)
+    else:
+        print("  ", (_r.stdout or "").strip()[-200:], flush=True)
+    return _r.returncode
 
 print(f"Cài PaddleOCR GPU (wheel {_idx.rsplit('/', 2)[-2]}) ...", flush=True)
 _rc0 = _pip("install", "-q", "--no-cache-dir", "paddlepaddle-gpu==3.2.*",
