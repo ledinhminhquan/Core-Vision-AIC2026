@@ -2332,10 +2332,27 @@ RUN_BENCH_FULL = True
 import os, time
 from pathlib import Path
 if RUN_BENCH_FULL and GT_PATH.exists():
-    os.environ["CVP_EMBEDDING__MODEL"] = "finetuned"
+    # Round-70: bench phải là BẢN SAO Y đội hình ra trận nb03 (round-49) —
+    # ensemble finetuned+metaclip2 60/40 + trọng số tuned-shrinkage. Bản cũ
+    # đo lane finetuned ĐƠN với trọng số mặc định = không phải đội hình thật.
+    os.environ["CVP_EMBEDDING__MODEL"] = "ensemble"
+    os.environ["CVP_EMBEDDING__ENSEMBLE_MEMBERS"] = '["finetuned", "metaclip2"]'
+    os.environ["CVP_EMBEDDING__ENSEMBLE_WEIGHTS"] = "[0.6, 0.4]"
     os.environ["CVP_QUERY__PROVIDER"]  = "gemini"
     os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
         Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "checkpoints" / "vi_siglip2_best")
+    _tw = PROJECT / "artifacts" / "tuning" / "best_weights.json"
+    if _tw.exists():
+        import json as _wj
+        _w = _wj.loads(_tw.read_text(encoding="utf-8")).get("best", {}).get("weights")
+        if _w:
+            _base = {"visual": 1.0, "ocr": 0.35, "asr": 0.30, "caption": 0.25,
+                     "metadata": 0.15, "object": 0.25}
+            _w = {k: round(0.5 * float(_w.get(k, v)) + 0.5 * v, 4)
+                  for k, v in _base.items()}
+            for _sig, _val in _w.items():
+                os.environ[f"CVP_SEARCH__WEIGHTS__{_sig.upper()}"] = str(_val)
+            print("⚖ Bench dùng trọng số TUNED+shrinkage 50% (y hệt trận):", _w)
     os.environ["CVP_SEARCH__VLM_RERANK"] = "true"
     os.environ["CVP_SEARCH__VLM_RERANK_TOPK"] = "48"
     os.environ["CVP_SEARCH__VLM_RERANK_VOTES"] = "3"
@@ -2373,10 +2390,22 @@ LAB_TUNE = r'''
 RUN_TUNE = True
 if RUN_TUNE and GT_PATH.exists():
     import os
-    os.environ["CVP_EMBEDDING__MODEL"] = "finetuned"
+    # Round-70: dò trọng số trên đúng lane retrieval ra trận (ensemble 60/40)
+    # — tín hiệu visual của lane đơn khác lane trộn, trọng số học ra sẽ lệch.
+    os.environ["CVP_EMBEDDING__MODEL"] = "ensemble"
+    os.environ["CVP_EMBEDDING__ENSEMBLE_MEMBERS"] = '["finetuned", "metaclip2"]'
+    os.environ["CVP_EMBEDDING__ENSEMBLE_WEIGHTS"] = "[0.6, 0.4]"
+    os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
+        Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "checkpoints" / "vi_siglip2_best")
     _dump = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "signal_dumps" / "thunghiem"
     _tune_out = PROJECT / "artifacts" / "tuning" / "best_weights.json"
     _tune_out.parent.mkdir(parents=True, exist_ok=True)
+    # Round-70: giữ đường lui — bộ trọng số đang ra trận cất sang -prev trước
+    # khi tuner ghi đè (nb03 chỉ đọc best_weights.json nên -prev là két sắt).
+    if _tune_out.exists():
+        import shutil as _sh
+        _sh.copy2(_tune_out, _tune_out.with_name("best_weights-prev.json"))
+        print("bộ trọng số đang dùng đã cất → best_weights-prev.json")
     _run(REPO_DIR / "scripts" / "23_dump_signals.py",
          "--query-dir", TRIAL_DIR, "--out-dir", _dump)
     _run(REPO_DIR / "scripts" / "21_tune_weights.py", "--signals-dir", _dump,
