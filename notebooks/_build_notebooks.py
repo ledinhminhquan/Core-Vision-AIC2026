@@ -2354,8 +2354,37 @@ LAB_BENCH_FULL = r'''
 # ── L2 · Chấm dàn vũ khí ĐẦY ĐỦ trên đề nháp (baseline mới) ──
 # Đúng cấu hình ra trận nb03: finetuned + gemini + VLM48×3 + Qwen-8B + Pro-QA.
 RUN_BENCH_FULL = True
+# ── Round-74: gói knob A/B cho chiến dịch bench (dựa trên chẩn đoán 66/67).
+# "off" = y hệt bench#2 (baseline) · "A" = ranking/hàng, KHÔNG đổi API
+# (boost cao-nguyên + đa dạng hóa đuôi 100 dòng + 4 knob TRAKE round-72) ·
+# "AB" = A + gói QA (canonicalize vote + hỏi thêm strip lân cận, ×2 call
+# Gemini mỗi nhóm QA). Chỉ đổi MỘT chữ này, không sửa gì khác.
+BENCH_PACK = "off"
 import os, time
 from pathlib import Path
+_PACK_A = {
+    "CVP_SEARCH__NEIGHBOR_CONSISTENCY_BOOST": "0.15",
+    "CVP_SEARCH__ROW_STRATEGY": "diversify_tail",
+    "CVP_TEMPORAL__SUBMIT_STRATEGY": "jitter",
+    "CVP_TEMPORAL__POOL_CONTEXT": "prepend",
+    "CVP_TEMPORAL__EVENT_QUERY_VARIANTS": "all",
+    "CVP_TEMPORAL__CAPTION_SIGNAL_WEIGHT": "0.2",
+}
+_PACK_B = {
+    "CVP_VQA__ANSWER_CANONICALIZE": "true",
+    "CVP_VQA__ANSWER_NEIGHBOR_FRAMES": "1",
+    "CVP_VQA__MAX_CALLS_PER_QUERY": "10",
+}
+assert BENCH_PACK in ("off", "A", "AB"), f"BENCH_PACK lạ: {BENCH_PACK!r}"
+_knobs = {} if BENCH_PACK == "off" else (
+    _PACK_A if BENCH_PACK == "A" else {**_PACK_A, **_PACK_B})
+for _k in {**_PACK_A, **_PACK_B}:        # dọn sạch trước — cell chạy lại không
+    os.environ.pop(_k, None)             # được thừa kế knob của lượt trước
+for _k, _v in _knobs.items():
+    os.environ[_k] = _v
+print(f"🎛 BENCH_PACK = {BENCH_PACK}"
+      + (f" — {len(_knobs)} knob BẬT: {sorted(_knobs)}" if _knobs
+         else " — knob TẮT hết, cấu hình y hệt bench#2 (baseline)"))
 if RUN_BENCH_FULL and GT_PATH.exists():
     # Round-70: bench phải là BẢN SAO Y đội hình ra trận nb03 (round-49) —
     # ensemble finetuned+metaclip2 60/40 + trọng số tuned-shrinkage. Bản cũ
@@ -2420,11 +2449,14 @@ if RUN_BENCH_FULL and GT_PATH.exists():
             _shd.rmtree(_drv_lab / "lab_full-prev", ignore_errors=True)
             _shd.copytree(_drv_lab / "lab_full", _drv_lab / "lab_full-prev")
         print("bench cũ đã xoay → bench_full-prev.json + lab_full-prev/")
+    # Round-74: lưu kèm gói knob để mỗi bản bench tự khai nó đo cấu hình nào.
     (_drv_lab / "bench_full.json").write_text(
-        _json.dumps(r.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        _json.dumps({**r.to_dict(), "bench_pack": BENCH_PACK,
+                     "bench_knobs": _knobs},
+                    ensure_ascii=False, indent=2), encoding="utf-8")
     _shd.copytree(settings.paths.art("submissions", "lab_full"),
                   _drv_lab / "lab_full", dirs_exist_ok=True)
-    print(f"\n⭐ BENCH FULL: mean_final={r.mean_final:.4f} "
+    print(f"\n⭐ BENCH FULL [pack={BENCH_PACK}]: mean_final={r.mean_final:.4f} "
           f"({r.num_scored}/{r.num_gt} câu, {(time.time()-_t0)/60:.0f} phút) "
           f"— đã lưu Drive: {_drv_lab}")
     print("   Mốc cũ (bản 8.4 đợt nháp): 0.6413 · bản trộn 2 lần: 0.6587")
@@ -2452,6 +2484,15 @@ if RUN_TUNE and GT_PATH.exists():
     os.environ["CVP_SEARCH__RERANKER"] = "none"
     os.environ["CVP_SEARCH__VLM_RERANK"] = "false"
     os.environ["CVP_SEARCH__LOW_CONFIDENCE_RETRY"] = "false"
+    # Round-74 (audit): BENCH_PACK của L2 sống dai trong kernel — tune phải
+    # dọn sạch, kẻo dump/tune đo cấu hình knob thay vì baseline.
+    for _k in ("CVP_SEARCH__NEIGHBOR_CONSISTENCY_BOOST", "CVP_SEARCH__ROW_STRATEGY",
+               "CVP_TEMPORAL__SUBMIT_STRATEGY", "CVP_TEMPORAL__POOL_CONTEXT",
+               "CVP_TEMPORAL__EVENT_QUERY_VARIANTS",
+               "CVP_TEMPORAL__CAPTION_SIGNAL_WEIGHT",
+               "CVP_VQA__ANSWER_CANONICALIZE", "CVP_VQA__ANSWER_NEIGHBOR_FRAMES",
+               "CVP_VQA__MAX_CALLS_PER_QUERY"):
+        os.environ.pop(_k, None)
     _dump = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "signal_dumps" / "thunghiem"
     _tune_out = PROJECT / "artifacts" / "tuning" / "best_weights.json"
     _tune_out.parent.mkdir(parents=True, exist_ok=True)
@@ -2507,6 +2548,15 @@ if RUN_METACLIP and GT_PATH.exists():
     os.environ["CVP_SEARCH__RERANKER"] = "none"
     os.environ["CVP_SEARCH__VLM_RERANK"] = "false"
     os.environ["CVP_QUERY__PROVIDER"] = "gemini"
+    # Round-74 (audit): BENCH_PACK của L2 sống dai trong kernel — lane A/B
+    # phải so LANE thuần, không được thừa kế knob của lượt bench trước.
+    for _k in ("CVP_SEARCH__NEIGHBOR_CONSISTENCY_BOOST", "CVP_SEARCH__ROW_STRATEGY",
+               "CVP_TEMPORAL__SUBMIT_STRATEGY", "CVP_TEMPORAL__POOL_CONTEXT",
+               "CVP_TEMPORAL__EVENT_QUERY_VARIANTS",
+               "CVP_TEMPORAL__CAPTION_SIGNAL_WEIGHT",
+               "CVP_VQA__ANSWER_CANONICALIZE", "CVP_VQA__ANSWER_NEIGHBOR_FRAMES",
+               "CVP_VQA__MAX_CALLS_PER_QUERY"):
+        os.environ.pop(_k, None)
     CONFIGS = {
         "finetuned": {"CVP_EMBEDDING__MODEL": "finetuned"},
         "metaclip2": {"CVP_EMBEDDING__MODEL": "metaclip2"},
