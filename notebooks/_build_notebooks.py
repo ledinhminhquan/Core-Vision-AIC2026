@@ -1601,7 +1601,10 @@ def _archive_unique(_src, _base):
     return _dst
 
 _has_old = POINTER.exists() or any(Path(cfg.run_dir).glob("step-*"))
-if ptr and ptr.get("status") == "running" and ptr.get("cfg_hash") != CFG_HASH:
+# Round-71 (audit): guard 2-phiên áp cho MỌI trường hợp — kể cả CÙNG hash (tai
+# nạn dễ nhất: mở nhầm nb02 trên máy thứ hai giữa chiến dịch); pointer được
+# nhịp-tim làm mới mỗi 10 phút suốt lúc train (xem cuối cell) nên luôn "tươi".
+if ptr and ptr.get("status") == "running":
     try:
         _age = (datetime.now(timezone.utc) - datetime.strptime(
             ptr["updated_utc"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
@@ -1611,7 +1614,8 @@ if ptr and ptr.get("status") == "running" and ptr.get("cfg_hash") != CFG_HASH:
     if _age < 1800:
         raise RuntimeError(
             "Pointer đang 'running' và mới cập nhật <30 phút — có vẻ một phiên "
-            "nb02 KHÁC đang chạy. Chỉ được chạy MỘT phiên nb02 một lúc.")
+            "nb02 KHÁC đang chạy. Nếu chắc chắn không phải (phiên trước vừa bị "
+            "giết cứng), đợi ~30 phút rồi Run all lại. Chỉ MỘT phiên nb02 một lúc.")
 if _has_old and (ptr is None or ptr.get("cfg_hash") != CFG_HASH):
     _old_tag = (ptr or {}).get("cfg_hash") or "unknown"
     _a1 = _archive_unique(cfg.run_dir,
@@ -1625,7 +1629,26 @@ elif ptr:
     print("✓ config hash khớp — auto-resume an toàn.")
 
 write_pointer("running")
-print(f"\nrun identity {CFG_HASH} | pointer → running")
+
+# Round-71: nhịp tim pointer — train nhiều giờ mà updated_utc đứng im thì guard
+# 2-phiên bên trên vô dụng sau 30 phút. Thread nền làm mới mỗi 10 phút; cell
+# TRAIN hạ cờ _HB_STOP trước khi ghi trạng thái cuối để không ghi đè nó.
+import threading as _thm
+import time as _tmm
+_HB_STOP = False
+
+def _pointer_heartbeat():
+    while not globals().get("_HB_STOP"):
+        _tmm.sleep(600)
+        if globals().get("_HB_STOP"):
+            break
+        try:
+            write_pointer("running")
+        except Exception:
+            pass
+
+_thm.Thread(target=_pointer_heartbeat, daemon=True).start()
+print(f"\nrun identity {CFG_HASH} | pointer → running (+nhịp tim 10 phút)")
 '''
 
 NB2_TRAIN = r'''
@@ -1636,8 +1659,10 @@ trainer = LiTTrainer(settings, cfg)
 try:
     final_metrics = trainer.train()
 except BaseException as e:   # KeyboardInterrupt/SystemExit also mark crashed
+    globals()["_HB_STOP"] = True             # round-71: tắt nhịp tim pointer
     write_pointer("crashed", error=repr(e)[:500])
     raise
+globals()["_HB_STOP"] = True                 # round-71: tắt nhịp tim pointer
 write_pointer("finished",
               final_metrics={k: round(float(v), 4) for k, v in final_metrics.items()})
 print("final:", final_metrics)
@@ -2342,6 +2367,13 @@ if RUN_BENCH_FULL and GT_PATH.exists():
     os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
         Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "checkpoints" / "vi_siglip2_best")
     _tw = PROJECT / "artifacts" / "tuning" / "best_weights.json"
+    try:                                     # round-71: nudge metadata tuning/
+        list(_tw.parent.iterdir())
+    except OSError:
+        pass
+    if not _tw.exists():
+        print("⚠ KHÔNG thấy tuning/best_weights.json — bench sẽ chạy trọng số "
+              "MẶC ĐỊNH (khác trận). Nếu file có trên Drive: đổi máy ảo chạy lại.")
     if _tw.exists():
         import json as _wj
         _w = _wj.loads(_tw.read_text(encoding="utf-8")).get("best", {}).get("weights")
@@ -2362,15 +2394,32 @@ if RUN_BENCH_FULL and GT_PATH.exists():
     from cvp.config import load_settings
     from cvp.eval.official import score_run
     from cvp.pipeline.auto_agent import run_auto
+    from cvp.search.engine import SearchEngine
     settings = load_settings()
+    # Round-71 (audit): engine "degrade gracefully" khi một lane hỏng — bench
+    # nhiều giờ mà chạy thiếu lane là đo SAI đội hình. Bắt đủ 2 lane TRƯỚC,
+    # rồi trao đúng engine đã kiểm cho run_auto (không nạp model 2 lần).
+    engine = SearchEngine(settings)
+    assert engine.member_names == ["finetuned", "metaclip2"], (
+        f"Ensemble thiếu lane: {engine.member_names} — index/checkpoint chưa nạp "
+        "đủ (máy ảo lười metadata?). Đổi máy mới chạy lại, đừng bench thiếu lane.")
+    print("✓ ensemble đủ 2 lane:", engine.member_names)
     _t0 = time.time()
     rep = run_auto(TRIAL_DIR, settings.paths.art("submissions", "lab_full"),
-                   settings, submit=False)
+                   settings, submit=False, engine_factory=lambda _s: engine)
     r = score_run(settings.paths.art("submissions", "lab_full"), GT_PATH)
     import json as _json
     import shutil as _shd
     _drv_lab = PROJECT / "artifacts" / "lab"
     _drv_lab.mkdir(parents=True, exist_ok=True)
+    # Round-71: giữ hồ sơ TRƯỚC/SAU — bench cũ xoay sang -prev thay vì bị đè
+    # (chiến dịch cần so bench-1 với bench-2 sau khi retrain tower).
+    if (_drv_lab / "bench_full.json").exists():
+        _shd.copy2(_drv_lab / "bench_full.json", _drv_lab / "bench_full-prev.json")
+        if (_drv_lab / "lab_full").exists():
+            _shd.rmtree(_drv_lab / "lab_full-prev", ignore_errors=True)
+            _shd.copytree(_drv_lab / "lab_full", _drv_lab / "lab_full-prev")
+        print("bench cũ đã xoay → bench_full-prev.json + lab_full-prev/")
     (_drv_lab / "bench_full.json").write_text(
         _json.dumps(r.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
     _shd.copytree(settings.paths.art("submissions", "lab_full"),
@@ -2397,15 +2446,28 @@ if RUN_TUNE and GT_PATH.exists():
     os.environ["CVP_EMBEDDING__ENSEMBLE_WEIGHTS"] = "[0.6, 0.4]"
     os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
         Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "checkpoints" / "vi_siglip2_best")
+    # Round-71 (audit): dump tín hiệu KHÔNG cần reranker — tắt Qwen-8B + VLM
+    # 48×3 thừa kế env từ cell bench, kẻo dump chậm gấp chục lần và đốt oan
+    # quota Gemini (dump chụp tín hiệu TRƯỚC bước rerank, kết quả rerank bị bỏ).
+    os.environ["CVP_SEARCH__RERANKER"] = "none"
+    os.environ["CVP_SEARCH__VLM_RERANK"] = "false"
+    os.environ["CVP_SEARCH__LOW_CONFIDENCE_RETRY"] = "false"
     _dump = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "signal_dumps" / "thunghiem"
     _tune_out = PROJECT / "artifacts" / "tuning" / "best_weights.json"
     _tune_out.parent.mkdir(parents=True, exist_ok=True)
-    # Round-70: giữ đường lui — bộ trọng số đang ra trận cất sang -prev trước
-    # khi tuner ghi đè (nb03 chỉ đọc best_weights.json nên -prev là két sắt).
-    if _tune_out.exists():
+    try:                                     # round-71: nudge metadata tuning/
+        list(_tune_out.parent.iterdir())
+    except OSError:
+        pass
+    # Round-70/71: két sắt -prev chỉ ghi MỘT lần — chạy lại cell không được đè
+    # bộ trọng số trận GỐC bằng chính bản vừa tune xong.
+    _prev = _tune_out.with_name("best_weights-prev.json")
+    if _tune_out.exists() and not _prev.exists():
         import shutil as _sh
-        _sh.copy2(_tune_out, _tune_out.with_name("best_weights-prev.json"))
+        _sh.copy2(_tune_out, _prev)
         print("bộ trọng số đang dùng đã cất → best_weights-prev.json")
+    elif _prev.exists():
+        print("best_weights-prev.json đã có — giữ nguyên két sắt.")
     _run(REPO_DIR / "scripts" / "23_dump_signals.py",
          "--query-dir", TRIAL_DIR, "--out-dir", _dump)
     _run(REPO_DIR / "scripts" / "21_tune_weights.py", "--signals-dir", _dump,
