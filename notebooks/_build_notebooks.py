@@ -1496,8 +1496,18 @@ cfg = TrainConfig(
 # effective batch stays constant), so they are excluded from the identity.
 _RESUME_NEUTRAL = {"micro_batch", "grad_accum", "num_workers"}
 
+# Round-68: DATASET cũng là danh tính của run — kho captions dày 3.5× (26/08)
+# sinh train_data mới; thiếu dấu vân tay này, phiên mới sẽ "resume" nhầm run
+# cũ đã early-stop trên dữ liệu cũ và kết thúc sau 2 phút mà KHÔNG train gì.
+_td = Path(cfg.train_data_dir)
+DATA_FP = "|".join(
+    f"{_f.name}:{_f.stat().st_size}"
+    for _f in sorted(list(_td.glob("*.parquet")) + list(_td.glob("*.npy")))
+    if _f.is_file())
+
 def cfg_hash(c: TrainConfig) -> str:
     d = {k: v for k, v in sorted(dataclasses.asdict(c).items()) if k not in _RESUME_NEUTRAL}
+    d["dataset_fingerprint"] = DATA_FP
     return hashlib.sha256(json.dumps(d, sort_keys=True, default=str).encode()).hexdigest()[:12]
 
 CFG_HASH = cfg_hash(cfg)
@@ -1559,10 +1569,13 @@ if _meta.is_file():
     print(f"best export  : R@5={_m.get('R@5', float('nan')):.4f} → {cfg.export_dir}")
 
 if ptr and ptr.get("cfg_hash") != CFG_HASH:
-    print(f"⚠ CONFIG MISMATCH: pointer {ptr.get('cfg_hash')} ≠ current {CFG_HASH}")
-    print("  Config đã thay đổi — checkpoint trong run_dir thuộc config CŨ.")
-    print(f"  Muốn train sạch từ đầu: xoá {cfg.run_dir} rồi chạy lại; nếu giữ nguyên,")
-    print("  trainer sẽ resume checkpoint cũ với config MỚI (LR schedule có thể lệch).")
+    # Round-68: config/dataset ĐỔI → tự CẤT run cũ (đổi tên, không xoá gì) và
+    # train SẠCH từ đầu — zero-edit, không bắt người dùng dọn tay.
+    _arch = Path(cfg.run_dir).parent / f"vi_siglip2-{ptr.get('cfg_hash') or 'old'}"
+    print(f"⚠ Danh tính run đổi ({ptr.get('cfg_hash')} → {CFG_HASH}) — cất run cũ "
+          f"→ {_arch.name}, train SẠCH từ đầu trên dataset hiện tại.")
+    if Path(cfg.run_dir).exists() and not _arch.exists():
+        Path(cfg.run_dir).rename(_arch)
 elif ptr:
     print("✓ config hash khớp — auto-resume an toàn.")
 
@@ -1594,6 +1607,14 @@ from pathlib import Path
 export_dir = Path(str(settings.paths.art("checkpoints", "vi_siglip2_best")))
 if (export_dir / "text_tower.safetensors").exists():
     dest = ARTIFACTS / "deliverables" / "latest"
+    # Round-68: giữ đường lui — bản đang dùng cất vào deliverables/previous
+    # TRƯỚC khi ghi đè (bench chê tower mới thì hoán đổi lại là xong).
+    prev = ARTIFACTS / "deliverables" / "previous"
+    if (dest / "text_tower.safetensors").exists():
+        if prev.exists():
+            shutil.rmtree(prev)
+        shutil.copytree(dest, prev)
+        print("bản đang dùng đã cất →", prev)
     dest.mkdir(parents=True, exist_ok=True)
     shutil.copytree(export_dir, dest, dirs_exist_ok=True)
     print("mirrored", sorted(p.name for p in dest.iterdir()), "→", dest)
