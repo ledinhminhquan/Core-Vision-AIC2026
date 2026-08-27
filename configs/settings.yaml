@@ -76,6 +76,24 @@ search:
     object: 0.25
   neighbor_boost: 0.10   # temporal-context smoothing strength
   neighbor_window: 2
+  # ── Second-pass consistency boost (đợt 2, Nhiệm vụ C; mặc định OFF) ──
+  # Cộng điểm cho ứng viên mà các frame LÂN CẬN cùng video cũng điểm cao:
+  # đỉnh thật là cao nguyên (nhiều keyframe liền kề cùng sáng), nhiễu là gai
+  # đơn độc (hàng xóm câm lặng → không được cộng gì). Chạy TRƯỚC neighbor_boost
+  # trên fused map thô; chỉ đường KIS/QA/AVS, không đụng TRAKE. 0.0 = tắt.
+  neighbor_consistency_boost: 0.0   # thử 0.10-0.20 khi bench A/B
+  neighbor_consistency_window: 2    # số keyframe lân cận mỗi phía được xét
+  neighbor_consistency_decay: 0.5   # phiếu hàng xóm xa giảm theo decay^d
+  # ── Chiến lược 100 dòng nộp (đợt 2, Nhiệm vụ D; mặc định OFF) ──
+  # legacy = đổ nguyên ranking (hành vi cũ). diversify_tail = giữ NGUYÊN VĂN
+  # row_strategy_head dòng đầu, phần đuôi thay ranking loãng bằng frame lân
+  # cận quanh ứng viên top của TỪNG video trong head (trung điểm giữa 2
+  # keyframe trước — lưới thưa ~5-7s, cửa sổ GT ±5s — rồi keyframe kề);
+  # variants chiếm tối đa NỬA đuôi, phần còn lại giữ ranking gốc.
+  # Chỉ KIS/QA (AVS có MMR riêng, TRAKE có jitter riêng).
+  row_strategy: legacy              # legacy | diversify_tail
+  row_strategy_head: 30
+  row_strategy_variants: 4
   temporal_boost: false  # Vortex before/now/after boost for "… sau khi …" queries
   temporal_boost_weight: 0.25
   temporal_boost_window: 12
@@ -171,6 +189,19 @@ vqa:
   frames_per_answer: 3      # temporal strip per answer group (1 = single frame)
   answers_per_query: 5      # distinct candidate groups answered in batch mode
   max_calls_per_query: 5
+  # ── QA overhaul đợt 2 (mặc định OFF = hành vi cũ nguyên vẹn) ──
+  # vote theo LỚP TƯƠNG ĐƯƠNG thay vì chuỗi thô: "2"/"hai"/"02" gộp phiếu,
+  # "300 kg"/"300kg"/"ba trăm kg" gộp phiếu (xem cvp/search/answer_norm.py).
+  answer_canonicalize: false
+  # >0: mỗi nhóm được hỏi thêm N strip LÂN CẬN quanh moment rồi vote chéo toàn
+  # bộ phiếu (frame lệch nhẹ vẫn hội tụ về một đáp án). Strip thêm ăn budget
+  # max_calls_per_query — bench nên tăng max_calls_per_query (vd 15), nếu cạn
+  # budget knob sẽ CẢNH BÁO TO thay vì âm thầm bỏ qua. Chi phí: mỗi strip thêm
+  # ≤ self_consistency call Gemini.
+  answer_neighbor_frames: 0
+  # nhóm ứng viên có phiếu ĐỒNG THUẬN TUYỆT ĐỐI được đẩy khối dòng lên đầu CSV
+  # khi nhóm top bất nhất (đáp án top không ổn định thường = moment sai/ảnh mờ).
+  consistency_rerank: false
 
 submission:
   package_name: submission  # folder name inside the Codabench zip

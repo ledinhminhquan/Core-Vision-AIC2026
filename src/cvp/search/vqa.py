@@ -239,6 +239,30 @@ class VqaAssistant:
 
     # ── public ───────────────────────────────────────────────────────────
 
+    def answer_group_votes(self, question: str, image_paths: list[str],
+                           context: str = "") -> list[str]:
+        """RAW self-consistency ballots for one strip (≤ ``self_consistency``).
+
+        The vote-collection loop of :meth:`answer_group`, exposed so the batch
+        QA path can pool ballots ACROSS several strips of the same moment
+        (knob ``vqa.answer_neighbor_frames``) before taking one majority.
+        Gemini-only: non-gemini providers return [] (the caller falls back to
+        :meth:`answer_group`, which owns the local-model degradation).
+        """
+        paths = [p for p in image_paths if p][: max(1, int(self.cfg.frames_per_answer))]
+        if not paths or self.cfg.provider != "gemini":
+            return []
+        votes = max(1, int(getattr(self.cfg, "self_consistency", 1)))
+        got: list[str] = []
+        for v in range(votes):
+            try:
+                a = self._ask_gemini_strip(paths, question, context)
+                if a and a.strip():
+                    got.append(a[:MAX_QA_ANSWER_CHARS])
+            except Exception as e:  # noqa: BLE001 — a lost vote, not a lost group
+                log.warning("Gemini strip-VQA vote %d/%d failed (%s)", v + 1, votes, e)
+        return got
+
     def answer_group(self, question: str, image_paths: list[str],
                      context: str = "") -> str:
         """ONE answer for a temporal strip of frames from one candidate group.
@@ -254,16 +278,14 @@ class VqaAssistant:
         if self.cfg.provider == "gemini":
             # Round-40 self-consistency: N answers, majority wins. One sample
             # flip-flopped '300 kg' ↔ '30 kg' between live runs; votes don't.
-            votes = max(1, int(getattr(self.cfg, "self_consistency", 1)))
-            got: list[str] = []
-            for v in range(votes):
-                try:
-                    a = self._ask_gemini_strip(paths, question, context)
-                    if a and a.strip():
-                        got.append(a[:MAX_QA_ANSWER_CHARS])
-                except Exception as e:  # noqa: BLE001 — a lost vote, not a lost group
-                    log.warning("Gemini strip-VQA vote %d/%d failed (%s)", v + 1, votes, e)
+            got = self.answer_group_votes(question, paths, context)
             if got:
+                if getattr(self.cfg, "answer_canonicalize", False):
+                    # Round-73 knob: count "2"/"hai"/"02" as ONE candidate —
+                    # format variants split the raw-string majority otherwise.
+                    from cvp.search.answer_norm import majority_vote
+
+                    return majority_vote(got, canonicalize=True).answer
                 from collections import Counter
 
                 best = Counter(g.strip().casefold() for g in got).most_common(1)[0][0]

@@ -23,11 +23,12 @@ import csv
 import logging
 import re
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
 from cvp.config import Settings, VqaCfg
-from cvp.constants import MAX_QA_ANSWER_CHARS
+from cvp.constants import MAX_QA_ANSWER_CHARS, MAX_SUBMISSION_ROWS
 from cvp.search.engine import SearchEngine, SearchResult
 from cvp.search.vqa import VqaAssistant
 from cvp.submission.packager import infer_task  # single source for task-from-filename
@@ -87,8 +88,9 @@ _IMPERATIVE_Q_RE = re.compile(r"^\s*(Hãy|Hảy|Cho biết|Đếm|Kể tên)\b")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
 __all__ = [
-    "QA_FALLBACK_ANSWER", "infer_task", "parse_query_lines", "parse_trake_events",
-    "split_trake_query", "split_qa_line", "group_candidates", "compute_qa_answers",
+    "QA_FALLBACK_ANSWER", "QaGroupStat", "infer_task", "parse_query_lines",
+    "parse_trake_events", "split_trake_query", "split_qa_line", "group_candidates",
+    "compute_qa_answers", "compute_qa_answers_with_stats", "plan_consistency_rerank",
     "run_query_file", "run_query_folder", "ranking_confidence", "rrf_merge_results",
     "maybe_retry_low_confidence",
 ]
@@ -363,6 +365,84 @@ def _group_strip(results: Sequence[SearchResult], group: list[int],
     return [getattr(results[i].ref, "path", "") for i in picks]
 
 
+@dataclass
+class QaGroupStat:
+    """Ballot statistics of ONE answered candidate group (batch QA path).
+
+    ``rows`` are indices into the ``results`` list (best rank first, exactly
+    the group produced by :func:`group_candidates`); ``votes_for``/``total``
+    describe the majority vote that produced ``answer`` (1/1 when the answer
+    came from a single legacy ``answer_group``/``suggest`` call, 0/0 when the
+    group produced nothing).
+    """
+
+    rows: list[int]
+    answer: str
+    votes_for: int = 0
+    total_votes: int = 0
+
+    @property
+    def agree(self) -> float:
+        """Winning-class share of the ballots, [0, 1] (0.0 without ballots)."""
+        return self.votes_for / self.total_votes if self.total_votes else 0.0
+
+
+def _round_robin_extras(n_groups: int, per_group_max: int, budget: int) -> dict[int, int]:
+    """Fair distribution of ``budget`` extra strips: round-robin over groups
+    (rank order), at most ``per_group_max`` each — the top moment must not
+    starve the other answered moments of their cross-check strips."""
+    out = {i: 0 for i in range(n_groups)}
+    remaining = max(0, int(budget))
+    for _ in range(max(0, int(per_group_max))):
+        for i in range(n_groups):
+            if remaining <= 0:
+                return out
+            if out[i] < per_group_max:
+                out[i] += 1
+                remaining -= 1
+    return out
+
+
+def _neighbor_strips(results: Sequence[SearchResult], group: list[int],
+                     max_frames: int, n_extra: int) -> list[list[str]]:
+    """Up to ``n_extra`` strips of same-video frames NEAR one candidate group.
+
+    Candidates are rows of ``results`` itself (same video, outside the group),
+    nearest-to-the-group first by original-video frame index — no catalog or
+    disk access, so the batch path stays offline-testable. Fewer strips than
+    requested (sparse video) is reported at INFO, never an error.
+    """
+    if n_extra <= 0:
+        return []
+    k = max(1, int(max_frames))
+    in_group = set(group)
+    video = results[group[0]].video_id
+
+    def _pos(i: int) -> int:
+        try:
+            return int(results[i].frame_idx)
+        except (TypeError, ValueError):
+            return 0
+
+    lo = min(_pos(i) for i in group)
+    hi = max(_pos(i) for i in group)
+    center = (lo + hi) / 2.0
+    cand = [i for i in range(len(results))
+            if i not in in_group and getattr(results[i], "video_id", None) == video]
+    cand.sort(key=lambda i: (abs(_pos(i) - center), i))
+    strips: list[list[str]] = []
+    for j in range(int(n_extra)):
+        chunk = sorted(cand[j * k:(j + 1) * k], key=_pos)
+        paths = [p for p in (getattr(results[i].ref, "path", "") for i in chunk) if p]
+        if not paths:
+            break
+        strips.append(paths)
+    if len(strips) < n_extra:
+        log.info("QA neighbor strips: dựng được %d/%d strip lân cận (video thiếu "
+                 "ứng viên quanh nhóm).", len(strips), n_extra)
+    return strips
+
+
 def compute_qa_answers(results: Sequence[SearchResult], question: str,
                        vqa: VqaAssistant | None, settings: Settings | None = None) -> list[str]:
     """Per-row QA answers: one VQA call per top candidate group.
@@ -376,19 +456,66 @@ def compute_qa_answers(results: Sequence[SearchResult], question: str,
     answer as fallback. Without a provider (``vqa is None``), or when every
     VQA call fails, rows carry :data:`QA_FALLBACK_ANSWER` instead of "" — it
     scores 0 either way but can never block packaging.
+
+    Thin wrapper over :func:`compute_qa_answers_with_stats` (same calls, same
+    answers — the stats are simply discarded).
+    """
+    answers, _stats = compute_qa_answers_with_stats(results, question, vqa, settings)
+    return answers
+
+
+def compute_qa_answers_with_stats(
+    results: Sequence[SearchResult], question: str,
+    vqa: VqaAssistant | None, settings: Settings | None = None,
+) -> tuple[list[str], list[QaGroupStat]]:
+    """:func:`compute_qa_answers` + per-group ballot stats (round-73 upgrades).
+
+    With every QA knob at its default this makes EXACTLY the calls the legacy
+    function made (one ``answer_group`` per budgeted group, ``suggest`` as the
+    fallback). Two knobs change the plan:
+
+    * ``vqa.answer_neighbor_frames`` > 0 — each answered group also asks up to
+      N strips of NEIGHBOUR frames (same video, nearest the group) and pools
+      ALL raw ballots (``VqaAssistant.answer_group_votes``) into one majority,
+      canonicalized when ``vqa.answer_canonicalize`` is on. Extra strips spend
+      ``max_calls_per_query``: with the default 5/5 budget there is no room —
+      a LOUD warning says so instead of silently doing nothing.
+    * ``vqa.consistency_rerank`` — needs real ballot counts, so the ballot
+      path is used (when the assistant exposes ``answer_group_votes``) even
+      with ``answer_neighbor_frames=0``.
+
+    When the ballot path yields nothing the legacy ``answer_group`` call runs
+    as the rescue (it owns the local-model degradation) — on a total Gemini
+    outage that retries the strip once more before falling back, an accepted
+    cost on an already-broken path.
     """
     answers = [""] * len(results)
     if not results:
-        return answers
+        return answers, []
     if vqa is None:
-        return [QA_FALLBACK_ANSWER] * len(results)
+        return [QA_FALLBACK_ANSWER] * len(results), []
     cfg = settings.vqa if settings is not None else VqaCfg()
     budget = max(0, min(int(cfg.answers_per_query), int(cfg.max_calls_per_query)))
     groups = group_candidates(results)
+    neighbor_n = max(0, int(getattr(cfg, "answer_neighbor_frames", 0) or 0))
+    want_ballots = neighbor_n > 0 or bool(getattr(cfg, "consistency_rerank", False))
+    pool_ballots = want_ballots and hasattr(vqa, "answer_group_votes")
+    canon = bool(getattr(cfg, "answer_canonicalize", False))
+    n_primary = min(budget, len(groups))
+    extra_budget = max(0, int(cfg.max_calls_per_query) - n_primary) if neighbor_n else 0
+    if neighbor_n and pool_ballots and extra_budget <= 0 and n_primary:
+        log.warning(
+            "vqa.answer_neighbor_frames=%d nhưng max_calls_per_query=%d đã cạn sau "
+            "%d strip chính — knob KHÔNG có tác dụng; tăng vqa.max_calls_per_query "
+            "(vd %d).", neighbor_n, int(cfg.max_calls_per_query), n_primary,
+            n_primary * (1 + neighbor_n))
+    extra_per_group = _round_robin_extras(n_primary, neighbor_n, extra_budget)
+    stats: list[QaGroupStat] = []
     fallback = ""
-    for group in groups[:budget]:
+    for g_idx, group in enumerate(groups[:budget]):
         best = group[0]
         ans = ""
+        votes_for = total_votes = 0
         try:
             # Buổi 4: đây là Q&A chứ không phải VQA — câu hỏi có thể dựa trên
             # ÂM THANH. Đưa thoại ASR quanh khoảnh khắc ứng viên vào prompt.
@@ -407,11 +534,30 @@ def compute_qa_answers(results: Sequence[SearchResult], question: str,
             if hasattr(vqa, "answer_group"):
                 strip = _group_strip(results, group,
                                      getattr(cfg, "frames_per_answer", 1))
-                try:
-                    ans = str(vqa.answer_group(question, strip, context=ctx)
-                              or "")[:MAX_QA_ANSWER_CHARS]
-                except TypeError:  # stub/legacy vqa without the context kwarg
-                    ans = str(vqa.answer_group(question, strip) or "")[:MAX_QA_ANSWER_CHARS]
+                if pool_ballots:
+                    strips = [strip] + _neighbor_strips(
+                        results, group, getattr(cfg, "frames_per_answer", 1),
+                        extra_per_group.get(g_idx, 0))
+                    ballots: list[str] = []
+                    for s in strips:
+                        try:
+                            ballots.extend(vqa.answer_group_votes(question, s, context=ctx))
+                        except TypeError:  # stub without the context kwarg
+                            ballots.extend(vqa.answer_group_votes(question, s))
+                    if ballots:
+                        from cvp.search.answer_norm import majority_vote
+
+                        vr = majority_vote(ballots, canonicalize=canon)
+                        ans = str(vr.answer or "")[:MAX_QA_ANSWER_CHARS]
+                        votes_for, total_votes = vr.votes_for, vr.total
+                if not ans:
+                    try:
+                        ans = str(vqa.answer_group(question, strip, context=ctx)
+                                  or "")[:MAX_QA_ANSWER_CHARS]
+                    except TypeError:  # stub/legacy vqa without the context kwarg
+                        ans = str(vqa.answer_group(question, strip) or "")[:MAX_QA_ANSWER_CHARS]
+                    if ans and not total_votes:
+                        votes_for = total_votes = 1
             if not ans:
                 r = results[best]
                 try:
@@ -421,15 +567,92 @@ def compute_qa_answers(results: Sequence[SearchResult], question: str,
                     suggestions = vqa.suggest(question, [(r.global_id, r.ref.path)])
                 if suggestions:
                     ans = str(suggestions[0].answer)[:MAX_QA_ANSWER_CHARS]
+                    if ans:
+                        votes_for = total_votes = 1
         except Exception as e:  # noqa: BLE001 — one failed group must not sink the query
             log.warning("VQA failed for group at rank %d: %s", best + 1, e)
         for i in group:
             answers[i] = ans
+        stats.append(QaGroupStat(rows=list(group), answer=ans,
+                                 votes_for=votes_for, total_votes=total_votes))
         if not fallback and ans:
             fallback = ans
     if fallback:
         answers = [a or fallback for a in answers]
-    return [a or QA_FALLBACK_ANSWER for a in answers]
+    return [a or QA_FALLBACK_ANSWER for a in answers], stats
+
+
+# Consistency-rerank thresholds (knob ``vqa.consistency_rerank``): the top
+# group must LACK a real majority, and a promoted group must be UNANIMOUS over
+# at least 2 ballots. Module constants (with this docstring) instead of extra
+# config knobs — one bool is enough to A/B the feature.
+_RERANK_TOP_MAX_AGREE = 0.5
+_RERANK_STABLE_MIN_VOTES = 2
+
+
+def plan_consistency_rerank(stats: Sequence[QaGroupStat], n_rows: int) -> list[int] | None:
+    """Row order promoting the first UNANIMOUS group when the top is unstable.
+
+    Returns the full new order (indices into the original ``results``) or
+    None when nothing should move. Rules — deliberately conservative, the
+    reranker must never demote a top group that has a real majority:
+
+    * top group keeps its place when its ballots reach a majority
+      (``agree >= 0.5``) — including the 1/1 legacy-call case;
+    * the promoted group needs ``answer`` non-empty, not the fallback
+      placeholder, and a unanimous vote over ≥ 2 ballots;
+    * only the FIRST (best-ranked) such group is promoted, as one block, in
+      front of everything else; every other row keeps its relative order.
+    """
+    if n_rows <= 0 or len(stats) < 2:
+        return None
+    top = stats[0]
+    if top.total_votes and top.agree >= _RERANK_TOP_MAX_AGREE:
+        return None
+    stable = next(
+        (s for s in stats[1:]
+         if s.answer and s.total_votes >= _RERANK_STABLE_MIN_VOTES
+         and s.agree >= 1.0
+         and s.answer.strip().casefold() != QA_FALLBACK_ANSWER),
+        None,
+    )
+    if stable is None:
+        return None
+    promoted = [i for i in stable.rows if 0 <= i < n_rows]
+    if not promoted:
+        return None
+    promoted_set = set(promoted)
+    return promoted + [i for i in range(n_rows) if i not in promoted_set]
+
+
+def _maybe_diversify_rows(engine: SearchEngine, task: str, rows: list[tuple]) -> list[tuple]:
+    """Apply ``search.row_strategy`` to KIS/QA rows (Nhiệm vụ D, round-74).
+
+    ``legacy`` (default) returns ``rows`` untouched — bit-identical CSVs. The
+    head is preserved verbatim by :func:`cvp.pipeline.row_budget.diversify_tail`,
+    so row 1 (and the recorded DRES timestamp) can never change. AVS is
+    excluded on purpose: its MMR pass already diversifies across videos, and
+    same-video neighbour variants would undo exactly that.
+    """
+    cfg = getattr(getattr(engine, "settings", None), "search", None)
+    if task not in ("kis", "qa") or getattr(cfg, "row_strategy", "legacy") != "diversify_tail":
+        return rows
+    from cvp.pipeline.row_budget import catalog_grid_fn, diversify_tail
+
+    catalog = getattr(engine, "catalog", None)
+    if catalog is None:
+        # Round-75 (tổng kiểm F): knob bật mà engine không có catalog = không
+        # có lưới keyframe nào để dựng variant — phải NÓI TO thay vì âm thầm
+        # chạy như legacy (bài học 4 bản vá audit đợt 1).
+        log.warning("search.row_strategy=diversify_tail nhưng engine KHÔNG có "
+                    "catalog — không dựng được variant, ranking giữ nguyên như legacy.")
+    return diversify_tail(
+        rows,
+        grid_fn=catalog_grid_fn(catalog),
+        head_keep=int(getattr(cfg, "row_strategy_head", 30)),
+        budget=MAX_SUBMISSION_ROWS,
+        variants_per_anchor=int(getattr(cfg, "row_strategy_variants", 4)),
+    )
 
 
 def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
@@ -519,11 +742,26 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
     record([t] if t is not None else None,
            (results[0].video_id, int(results[0].frame_idx)))
     if task == "qa":
-        answers = compute_qa_answers(results, question, vqa, getattr(engine, "settings", None))
-        return _reconcile_times(write_qa(
-            out_path, [(r.video_id, r.frame_idx, a) for r, a in zip(results, answers)]))
-    return _reconcile_times(
-        write_kis(out_path, [(r.video_id, r.frame_idx) for r in results]))
+        settings_ = getattr(engine, "settings", None)
+        answers, stats = compute_qa_answers_with_stats(results, question, vqa, settings_)
+        if getattr(getattr(settings_, "vqa", None), "consistency_rerank", False):
+            order = plan_consistency_rerank(stats, len(results))
+            if order:
+                results = [results[i] for i in order]
+                answers = [answers[i] for i in order]
+                log.info("QA consistency rerank (%s): nhóm đồng thuận %s lên đầu — "
+                         "nhóm top bất nhất.", path.name, results[0].video_id)
+                # Re-record: the DRES timestamp must belong to the NEW top row
+                # (same contract _reconcile_times enforces, done properly here).
+                t = _time_of(results[0])
+                record([t] if t is not None else None,
+                       (results[0].video_id, int(results[0].frame_idx)))
+        qa_rows = _maybe_diversify_rows(
+            engine, "qa", [(r.video_id, r.frame_idx, a) for r, a in zip(results, answers)])
+        return _reconcile_times(write_qa(out_path, qa_rows))
+    kis_rows = _maybe_diversify_rows(
+        engine, task, [(r.video_id, r.frame_idx) for r in results])
+    return _reconcile_times(write_kis(out_path, kis_rows))
 
 
 def run_query_folder(settings: Settings, query_dir: Path, out_dir: Path,

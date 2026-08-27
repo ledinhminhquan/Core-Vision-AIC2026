@@ -138,6 +138,23 @@ class SearchCfg(BaseModel):
     # Temporal context boost: neighbours of strong frames get a small lift.
     neighbor_boost: float = 0.10
     neighbor_window: int = 2
+    # Second-pass consistency boost (round-73, Nhiệm vụ C đợt 2): candidates
+    # whose NEIGHBOUR frames also score high get a lift — true peaks are
+    # plateaus, noise is a lone spike. Runs on the RAW fused map BEFORE
+    # neighbor_boost (which would fake plateaus by spreading spikes). KIS/QA/AVS
+    # ranking only (search_trake has its own path). 0.0 = off, bit-identical.
+    neighbor_consistency_boost: float = 0.0
+    neighbor_consistency_window: int = 2
+    neighbor_consistency_decay: float = Field(0.5, gt=0.0, le=1.0)
+    # Submission row budget (round-74, Nhiệm vụ D đợt 2): legacy = dump the
+    # ranking (old behaviour); diversify_tail = keep the head verbatim, then
+    # spend the tail budget on neighbour-frame variants around the head's
+    # distinct videos (TRAKE-jitter philosophy — the metric maxes over rows,
+    # so diluted rank-40+ rows are better spent as targeted lottery tickets).
+    # KIS + QA only (AVS has its own MMR diversity; TRAKE has jitter).
+    row_strategy: Literal["legacy", "diversify_tail"] = "legacy"
+    row_strategy_head: int = Field(30, ge=1)       # rows kept verbatim
+    row_strategy_variants: int = Field(4, ge=1, le=8)  # variants per anchor video
     # Vortex-style before/now/after context boost for "… sau khi …" queries
     # (off by default — measure on the dev pack before enabling).
     temporal_boost: bool = False
@@ -329,6 +346,20 @@ class VqaCfg(BaseModel):
     # one answer on every row (VQA R-Score needs the *right* row to carry the right answer).
     answers_per_query: int = 5
     max_calls_per_query: int = 5
+    # ── QA overhaul đợt 2 (round-73) — all three default OFF = old behaviour ──
+    # Vote by EQUIVALENCE CLASS instead of raw casefolded string: "2"/"hai"/"02"
+    # pool their ballots ("300 kg"/"300kg" likewise) — see cvp.search.answer_norm.
+    answer_canonicalize: bool = False
+    # >0: per answered group, ask up to N EXTRA neighbour strips around the
+    # moment and vote across ALL ballots (a slightly-off frame still converges
+    # on the right answer). Extra strips consume max_calls_per_query — raise it
+    # (e.g. 15) or the knob has no budget and WARNS loudly instead of silently
+    # doing nothing.
+    answer_neighbor_frames: int = Field(0, ge=0, le=4)
+    # Promote the row-block of a candidate group whose ballots are UNANIMOUS
+    # when the top group's ballots disagree (an unstable top answer usually
+    # means the wrong moment or an unreadable frame).
+    consistency_rerank: bool = False
 
 
 class SubmissionCfg(BaseModel):

@@ -80,6 +80,10 @@ class TextIndexField:
         if not weighted:
             return {}
         k1, b, avgdl = self.k1, self.b, self.avgdl
+        # Round-74 perf: (k1 + 1.0) hoisted out of the per-(key, doc, token)
+        # inner loop — a pure subexpression, so every score stays BIT-identical
+        # (same value, same remaining op order; tests/test_perf_identity.py).
+        k1p1 = k1 + 1.0
         out: dict = {}
         for k in set(keys):
             doc_list = self.docs.get(k)
@@ -92,7 +96,7 @@ class TextIndexField:
                 for tok, w in weighted:
                     f = tf.get(tok)
                     if f:
-                        s += w * (f * (k1 + 1.0)) / (norm + f)
+                        s += w * (f * k1p1) / (norm + f)
                 if s > best:
                     best = s
             if best > 1e-9:

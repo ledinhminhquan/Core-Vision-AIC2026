@@ -307,9 +307,21 @@ class SearchEngine:
             fused = fusion.rrf(maps, weights, k=self.settings.search.rrf_k)
         else:
             fused = fusion.weighted_sum(maps, weights)
+        spans = self._spans_for(list(fused.keys()))
+        if self.settings.search.neighbor_consistency_boost > 0:
+            # BEFORE neighbor_boost on purpose: consistency must read the RAW
+            # fused evidence — neighbor_boost spreads a lone spike onto its
+            # neighbours, which would fake the very plateau being tested for.
+            fused = fusion.neighbor_consistency_boost(
+                fused,
+                spans,
+                weight=self.settings.search.neighbor_consistency_boost,
+                window=self.settings.search.neighbor_consistency_window,
+                decay=self.settings.search.neighbor_consistency_decay,
+            )
         fused = fusion.neighbor_boost(
             fused,
-            self._spans_for(list(fused.keys())),
+            spans,
             boost=self.settings.search.neighbor_boost,
             window=self.settings.search.neighbor_window,
         )

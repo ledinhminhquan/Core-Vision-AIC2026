@@ -19,6 +19,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from cvp.config import Settings
@@ -66,6 +67,7 @@ class KeyframeCatalog:
         self.signature_path = settings.paths.art("catalog", "signature.json")
         self._df: pd.DataFrame | None = None
         self._video_index: dict[str, tuple[int, int]] | None = None  # vid -> (start_gid, count)
+        self._video_id_arr: np.ndarray | None = None  # video_id column as ndarray (hot gather)
 
     # ── build ────────────────────────────────────────────────────────────
 
@@ -141,6 +143,7 @@ class KeyframeCatalog:
         atomic_write_json(self.signature_path, {"signature": self._signature_of(df)})
         self._df = df
         self._video_index = None
+        self._video_id_arr = None
         log.info("Catalog built: %d keyframes / %d videos (%d with map-keyframes)",
                  len(df), df["video_id"].nunique(), int(df["has_map"].sum()))
         return df
@@ -200,11 +203,20 @@ class KeyframeCatalog:
 
     def video_ids(self, global_ids: list[int]) -> list[str]:
         """Just the video id per global id — a single column gather, for hot
-        paths that need row→video routing without full KeyframeRefs."""
+        paths that need row→video routing without full KeyframeRefs.
+
+        Round-74 perf: the column is cached once as an ndarray and gathered
+        with numpy fancy-indexing — pandas ``.iloc[list]`` paid index-alignment
+        overhead per call on the ~5000-gid ``_spans_for`` path. Same strings,
+        same order, same negative-index/out-of-range semantics as ``iloc``
+        (both wrap negatives, both raise IndexError past the end).
+        """
         if not global_ids:
             return []
-        col = self.load()["video_id"]
-        return [str(v) for v in col.iloc[[int(g) for g in global_ids]]]
+        if self._video_id_arr is None:
+            self._video_id_arr = self.load()["video_id"].to_numpy()
+        gathered = self._video_id_arr[np.asarray([int(g) for g in global_ids])]
+        return [str(v) for v in gathered]
 
     def video_span(self, video_id: str) -> tuple[int, int]:
         """(first_global_id, count) for a video — contiguous by construction."""
