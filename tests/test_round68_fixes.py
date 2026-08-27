@@ -37,9 +37,10 @@ def test_r68_run_identity_includes_dataset_fingerprint():
 
 def test_r68_identity_change_archives_the_old_run():
     frag = _frag("NB2_RUN_POINTER = r", "NB2_TRAIN")
-    assert 'f"vi_siglip2-{ptr.get(' in frag
+    # round-69 hardened the archive: unique-suffix names via _archive_unique
+    assert 'f"vi_siglip2-{_old_tag}"' in frag
     assert "cất run cũ" in frag
-    assert ".rename(_arch)" in frag
+    assert "def _archive_unique(" in frag
     # never delete anything, never require manual cleanup
     assert "rmtree" not in frag and "unlink" not in frag
     assert "Muốn train sạch từ đầu: xoá" not in frag   # the old manual advice is gone

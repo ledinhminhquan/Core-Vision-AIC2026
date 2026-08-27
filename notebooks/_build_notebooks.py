@@ -193,8 +193,26 @@ if not PROJECT.exists():
             "Run all lại máy mới (dữ liệu trên Drive vẫn nguyên vẹn). Nếu đây "
             "THẬT SỰ là lần đầu tạo dự án: đặt FIRST_TIME_SETUP = True ở cell 1.")
     print(f"⚠ FIRST_TIME_SETUP=True — tạo mới MyDrive/{DRIVE_PROJECT_DIR}.")
+# Round-69 (audit): gate chống-sinh-đôi phải phủ cả THƯ MỤC CON — mount thấy
+# AIC2025 nhưng chưa nạp children mà mkdir ngay thì data/artifacts sinh đôi
+# y hệt vụ round-63, chỉ là một tầng sâu hơn.
 for p in (DATA_DIR, ARTIFACTS):
-    p.mkdir(parents=True, exist_ok=True)
+    if p.exists() or FIRST_TIME_SETUP:
+        p.mkdir(parents=True, exist_ok=True)
+        continue
+    _t0c = time.time()
+    while not p.exists() and time.time() - _t0c < 120:
+        print(f"⏳ chưa thấy {p.name}/ trong dự án — đợi metadata ({int(time.time() - _t0c)}s) ...")
+        time.sleep(10)
+        try:
+            list(PROJECT.iterdir())                  # cú hích ép nạp children
+        except OSError:
+            pass
+    if not p.exists():
+        raise RuntimeError(
+            f"2 phút không thấy {p.name}/ trong MyDrive/{DRIVE_PROJECT_DIR} — máy "
+            "ảo hỏng metadata Drive. Runtime ▸ Disconnect and delete runtime rồi "
+            "chạy máy mới; nếu đây là lần setup đầu tiên: FIRST_TIME_SETUP=True.")
 
 # PREFLIGHT (v12): Drive PHẢI ghi/đọc được — quota đầy hay mất quyền thì
 # dừng NGAY tại đây thay vì hỏng giữa chừng sau 2 giờ chạy.
@@ -1568,14 +1586,41 @@ if _meta.is_file():
     _m = (json.loads(_meta.read_text(encoding="utf-8")).get("metrics") or {})
     print(f"best export  : R@5={_m.get('R@5', float('nan')):.4f} → {cfg.export_dir}")
 
-if ptr and ptr.get("cfg_hash") != CFG_HASH:
-    # Round-68: config/dataset ĐỔI → tự CẤT run cũ (đổi tên, không xoá gì) và
-    # train SẠCH từ đầu — zero-edit, không bắt người dùng dọn tay.
-    _arch = Path(cfg.run_dir).parent / f"vi_siglip2-{ptr.get('cfg_hash') or 'old'}"
-    print(f"⚠ Danh tính run đổi ({ptr.get('cfg_hash')} → {CFG_HASH}) — cất run cũ "
-          f"→ {_arch.name}, train SẠCH từ đầu trên dataset hiện tại.")
-    if Path(cfg.run_dir).exists() and not _arch.exists():
-        Path(cfg.run_dir).rename(_arch)
+# Round-69 (audit): việc cất run cũ phải BẤT KHẢ THẤT BẠI — tên lưu trữ tự
+# đánh số khi trùng (A/B qua lại không bị kẹt), pointer rách vẫn cất (danh
+# tính không rõ = không được tin), thông báo chỉ in SAU khi đổi tên thật, và
+# cất luôn export_dir: export_meta cũ đặt "xà ngang" R@5 đo trên val CŨ (dễ
+# hơn 3.5×) — không cất thì run mới không bao giờ export nổi và early-stop
+# sau vài phút mà không train được gì.
+def _archive_unique(_src, _base):
+    _dst, _n = Path(str(_base)), 1
+    while _dst.exists():
+        _n += 1
+        _dst = Path(f"{_base}-{_n}")
+    Path(_src).rename(_dst)
+    return _dst
+
+_has_old = POINTER.exists() or any(Path(cfg.run_dir).glob("step-*"))
+if ptr and ptr.get("status") == "running" and ptr.get("cfg_hash") != CFG_HASH:
+    try:
+        _age = (datetime.now(timezone.utc) - datetime.strptime(
+            ptr["updated_utc"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        ).total_seconds()
+    except Exception:
+        _age = 1e9
+    if _age < 1800:
+        raise RuntimeError(
+            "Pointer đang 'running' và mới cập nhật <30 phút — có vẻ một phiên "
+            "nb02 KHÁC đang chạy. Chỉ được chạy MỘT phiên nb02 một lúc.")
+if _has_old and (ptr is None or ptr.get("cfg_hash") != CFG_HASH):
+    _old_tag = (ptr or {}).get("cfg_hash") or "unknown"
+    _a1 = _archive_unique(cfg.run_dir,
+                          Path(cfg.run_dir).parent / f"vi_siglip2-{_old_tag}")
+    print(f"⚠ Danh tính run đổi ({_old_tag} → {CFG_HASH}) — đã cất run cũ → "
+          f"{_a1.name}; train SẠCH từ đầu trên dataset hiện tại.")
+    if Path(cfg.export_dir).exists():
+        _a2 = _archive_unique(cfg.export_dir, f"{cfg.export_dir}-{_old_tag}")
+        print(f"   export cũ (kèm xà ngang R@5 val cũ) cất → {_a2.name}")
 elif ptr:
     print("✓ config hash khớp — auto-resume an toàn.")
 
@@ -1609,15 +1654,28 @@ if (export_dir / "text_tower.safetensors").exists():
     dest = ARTIFACTS / "deliverables" / "latest"
     # Round-68: giữ đường lui — bản đang dùng cất vào deliverables/previous
     # TRƯỚC khi ghi đè (bench chê tower mới thì hoán đổi lại là xong).
+    # Round-69: xoay vòng phải BẤT BIẾN khi chạy lại — latest đã trùng bản
+    # export thì đứng yên, kẻo lần Run all thứ hai xóa mất đường lui previous.
     prev = ARTIFACTS / "deliverables" / "previous"
-    if (dest / "text_tower.safetensors").exists():
-        if prev.exists():
-            shutil.rmtree(prev)
-        shutil.copytree(dest, prev)
-        print("bản đang dùng đã cất →", prev)
-    dest.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(export_dir, dest, dirs_exist_ok=True)
-    print("mirrored", sorted(p.name for p in dest.iterdir()), "→", dest)
+
+    def _meta_bytes(_d):
+        _f = Path(str(_d)) / "export_meta.json"
+        return _f.read_bytes() if _f.is_file() else b"?"
+
+    _same = (dest / "text_tower.safetensors").exists() and \
+        _meta_bytes(dest) == _meta_bytes(export_dir) != b"?"
+    if _same:
+        print("latest đã trùng bản export hiện tại — không xoay vòng "
+              "(previous giữ nguyên làm đường lui).")
+    else:
+        if (dest / "text_tower.safetensors").exists():
+            if prev.exists():
+                shutil.rmtree(prev)
+            shutil.copytree(dest, prev)
+            print("bản đang dùng đã cất →", prev)
+        dest.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(export_dir, dest, dirs_exist_ok=True)
+        print("mirrored", sorted(p.name for p in dest.iterdir()), "→", dest)
 else:
     print(f"no export at {export_dir} yet — run the TRAIN cell first")
 '''
