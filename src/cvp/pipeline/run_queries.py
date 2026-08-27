@@ -88,10 +88,34 @@ _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
 __all__ = [
     "QA_FALLBACK_ANSWER", "infer_task", "parse_query_lines", "parse_trake_events",
-    "split_qa_line", "group_candidates", "compute_qa_answers", "run_query_file",
-    "run_query_folder", "ranking_confidence", "rrf_merge_results",
+    "split_trake_query", "split_qa_line", "group_candidates", "compute_qa_answers",
+    "run_query_file", "run_query_folder", "ranking_confidence", "rrf_merge_results",
     "maybe_retry_low_confidence",
 ]
+
+
+def split_trake_query(lines: list[str]) -> tuple[str, list[str]]:
+    """(header, events) of a TRAKE query file; header is "" for the plain
+    one-event-per-line format.
+
+    The single splitting logic behind :func:`parse_trake_events` — also used
+    directly by the ``temporal.pool_context: prepend`` path, which needs the
+    header SEPARATELY (video pooling searches "<header>. <event>" while the
+    DP alignment keeps the bare event texts).
+    """
+    # Invisible Cf chars (zero-width space, stray mid-file BOM, RTL marks) ride
+    # along when organiser text is copy-pasted from PDF/Word/chat. Python's \s
+    # does NOT match them, so an 'E1:' line with a leading U+200B would fail
+    # the prefix match and the event would silently VANISH — the CSV stays
+    # structurally valid and the query scores ~0 (round-9 chaos lens).
+    lines = [strip_invisible(ln) for ln in lines]
+    prefixed = [(i, _EVENT_RE.sub("", ln).strip()) for i, ln in enumerate(lines)
+                if _EVENT_RE.match(ln)]
+    if len(prefixed) < 2:
+        return "", lines
+    events = [text for _i, text in prefixed if text]
+    header = " ".join(lines[: prefixed[0][0]]).rstrip(" :.").strip()
+    return header, events
 
 
 def parse_trake_events(lines: list[str], *, prepend_context: bool = False) -> list[str]:
@@ -118,22 +142,9 @@ def parse_trake_events(lines: list[str], *, prepend_context: bool = False) -> li
             carries video-level context ("một con lân màu vàng đen trắng")
             that helps video pooling; off by default (A/B-able via config).
     """
-    # Invisible Cf chars (zero-width space, stray mid-file BOM, RTL marks) ride
-    # along when organiser text is copy-pasted from PDF/Word/chat. Python's \s
-    # does NOT match them, so an 'E1:' line with a leading U+200B would fail
-    # the prefix match and the event would silently VANISH — the CSV stays
-    # structurally valid and the query scores ~0 (round-9 chaos lens).
-    lines = [strip_invisible(ln) for ln in lines]
-    prefixed = [(i, _EVENT_RE.sub("", ln).strip()) for i, ln in enumerate(lines)
-                if _EVENT_RE.match(ln)]
-    if len(prefixed) < 2:
-        return lines
-    events = [text for _i, text in prefixed if text]
-    if prepend_context:
-        first_event_line = prefixed[0][0]
-        header = " ".join(lines[:first_event_line]).rstrip(" :.").strip()
-        if header:
-            events = [f"{header}. {ev}" for ev in events]
+    header, events = split_trake_query(lines)
+    if prepend_context and header:
+        events = [f"{header}. {ev}" for ev in events]
     return events
 
 
@@ -470,7 +481,14 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
         temporal_cfg = getattr(getattr(engine, "settings", None), "temporal", None)
         prepend = getattr(temporal_cfg, "event_context", "none") == "prepend"
         events = parse_trake_events(lines, prepend_context=prepend)
-        candidates = engine.search_trake(events)
+        if getattr(temporal_cfg, "pool_context", "none") == "prepend":
+            # The header steers the video-POOLING stage only (see TemporalCfg).
+            # Gated call: stub engines without the kwarg keep working on the
+            # default config, exactly like before this knob existed.
+            header, _events = split_trake_query(lines)
+            candidates = engine.search_trake(events, context=header or None)
+        else:
+            candidates = engine.search_trake(events)
         if not candidates:
             # A 0-byte CSV would fail validation and veto packaging of the
             # WHOLE pack — return None so callers route this one query into

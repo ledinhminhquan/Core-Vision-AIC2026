@@ -123,6 +123,22 @@ temporal:             # TRAKE
   # Organiser TRAKE files: header line + "E1:…" events. none = drop the header
   # (safe default) | prepend = merge it into every event text (A/B knob).
   event_context: none
+  # ── TRAKE-upgrade knobs (defaults = old behaviour; flip ONE per bench A/B) ──
+  # original = encode chỉ text sự kiện thô; all = encode mọi biến thể Gemini đã
+  # cache (original+enhanced+translation+expansions) rồi max-fuse per event.
+  event_query_variants: original   # original | all
+  # prepend = bước gom video tìm bằng "<header đề>. <event>" (lane đa ngôn ngữ),
+  # DP vẫn chấm bằng event trần — thêm ngữ cảnh video mà không loãng mốc.
+  # ĐỪNG bật cùng lúc với event_context: prepend (header sẽ bị nhân đôi).
+  pool_context: none               # none | prepend
+  # >0 = trộn BM25 caption dày per event vào ma trận sim trước DP:
+  # sim += w * minmax-per-event(caption). 0 = tắt; thiếu artifacts tự thành no-op.
+  caption_signal_weight: 0.0
+  # jitter = giữ nguyên các dòng đầu, phần còn lại của 100 dòng phủ biến thể
+  # frame quanh chuỗi tốt nhất mỗi video (keyframe lân cận + trung điểm GIỮA
+  # hai keyframe, thiên về sớm) — metric lấy max theo dòng nên dòng thêm là vé số.
+  submit_strategy: legacy          # legacy | jitter
+  jitter_videos: 4                 # số video top được phủ jitter
 
 extraction:           # K-batch keyframe self-extraction (density = recall knob)
   shot_positions: [0.15, 0.50, 0.85]   # denser (vd [0.1,0.3,0.5,0.7,0.9]) → +recall, +disk/embed time

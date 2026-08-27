@@ -236,6 +236,33 @@ class TemporalCfg(BaseModel):
     # events; "prepend" merges that header into every event text (A/B knob —
     # extra video-level context vs diluted event specificity). Default: drop.
     event_context: Literal["none", "prepend"] = "none"
+    # ── TRAKE-upgrade knobs (session 2026-08-27, see report.md) ─────────────
+    # Every default reproduces the OLD behaviour exactly — flip one at a time
+    # on the Colab bench (bench-before-adopt).
+    #
+    # "all": encode EVERY cached query-processor variant per event (original +
+    # enhanced + translation + expansions — KIS parity) and max-fuse the
+    # per-variant similarities per event; "original" = the single raw text.
+    event_query_variants: Literal["original", "all"] = "original"
+    # "prepend": the video-pooling stage searches "<header>. <event>" texts
+    # (multilingual lanes only) while the per-video DP keeps scoring the bare
+    # event texts — video-level context helps pick videos without diluting
+    # the event alignment. Needs the runner to pass the query header through.
+    # Do NOT combine with event_context: prepend (events would already carry
+    # the header → pooling text doubles it; harmless but diluted).
+    pool_context: Literal["none", "prepend"] = "none"
+    # > 0: blend per-event caption-BM25 scores (dense Vintern captions) into
+    # the DP similarity matrix: sim += w · minmax-per-event(caption BM25 over
+    # the pooled videos). 0 = off. Degrades to no-op when caption artifacts
+    # are absent.
+    caption_signal_weight: float = Field(0.0, ge=0.0)
+    # "jitter": keep the top rows as-is, then densify the 100-row budget with
+    # frame variants around the best per-video chains (neighbouring keyframes
+    # + midpoints BETWEEN keyframes, early-biased — TRAKE asks for the FIRST
+    # moment). The official metric takes the best row per cutoff, so extra
+    # rows around strong candidates are free lottery tickets.
+    submit_strategy: Literal["legacy", "jitter"] = "legacy"
+    jitter_videos: int = Field(4, ge=1)  # distinct top videos expanded by jitter
 
 
 class ExtractionCfg(BaseModel):

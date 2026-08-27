@@ -25,6 +25,24 @@ Two sequence solvers share the gap window ``[min_gap_s, max_gap_s]``, the
 per-member event vectors + index stores and the per-video similarity matrix
 becomes the weighted sum of per-member cosine sims, min-max normalized per
 event over the pooled videos.
+
+Optional upgrades (session 2026-08-27, every one config-gated, defaults = old
+behaviour — see ``TemporalCfg`` in :mod:`cvp.config`):
+
+* **Query variants per event** — event vectors may carry SEVERAL encoded texts
+  per event (``event_variant_map`` maps vector rows → event index); per-event
+  similarity is the max over that event's variants, mirroring the KIS
+  multi-query max-fusion.
+* **Pool-context vectors** — ``pool_event_vecs`` (one per event) replace the
+  event vectors for the video-POOLING stage only, so the organiser header can
+  guide video selection without diluting the DP alignment.
+* **Caption step signal** — ``caption_scorer`` (built by
+  :func:`caption_scorer_from_signals`) supplies per-event caption-BM25 scores
+  per keyframe; ``temporal.caption_signal_weight`` blends them into the DP
+  similarity matrix after per-event min-max over the pooled videos.
+* **Jitter submit strategy** — ``temporal.submit_strategy: jitter`` keeps the
+  head of the ranking and densifies the remaining row budget with frame
+  variants around the best per-video chains (:func:`jitter_frame_variants`).
 """
 
 from __future__ import annotations
@@ -34,7 +52,7 @@ import logging
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol, Sequence
 
 import numpy as np
 
@@ -276,6 +294,31 @@ def _cosine_sim(vecs: np.ndarray, event_vecs: np.ndarray) -> np.ndarray:
     return (vecs / norms) @ np.asarray(event_vecs, dtype=np.float32).T
 
 
+def _identity_map(n: int) -> list[int]:
+    return list(range(n))
+
+
+def _n_events_of(variant_map: Sequence[int]) -> int:
+    return (int(max(variant_map)) + 1) if len(variant_map) else 0
+
+
+def _reduce_variants(sim: np.ndarray, variant_map: Sequence[int], n_events: int) -> np.ndarray:
+    """(n_frames, n_variant_rows) sims → (n_frames, n_events) via per-event max.
+
+    Mirrors the KIS multi-query max-fusion (``fusion.aggregate_queries`` with
+    ``how="max"``): an event scores with its best-matching text variant. The
+    identity map returns ``sim`` unchanged (the classic single-text path).
+    """
+    vmap = list(variant_map)
+    if vmap == _identity_map(n_events) and sim.shape[1] == n_events:
+        return sim
+    out = np.full((sim.shape[0], n_events), -np.inf, dtype=sim.dtype)
+    for row, event in enumerate(vmap):
+        np.maximum(out[:, event], sim[:, row], out=out[:, event])
+    out[~np.isfinite(out)] = 0.0  # events with no variant rows (defensive)
+    return out
+
+
 def monotonize_frame_idxs(frame_idxs: list[int]) -> list[int] | None:
     """Make a DP chain's frame_idx sequence strictly increasing, or reject it.
 
@@ -314,12 +357,21 @@ def _resolve_algo(settings: Settings, algo: str | None) -> str:
     return name
 
 
+# One resolved ensemble member: (name, weight, event_vecs, store, variant_map,
+# pool_event_vecs) — variant_map maps event-vec ROWS → event index (identity
+# when the member has one text per event); pool_event_vecs (n_events, d) or
+# None replace the vectors for the video-POOLING stage only.
+Member = tuple[str, float, np.ndarray, SupportsSearchStore, list[int], "np.ndarray | None"]
+
+
 def _resolve_members(
     event_vecs_by_member: dict[str, np.ndarray] | None,
     member_weights: dict[str, float] | None,
     stores_by_member: dict[str, SupportsSearchStore] | None,
-) -> list[tuple[str, float, np.ndarray, SupportsSearchStore]]:
-    """Validate ensemble kwargs → [(name, weight, event_vecs, store)] (may be empty)."""
+    variant_maps_by_member: dict[str, Sequence[int]] | None = None,
+    pool_vecs_by_member: dict[str, np.ndarray] | None = None,
+) -> list[Member]:
+    """Validate ensemble kwargs → resolved members (may be empty)."""
     if not event_vecs_by_member:
         return []
     if not stores_by_member:
@@ -328,7 +380,7 @@ def _resolve_members(
             "falling back to the primary model"
         )
         return []
-    out: list[tuple[str, float, np.ndarray, SupportsSearchStore]] = []
+    out: list[Member] = []
     n_events: int | None = None
     for name, vecs in event_vecs_by_member.items():
         store = stores_by_member.get(name)
@@ -339,46 +391,69 @@ def _resolve_members(
         if arr.ndim != 2 or arr.shape[0] == 0:
             log.warning("TRAKE ensemble: bad event vectors for member %r — member skipped", name)
             continue
-        if n_events is None:
-            n_events = arr.shape[0]
-        elif arr.shape[0] != n_events:
+        vmap = list((variant_maps_by_member or {}).get(name) or _identity_map(arr.shape[0]))
+        if len(vmap) != arr.shape[0]:
             log.warning(
-                "TRAKE ensemble: member %r has %d event vectors, expected %d — member skipped",
-                name, arr.shape[0], n_events,
+                "TRAKE ensemble: member %r variant map has %d entries for %d vectors "
+                "— member skipped", name, len(vmap), arr.shape[0],
             )
             continue
+        member_events = _n_events_of(vmap)
+        if n_events is None:
+            n_events = member_events
+        elif member_events != n_events:
+            log.warning(
+                "TRAKE ensemble: member %r covers %d events, expected %d — member skipped",
+                name, member_events, n_events,
+            )
+            continue
+        pool = (pool_vecs_by_member or {}).get(name)
+        if pool is not None:
+            pool = np.asarray(pool, dtype=np.float32)
+            if pool.ndim != 2 or pool.shape[0] != member_events:
+                log.warning(
+                    "TRAKE ensemble: member %r pool vectors have shape %s, expected "
+                    "(%d, d) — pooling falls back to the event vectors",
+                    name, getattr(pool, "shape", None), member_events,
+                )
+                pool = None
         weight = float((member_weights or {}).get(name, 1.0))
         if weight <= 0:
             continue
-        out.append((name, weight, arr, store))
+        out.append((name, weight, arr, store, vmap, pool))
     return out
 
 
 def _pooled_event_hits(
-    members: list[tuple[str, float, np.ndarray, SupportsSearchStore]],
+    members: list[Member],
     topk: int,
 ) -> list[tuple[np.ndarray, np.ndarray]]:
     """Per-event FAISS hits merged across members.
 
     Member scores are min-max normalized per event (they live on different
     scales) and weighted before concatenation — pooling only needs candidate
-    recall; the exact DP re-scores everything downstream.
+    recall; the exact DP re-scores everything downstream. A member's variant
+    rows all feed their event's hit list; ``pool_event_vecs`` (when present)
+    replace the event vectors for this stage only.
     """
-    n_events = members[0][2].shape[0]
+    n_events = _n_events_of(members[0][4])
     scores_acc: list[list[np.ndarray]] = [[] for _ in range(n_events)]
     gids_acc: list[list[np.ndarray]] = [[] for _ in range(n_events)]
-    for name, weight, vecs, store in members:
+    for name, weight, vecs, store, vmap, pool_vecs in members:
+        search_vecs, search_map = (
+            (pool_vecs, _identity_map(n_events)) if pool_vecs is not None else (vecs, vmap)
+        )
         try:
-            scores, gids = store.search(vecs, topk)
+            scores, gids = store.search(search_vecs, topk)
         except Exception as e:  # noqa: BLE001 — one bad member must not sink TRAKE
             log.warning("TRAKE ensemble: index search failed for member %r: %s", name, e)
             continue
-        for e_i in range(n_events):
-            valid = gids[e_i] >= 0
+        for row, e_i in enumerate(search_map):
+            valid = gids[row] >= 0
             if not valid.any():
                 continue
-            scores_acc[e_i].append(_minmax_1d(scores[e_i][valid]) * weight)
-            gids_acc[e_i].append(gids[e_i][valid])
+            scores_acc[e_i].append(_minmax_1d(scores[row][valid]) * weight)
+            gids_acc[e_i].append(gids[row][valid])
     out: list[tuple[np.ndarray, np.ndarray]] = []
     for e_i in range(n_events):
         if scores_acc[e_i]:
@@ -391,17 +466,20 @@ def _pooled_event_hits(
 def _ensemble_video_sims(
     videos: list[str],
     n_rows_by_vid: dict[str, int],
-    members: list[tuple[str, float, np.ndarray, SupportsSearchStore]],
+    members: list[Member],
 ) -> dict[str, np.ndarray]:
     """Weighted per-event fusion of per-member cosine sims for the pooled videos.
 
     Each member's (frames × events) matrix is min-max normalized **per event
     over ALL pooled videos** (so cross-video ranking stays meaningful);
     degenerate ranges collapse to a neutral 0.5. Videos missing a member's
-    embeddings use the remaining members with renormalized weights.
+    embeddings use the remaining members with renormalized weights. Members
+    carrying several text variants per event reduce to (frames × events) via
+    per-event max BEFORE normalization.
     """
     raw: dict[str, dict[str, np.ndarray]] = {}
-    for name, _weight, evecs, store in members:
+    for name, _weight, evecs, store, vmap, _pool in members:
+        n_events = _n_events_of(vmap)
         mats: dict[str, np.ndarray] = {}
         for vid in videos:
             try:
@@ -415,7 +493,9 @@ def _ensemble_video_sims(
                     name, vid,
                 )
                 continue
-            mats[vid] = _cosine_sim(vecs, evecs).astype(np.float64)
+            mats[vid] = _reduce_variants(
+                _cosine_sim(vecs, evecs), vmap, n_events
+            ).astype(np.float64)
         if mats:
             raw[name] = mats
 
@@ -434,7 +514,7 @@ def _ensemble_video_sims(
             normed[vid] = mm
         norm[name] = normed
 
-    weights = {name: w for name, w, _v, _s in members}
+    weights = {name: w for name, w, _v, _s, _m, _p in members}
     combined: dict[str, np.ndarray] = {}
     for vid in videos:
         acc: np.ndarray | None = None
@@ -451,6 +531,224 @@ def _ensemble_video_sims(
     return combined
 
 
+# ── caption step signal ──────────────────────────────────────────────────────
+
+
+def caption_scorer_from_signals(
+    text_signals, catalog: KeyframeCatalog, event_texts: list[str]
+) -> "Callable[[str], np.ndarray | None]":
+    """Build a ``video_id → (n_rows, K) raw caption-BM25 matrix`` closure.
+
+    ``text_signals`` needs only ``score_field`` (``cvp.search.text_signals.
+    TextSignals``); events are scored with their ORIGINAL Vietnamese text —
+    captions are Vietnamese (Vintern), same convention as the KIS BM25 path.
+    Returns None for a video with no caption match on any event, so absent
+    artifacts degrade to a no-op upstream.
+    """
+
+    def _score(video_id: str) -> np.ndarray | None:
+        rows = catalog.video_rows(video_id).sort_values("n")
+        refs = catalog.refs([int(g) for g in rows["global_id"]])
+        cols: list[list[float]] = []
+        any_signal = False
+        for text in event_texts:
+            try:
+                m = text_signals.score_field("caption", text, refs) or {}
+            except Exception as e:  # noqa: BLE001 — aux signal must never sink TRAKE
+                log.warning("TRAKE caption signal failed for %s: %s", video_id, e)
+                m = {}
+            if m:
+                any_signal = True
+            cols.append([float(m.get(r.global_id, 0.0)) for r in refs])
+        if not any_signal:
+            return None
+        return np.asarray(cols, dtype=np.float64).T  # (n_rows, K)
+
+    return _score
+
+
+def _normalized_caption_by_vid(
+    videos: list[str],
+    n_rows_by_vid: dict[str, int],
+    caption_scorer: "Callable[[str], np.ndarray | None]",
+    n_events: int,
+) -> dict[str, np.ndarray]:
+    """Per-video caption matrices, min-max normalized per event over the pool.
+
+    BM25 absent = no signal: a degenerate per-event range (all scores equal,
+    typically all zero) maps to 0 — NOT the dense path's neutral 0.5 — so a
+    corpus without caption artifacts leaves the DP matrix untouched.
+    """
+    raw: dict[str, np.ndarray] = {}
+    for vid in videos:
+        try:
+            m = caption_scorer(vid)
+        except Exception as e:  # noqa: BLE001 — aux signal must never sink TRAKE
+            log.warning("TRAKE caption scorer failed for %s: %s", vid, e)
+            continue
+        if m is None:
+            continue
+        m = np.asarray(m, dtype=np.float64)
+        if m.ndim != 2 or m.shape[0] != n_rows_by_vid.get(vid, -1) or m.shape[1] != n_events:
+            log.warning(
+                "TRAKE caption signal: matrix for %s has shape %s, expected (%d, %d) — skipped",
+                vid, m.shape, n_rows_by_vid.get(vid, -1), n_events,
+            )
+            continue
+        raw[vid] = m
+    if not raw:
+        return {}
+    stacked = np.concatenate(list(raw.values()), axis=0)
+    lo = stacked.min(axis=0)
+    span = stacked.max(axis=0) - lo
+    dead = span < 1e-9
+    span = np.where(dead, 1.0, span)
+    out: dict[str, np.ndarray] = {}
+    for vid, m in raw.items():
+        mm = (m - lo) / span
+        if dead.any():
+            mm[:, dead] = 0.0
+        out[vid] = mm.astype(np.float32)
+    return out
+
+
+# ── jitter submit strategy ───────────────────────────────────────────────────
+
+# Rows of the legacy ranking kept verbatim before the jitter blocks start:
+# R@1/R@5 stay EXACTLY what the legacy strategy would score, jitter only
+# densifies the deeper cutoffs (R@20/50/100).
+JITTER_HEAD = 8
+
+
+def jitter_frame_variants(rows: Sequence[int], fidx: np.ndarray) -> list[list[int]]:
+    """Ordered frame-tuple alternates around one chain (base tuple excluded).
+
+    The submitted frame need NOT be a keyframe — the keyframe grid is sparse
+    (~5-7s at Batch-1 density) while GT windows are tight, so midpoints
+    BETWEEN keyframes can hit windows no grid frame can. Early variants come
+    first: TRAKE queries ask for the FIRST moment of an action, which usually
+    starts between the previous keyframe and the one the DP picked.
+
+    Args:
+        rows: per-event row indices into the video's keyframe grid (increasing).
+        fidx: the video's full frame_idx array (catalog rows sorted by ``n``).
+
+    Returns:
+        Frame tuples, best-guess first, each strictly increasing, deduped,
+        never containing the base tuple.
+    """
+    base = [int(fidx[r]) for r in rows]
+
+    def _early(j: int) -> int | None:  # midpoint toward the previous keyframe
+        r = int(rows[j])
+        return (int(fidx[r - 1]) + int(fidx[r])) // 2 if r >= 1 else None
+
+    def _late(j: int) -> int | None:   # midpoint toward the next keyframe
+        r = int(rows[j])
+        return (int(fidx[r]) + int(fidx[r + 1])) // 2 if r + 1 < len(fidx) else None
+
+    def _prev(j: int) -> int | None:
+        r = int(rows[j])
+        return int(fidx[r - 1]) if r >= 1 else None
+
+    def _next(j: int) -> int | None:
+        r = int(rows[j])
+        return int(fidx[r + 1]) if r + 1 < len(fidx) else None
+
+    k = len(rows)
+
+    def _subst(fn, idxs) -> list[int]:
+        out = list(base)
+        for j in idxs:
+            v = fn(j)
+            if v is not None:
+                out[j] = int(v)
+        return out
+
+    cands: list[list[int]] = [_subst(_early, range(k))]
+    cands += [_subst(_early, [j]) for j in range(k)]
+    cands.append(_subst(_late, range(k)))
+    cands += [_subst(_late, [j]) for j in range(k)]
+    cands += [_subst(_prev, [j]) for j in range(k)]
+    cands += [_subst(_next, [j]) for j in range(k)]
+
+    seen: set[tuple[int, ...]] = {tuple(base)}
+    out: list[list[int]] = []
+    for c in cands:
+        t = tuple(c)
+        if t in seen or c[0] < 0:
+            continue
+        if any(b <= a for a, b in zip(c, c[1:])):
+            continue
+        seen.add(t)
+        out.append(c)
+    return out
+
+
+def expand_candidates_jitter(
+    ranked: "list[TrakeCandidate]",
+    rows_by_vid: dict,
+    cfg: TemporalCfg,
+    max_results: int,
+) -> "list[TrakeCandidate]":
+    """Densify the row budget around the best per-video chains.
+
+    Layout: the first :data:`JITTER_HEAD` legacy rows verbatim → jitter blocks
+    of the best chain of the top ``cfg.jitter_videos`` distinct videos (rank
+    order) → the remaining legacy rows. Duplicates collapse, ``max_results``
+    caps the total. Variant candidates reuse the base chain's ``ns``/pts (the
+    grid rows they were derived from) with an epsilon-decayed score so any
+    downstream score sort preserves this order.
+    """
+    if not ranked:
+        return ranked
+    picked: dict[str, TrakeCandidate] = {}
+    for c in ranked:
+        if c.video_id not in picked:
+            picked[c.video_id] = c
+            if len(picked) >= int(getattr(cfg, "jitter_videos", 4)):
+                break
+    blocks: list[TrakeCandidate] = []
+    for vid, cand in picked.items():
+        rows_df = rows_by_vid.get(vid)
+        if rows_df is None:
+            continue
+        ns = rows_df["n"].to_numpy(dtype=np.int64)
+        fidx = rows_df["frame_idx"].to_numpy(dtype=np.int64)
+        # Round-72 (Cursor-lab audit): video map DỞ DANG trộn frame thật với
+        # ước lượng n-1 — neighbor/midpoint tính từ mảng thô sẽ sinh frame rác
+        # ở các dòng sâu. Video chưa map đủ thì giữ nguyên chuỗi gốc, bỏ jitter.
+        if "has_map" in rows_df.columns and not bool(rows_df["has_map"].all()):
+            continue
+        pos = {int(n): i for i, n in enumerate(ns)}
+        try:
+            rows = [pos[int(n)] for n in cand.ns]
+        except KeyError:  # defensive: chain ns not on this grid
+            continue
+        for i, frames in enumerate(jitter_frame_variants(rows, fidx)):
+            blocks.append(
+                TrakeCandidate(
+                    video_id=vid,
+                    ns=list(cand.ns),
+                    frame_idxs=frames,
+                    pts_times=list(cand.pts_times),
+                    score=cand.score - 1e-6 * (i + 1),
+                    per_event=list(cand.per_event),
+                )
+            )
+    seen: set[tuple] = set()
+    out: list[TrakeCandidate] = []
+    for c in [*ranked[:JITTER_HEAD], *blocks, *ranked[JITTER_HEAD:]]:
+        key = (c.video_id, tuple(int(f) for f in c.frame_idxs))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(c)
+        if len(out) >= max_results:
+            break
+    return out
+
+
 # ── full pipeline ────────────────────────────────────────────────────────────
 
 
@@ -463,14 +761,20 @@ def trake_search(
     max_results: int = 100,
     *,
     algo: str | None = None,
+    event_variant_map: Sequence[int] | None = None,
+    pool_event_vecs: np.ndarray | None = None,
+    caption_scorer: "Callable[[str], np.ndarray | None] | None" = None,
     event_vecs_by_member: dict[str, np.ndarray] | None = None,
     member_weights: dict[str, float] | None = None,
     stores_by_member: dict[str, SupportsSearchStore] | None = None,
+    variant_maps_by_member: dict[str, Sequence[int]] | None = None,
+    pool_vecs_by_member: dict[str, np.ndarray] | None = None,
 ) -> list[TrakeCandidate]:
     """Full TRAKE pipeline: pool videos → exact per-video DP → global rank.
 
     Args:
-        event_vecs: (k, dim) L2-normalized event queries for the primary model.
+        event_vecs: (k, dim) L2-normalized event queries for the primary model
+            — or (R, dim) variant rows when ``event_variant_map`` is given.
         index_search: primary index callable ``(vecs, topk) -> (scores, gids)``.
         embedding_path: primary callable ``video_id -> Path`` of ``(n, dim)`` .npy.
         catalog: keyframe catalog (global_id ↔ video/frame bridge).
@@ -478,6 +782,15 @@ def trake_search(
         max_results: global cap on returned candidates.
         algo: ``"dante"`` (exact O(N·T) DP) or ``"beam"``; ``None`` →
             ``settings.temporal.algo``.
+        event_variant_map: optional row→event index map for ``event_vecs``
+            (``temporal.event_query_variants: all``); per-event similarity is
+            the max over that event's variant rows. None = one row per event.
+        pool_event_vecs: optional (n_events, dim) vectors used for the video
+            POOLING stage only (``temporal.pool_context: prepend``); the DP
+            keeps scoring with ``event_vecs``.
+        caption_scorer: optional ``video_id → (n_rows, K) raw caption-BM25``
+            (see :func:`caption_scorer_from_signals`); blended into the DP
+            matrix when ``settings.temporal.caption_signal_weight > 0``.
         event_vecs_by_member: optional ENSEMBLE scoring — per-member event
             vectors, e.g. ``{"siglip2": (k, d1), "openclip": (k, d2)}``. When
             given (with ``stores_by_member``), per-video similarity matrices
@@ -490,21 +803,57 @@ def trake_search(
             renormalized over the members available per video).
         stores_by_member: per-member stores exposing ``search`` and
             ``embedding_path`` (e.g. ``cvp.index.store.IndexStore``).
+        variant_maps_by_member: optional per-member row→event maps (same
+            semantics as ``event_variant_map``).
+        pool_vecs_by_member: optional per-member pooling-only vectors (same
+            semantics as ``pool_event_vecs``).
     """
     cfg = settings.temporal
     chosen = _resolve_algo(settings, algo)
 
-    members = _resolve_members(event_vecs_by_member, member_weights, stores_by_member)
+    members = _resolve_members(event_vecs_by_member, member_weights, stores_by_member,
+                               variant_maps_by_member, pool_vecs_by_member)
     if len(members) == 1:  # single member ≡ classic path on that member's lanes
-        _name, _w, m_vecs, m_store = members[0]
+        _name, _w, m_vecs, m_store, m_vmap, m_pool = members[0]
         event_vecs, index_search, embedding_path = m_vecs, m_store.search, m_store.embedding_path
+        event_variant_map, pool_event_vecs = m_vmap, m_pool
         members = []
+
+    event_vecs = np.asarray(event_vecs, dtype=np.float32)
+    vmap = list(event_variant_map) if event_variant_map is not None else _identity_map(len(event_vecs))
+    if len(vmap) != len(event_vecs):
+        log.warning("TRAKE: variant map has %d entries for %d event vectors — ignoring it",
+                    len(vmap), len(event_vecs))
+        vmap = _identity_map(len(event_vecs))
+    n_events = _n_events_of(members[0][4]) if members else _n_events_of(vmap)
+
+    if pool_event_vecs is not None and len(pool_event_vecs) != n_events:
+        log.warning("TRAKE: pool vectors have %d rows, expected %d — pooling on event vectors",
+                    len(pool_event_vecs), n_events)
+        pool_event_vecs = None
 
     if members:
         event_hits = _pooled_event_hits(members, cfg.per_event_topk)
     else:
-        scores, gids = index_search(event_vecs, cfg.per_event_topk)
-        event_hits = [(scores[i : i + 1], gids[i : i + 1]) for i in range(len(event_vecs))]
+        if pool_event_vecs is not None:
+            scores, gids = index_search(pool_event_vecs, cfg.per_event_topk)
+            event_hits = [(scores[i : i + 1], gids[i : i + 1]) for i in range(n_events)]
+        else:
+            scores, gids = index_search(event_vecs, cfg.per_event_topk)
+            if vmap == _identity_map(n_events):  # classic: one row per event
+                event_hits = [(scores[i : i + 1], gids[i : i + 1]) for i in range(n_events)]
+            else:  # variant rows all feed their event's hit pool
+                event_hits = []
+                for e_i in range(n_events):
+                    rows_e = [r for r, e in enumerate(vmap) if e == e_i]
+                    if rows_e:
+                        event_hits.append((
+                            np.concatenate([np.ravel(scores[r]) for r in rows_e]),
+                            np.concatenate([np.ravel(gids[r]) for r in rows_e]),
+                        ))
+                    else:  # gap in the variant map — that event has no evidence
+                        event_hits.append((np.zeros(0, dtype=np.float64),
+                                           np.zeros(0, dtype=np.int64)))
     videos = pool_videos(event_hits, catalog, cfg.max_videos)
     if not videos:
         return []
@@ -515,6 +864,22 @@ def trake_search(
         sims_by_vid = _ensemble_video_sims(
             videos, {vid: len(df) for vid, df in rows_by_vid.items()}, members
         )
+
+    cap_w = float(getattr(cfg, "caption_signal_weight", 0.0) or 0.0)
+    cap_by_vid: dict[str, np.ndarray] = {}
+    if cap_w > 0 and caption_scorer is not None:
+        cap_by_vid = _normalized_caption_by_vid(
+            videos, {vid: len(df) for vid, df in rows_by_vid.items()},
+            caption_scorer, n_events,
+        )
+        if not cap_by_vid:
+            # Round-72 (Cursor-lab audit): knob bật mà không thu được tín hiệu
+            # nào = chạy Y HỆT baseline — phải LA LỚN, kẻo lượt bench A/B đo ra
+            # số trùng baseline và kênh caption bị kết án oan là vô dụng.
+            log.warning(
+                "TRAKE caption_signal_weight=%.2f nhưng KHÔNG thu được tín hiệu "
+                "caption nào từ pool %d video — kết quả sẽ Y HỆT baseline "
+                "(kho captions/text_index thiếu trên máy này?)", cap_w, len(videos))
 
     results: list[TrakeCandidate] = []
     for vid in videos:
@@ -532,7 +897,10 @@ def trake_search(
             if len(vecs) != len(rows_df):
                 log.warning("TRAKE: embedding/manifest mismatch for %s — skipped", vid)
                 continue
-            sim = _cosine_sim(vecs, event_vecs)
+            sim = _reduce_variants(_cosine_sim(vecs, event_vecs), vmap, n_events)
+        cap = cap_by_vid.get(vid)
+        if cap is not None and cap.shape == sim.shape:
+            sim = sim + cap_w * cap
         pts = rows_df["pts_time"].to_numpy(dtype=np.float64)
         fidx = rows_df["frame_idx"].to_numpy(dtype=np.int64)
         ns = rows_df["n"].to_numpy(dtype=np.int64)
@@ -573,4 +941,7 @@ def trake_search(
             )
 
     results.sort(key=lambda c: -c.score)
-    return heapq.nlargest(max_results, results, key=lambda c: c.score)
+    ranked = heapq.nlargest(max_results, results, key=lambda c: c.score)
+    if str(getattr(cfg, "submit_strategy", "legacy")) == "jitter" and ranked:
+        ranked = expand_candidates_jitter(ranked, rows_by_vid, cfg, max_results)
+    return ranked

@@ -264,7 +264,41 @@ class TextSignals:
                 return f if f.n_docs > 0 else None
         return self._get_field(name)
 
+    def persisted_field_ready(self, name: str) -> bool:
+        """True when ``score_field(name, …)`` would hit the PERSISTED index.
+
+        Round-72 (Cursor-lab audit): the TRAKE caption-step scorer calls
+        ``score_field`` k×~30 times per query — on the in-memory fallback each
+        call is a full-corpus rank_bm25 scan (minutes per query on the dense
+        caption store). Callers that would multiply the fallback cost this way
+        must check here and disable themselves loudly instead.
+        """
+        if not self._persisted_enabled():
+            return False
+        if name not in self._persisted:
+            self._persisted[name] = TextIndexStore.load(name, self.settings.paths.artifacts_root)
+        f = self._persisted[name]
+        return f is not None and f.n_docs > 0
+
     # ── scoring ──────────────────────────────────────────────────────────
+
+    def score_field(self, field: str, query_text: str,
+                    candidates: list[KeyframeRef]) -> dict[int, float]:
+        """Raw BM25 scores for ONE frame field only ({} when absent/unknown).
+
+        The TRAKE caption-step signal scores K event texts per pooled video —
+        going through :meth:`score_candidates` would tokenize and score all
+        four fields K times per video for nothing.
+        """
+        if field not in FRAME_FIELDS:
+            return {}
+        f = self._get_scorer(field)
+        if not f:
+            return {}
+        toks = tokenize_vi(query_text)
+        if not toks:
+            return {}
+        return f.scores_for(toks, [c.global_id for c in candidates])
 
     def score_candidates(self, query_text: str, candidates: list[KeyframeRef]) -> dict[str, dict[int, float]]:
         """Per-field raw BM25 scores for candidate frames.

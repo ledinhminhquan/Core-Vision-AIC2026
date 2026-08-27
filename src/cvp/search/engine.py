@@ -31,7 +31,7 @@ from cvp.search.avs import avs_diversify
 from cvp.search.feedback import rocchio
 from cvp.search.object_filter import ObjectBooster
 from cvp.search.superglobal import superglobal_rerank
-from cvp.search.temporal import TrakeCandidate, trake_search
+from cvp.search.temporal import TrakeCandidate, caption_scorer_from_signals, trake_search
 from cvp.search.text_signals import TextSignals
 from cvp.search.cross_rerank import cross_rerank
 from cvp.search.vlm_rerank import vlm_rerank
@@ -582,13 +582,27 @@ class SearchEngine:
         )
         return self._finalize(dense, query_vi, display_k)
 
-    def search_trake(self, event_queries: list[str], max_results: int = 100) -> list[TrakeCandidate]:
+    def search_trake(self, event_queries: list[str], max_results: int = 100,
+                     *, context: str | None = None) -> list[TrakeCandidate]:
         """TRAKE: ordered events → per-video keyframe sequences.
 
         With ``temporal.use_ensemble`` every member scores every event; per-video
         similarity matrices are the weighted sum of per-member cosine sims
         (min-max normalized per event), so an event only one lane understands
         still anchors the chain.
+
+        Optional upgrades, each behind a ``temporal.*`` knob (defaults = old
+        behaviour — see TemporalCfg):
+
+        * ``event_query_variants: all`` — encode every cached query-processor
+          variant per event and max-fuse per event (KIS parity).
+        * ``pool_context: prepend`` + ``context=<query header>`` — the video
+          POOLING stage searches "<header>. <event>" texts on multilingual
+          lanes; the DP keeps scoring the bare events.
+        * ``caption_signal_weight > 0`` — blend per-event caption-BM25 into
+          the DP similarity matrix (dense Vintern captions as step signal).
+        * ``submit_strategy: jitter`` — densify the row budget around the top
+          chains with frame variants (handled inside ``trake_search``).
         """
         # Blank/whitespace events (e.g. a query file with bare "E1:" markers)
         # would reach np.concatenate([]) inside encode_text and crash the call.
@@ -597,6 +611,8 @@ class SearchEngine:
             log.warning("search_trake called with no usable events — returning [].")
             return []
         processed = [self.query_processor.process(q) for q in event_queries]
+        tcfg = self.settings.temporal
+        use_variants = getattr(tcfg, "event_query_variants", "original") == "all"
 
         def _texts_for(model) -> list[str]:
             # English fallback order mirrors has_english(): expansions ARE an
@@ -609,6 +625,20 @@ class SearchEngine:
                 for p in processed
             ]
 
+        def _variant_texts_for(model) -> tuple[list[str], list[int]]:
+            """(texts, row→event map). Default mode: the classic one text per
+            event; ``event_query_variants: all`` adds every cached processor
+            variant (texts_for_search — the exact KIS list) per event."""
+            if not use_variants:
+                return _texts_for(model), list(range(len(processed)))
+            texts: list[str] = []
+            vmap: list[int] = []
+            for j, p in enumerate(processed):
+                cand = p.texts_for_search(model.multilingual) or [p.original]
+                texts.extend(cand)
+                vmap.extend([j] * len(cand))
+            return texts, vmap
+
         def _lane_usable(model) -> bool:
             # An English-only tower fed raw Vietnamese for ANY event would fold
             # near-random similarities into that event's ensemble row — skip
@@ -616,25 +646,69 @@ class SearchEngine:
             # (multilingual by default) is exempt: some ranking beats none.
             return model.multilingual or all(p.has_english() for p in processed)
 
-        event_vecs = self.primary_model.encode_text(_texts_for(self.primary_model))
+        # Pooling-context texts (multilingual lanes only): video-level context
+        # helps SELECT videos, but would dilute the per-event DP alignment.
+        pool_texts: list[str] | None = None
+        if getattr(tcfg, "pool_context", "none") == "prepend" and context and context.strip():
+            ctx = context.strip().rstrip(" :.")
+            pool_texts = [f"{ctx}. {q}" for q in event_queries]
+
+        def _pool_vecs_for(model) -> np.ndarray | None:
+            if pool_texts is None or not getattr(model, "multilingual", False):
+                return None
+            try:
+                return model.encode_text(pool_texts)
+            except Exception as e:  # noqa: BLE001 — pooling falls back to event texts
+                log.warning("TRAKE: pool-context encode failed for %r (%s) — "
+                            "pooling on event texts", getattr(model, "key", "?"), e)
+                return None
+
+        primary_texts, primary_vmap = _variant_texts_for(self.primary_model)
+        event_vecs = self.primary_model.encode_text(primary_texts)
+        primary_pool_vecs = _pool_vecs_for(self.primary_model)
         if not _lane_usable(self.primary_model):
             log.warning("TRAKE: primary lane %r is English-only but some events have "
                         "no English variant — rankings may be degraded",
                         getattr(self.primary_model, "key", "?"))
+
+        caption_scorer = None
+        if float(getattr(tcfg, "caption_signal_weight", 0.0) or 0.0) > 0:
+            # Round-72 (Cursor-lab audit): scorer này gọi score_field k×~30
+            # lần/query — rơi vào fallback BM25 in-memory là MỖI lần một cú
+            # quét toàn kho (nhiều phút/query). Chỉ bật trên index persisted;
+            # thiếu thì tắt TO TIẾNG thay vì âm thầm chậm gấp trăm lần.
+            if self.text_signals.persisted_field_ready("caption"):
+                caption_scorer = caption_scorer_from_signals(
+                    self.text_signals, self.catalog, [p.original for p in processed])
+            else:
+                log.warning(
+                    "TRAKE caption_signal_weight bật nhưng text_index[caption] "
+                    "persisted chưa sẵn sàng — TẮT tín hiệu caption (chạy "
+                    "scripts/03 --text-index trước; fallback in-memory chậm "
+                    "hàng trăm lần nên không được phép).")
+
         ensemble_kwargs: dict = {}
-        if self.settings.temporal.use_ensemble and len(self.members) > 1:
+        if tcfg.use_ensemble and len(self.members) > 1:
             event_vecs_by_member: dict[str, np.ndarray] = {}
             stores_by_member: dict[str, IndexStore] = {}
+            variant_maps_by_member: dict[str, list[int]] = {}
+            pool_vecs_by_member: dict[str, np.ndarray] = {}
             for name, (model, store) in zip(self.member_names, self.members):
                 if model is not self.primary_model and not _lane_usable(model):
                     log.warning("TRAKE ensemble: member %s skipped — English-only "
                                 "lane with no English variant for some events", name)
                     continue
                 try:
-                    event_vecs_by_member[name] = (
-                        event_vecs if model is self.primary_model
-                        else model.encode_text(_texts_for(model))
-                    )
+                    if model is self.primary_model:
+                        vecs_m, vmap_m, pool_m = event_vecs, primary_vmap, primary_pool_vecs
+                    else:
+                        texts_m, vmap_m = _variant_texts_for(model)
+                        vecs_m = model.encode_text(texts_m)
+                        pool_m = _pool_vecs_for(model)
+                    event_vecs_by_member[name] = vecs_m
+                    variant_maps_by_member[name] = vmap_m
+                    if pool_m is not None:
+                        pool_vecs_by_member[name] = pool_m
                     stores_by_member[name] = store
                 except Exception as e:  # noqa: BLE001 — a lane failing must not kill TRAKE
                     log.warning("TRAKE ensemble: member %s skipped (%s)", name, e)
@@ -643,6 +717,8 @@ class SearchEngine:
                     event_vecs_by_member=event_vecs_by_member,
                     member_weights=dict(zip(self.member_names, self.member_weights)),
                     stores_by_member=stores_by_member,
+                    variant_maps_by_member=variant_maps_by_member,
+                    pool_vecs_by_member=pool_vecs_by_member,
                 )
         return trake_search(
             event_vecs=event_vecs,
@@ -651,5 +727,8 @@ class SearchEngine:
             catalog=self.catalog,
             settings=self.settings,
             max_results=max_results,
+            event_variant_map=primary_vmap,
+            pool_event_vecs=primary_pool_vecs,
+            caption_scorer=caption_scorer,
             **ensemble_kwargs,
         )
