@@ -1826,6 +1826,7 @@ try:
     list(ARTIFACTS.iterdir())    # round-28: nudge metadata trước loạt exists()
 except OSError:
     _ensure_drive()
+_missing = []
 for _d in _READ_HOT:
     src, dst = ARTIFACTS / _d, LOCAL_ART / _d
     if dst.exists():
@@ -1833,6 +1834,7 @@ for _d in _READ_HOT:
         continue
     _ensure_drive()
     if not src.exists():
+        _missing.append(_d)          # round-76: thiếu là phải LA LÊN, xem dưới
         continue
     _tmp = LOCAL_ART / (_d + ".__tmp")
     if _tmp.exists():
@@ -1840,6 +1842,13 @@ for _d in _READ_HOT:
     shutil.copytree(src, _tmp)
     _tmp.rename(dst)
     print(f"   {_d}/ → local")
+if _missing:
+    # Round-76 (audit tiền-trận): trước đây thiếu thư mục nào là LẶNG LẼ bỏ
+    # qua — text_index vắng mặt nghĩa là OCR/ASR/caption âm thầm = 0 suốt
+    # trận. Metadata DriveFS lười là thủ phạm quen mặt; thuốc: đổi máy ảo.
+    print(f"\n⚠⚠⚠ THIẾU {len(_missing)} kho artifacts trên Drive: {_missing}")
+    print("    Máy ảo lười metadata? ĐỔI MÁY ẢO MỚI rồi Run all lại —")
+    print("    KHÔNG ra trận khi thiếu bất kỳ kho nào ngoài 'thumbs'.")
 (LOCAL_ART / "submissions").mkdir(parents=True, exist_ok=True)
 os.environ["CVP_PATHS__ARTIFACTS_ROOT"] = str(LOCAL_ART)
 # round-42: có kho thumbnail (chạy scripts/60_make_thumbs.py MỘT lần) → web
@@ -1893,6 +1902,14 @@ os.environ["CVP_VQA__SELF_CONSISTENCY"] = str(QA_VOTES)
 os.environ["CVP_SEARCH__RERANKER"] = "qwen_reranker" if CROSS_RERANK else "none"
 # Round-44: Lab (nb04) dò được bộ trọng số fusion thắng bench → tự nạp.
 _tw = PROJECT / "artifacts" / "tuning" / "best_weights.json"
+try:                                     # round-76: nudge metadata tuning/
+    list(_tw.parent.iterdir())           # (nb04 có từ round-71, nb03 thì chưa)
+except OSError:
+    pass
+if not _tw.exists():
+    print("⚠⚠ KHÔNG thấy tuning/best_weights.json — trận sẽ chạy trọng số "
+          "MẶC ĐỊNH, KHÁC cấu hình bench 0.6826! Metadata Drive lười? "
+          "Chạy lại cell này; vẫn thiếu thì đổi máy ảo mới.")
 if _tw.exists():
     import json as _json
     _w = _json.loads(_tw.read_text(encoding="utf-8")).get("best", {}).get("weights")
@@ -1937,11 +1954,29 @@ if ENGINE_MODEL == "ensemble":
     os.environ["CVP_EMBEDDING__ENSEMBLE_MEMBERS"] = '["finetuned", "metaclip2"]'
     os.environ["CVP_EMBEDDING__ENSEMBLE_WEIGHTS"] = "[0.6, 0.4]"
 
+# Round-76 (audit tiền-trận): thiếu GEMINI key là hỏng ÂM THẦM và MUỘN —
+# enhancement rơi về Google-Translate, VLM rerank tắt, QA rơi về Vintern;
+# cấu hình 0.6826 cần Gemini. La lên NGAY tại đây thay vì giữa trận.
+if QUERY_PROVIDER == "gemini" and not (os.environ.get("GEMINI_API_KEY")
+                                       or os.environ.get("GOOGLE_API_KEY")):
+    print("⚠⚠⚠ KHÔNG có GEMINI_API_KEY/GOOGLE_API_KEY trong env — thêm secret "
+          "ở panel 🔑 (bật Notebook access), chạy lại cell secrets rồi cell "
+          "này. Ra trận thiếu key = mất enhancement + VLM rerank + QA Pro!")
 from cvp.search.engine import SearchEngine
 from cvp.config import load_settings
 settings = load_settings()
 t0 = time.time()
 engine = SearchEngine(settings)
+# Round-76: chốt chặn 2-lane cho TRẬN — nb04 có từ round-71, nb03 thì chưa.
+# Engine "degrade gracefully" khi một lane hỏng: đêm thi mà chạy ensemble
+# thiếu lane là đánh cả đêm với nửa vũ khí, chỉ có một dòng warning chìm
+# trong log. Fail TO TIẾNG tại đây; thuốc: đổi máy ảo MỚI rồi Run all lại.
+if ENGINE_MODEL == "ensemble":
+    assert getattr(engine, "member_names", None) == ["finetuned", "metaclip2"], (
+        f"Ensemble thiếu lane: {getattr(engine, 'member_names', None)} — "
+        "index/checkpoint chưa nạp đủ (máy ảo lười metadata?). Đổi máy ảo "
+        "MỚI và Run all lại — TUYỆT ĐỐI không ra trận thiếu lane.")
+    print("✓ ensemble đủ 2 lane:", engine.member_names)
 print(f"engine ready in {time.time()-t0:.1f}s — {len(engine.catalog):,} keyframes")
 '''
 
