@@ -1912,6 +1912,24 @@ if _tw.exists():
 # Ranking phẳng (top không tách khỏi đám đông) → tự tìm lại bằng các biến thể
 # Gemini đã cache rồi trộn RRF — không tốn thêm cuộc gọi API nào.
 os.environ["CVP_SEARCH__LOW_CONFIDENCE_RETRY"] = "true"
+# ── Round-75: gói knob AB vào TRẬN — thắng bench#3/#4 (0.6478 → 0.6739 →
+# 0.6826; hiệu ứng nhất quán 2 lượt: q22-qa +0.8, TRAKE +0.2, đuôi KIS +0.4,
+# đổi q24 −0.2). Gói B (3 knob vqa) không đo được lãi trên đề nháp nhưng là
+# bảo hiểm định dạng cho đề thật, không phá gì (q22 giữ 0.8, budget đủ).
+for _k, _v in {
+    "CVP_SEARCH__NEIGHBOR_CONSISTENCY_BOOST": "0.15",
+    "CVP_SEARCH__ROW_STRATEGY": "diversify_tail",
+    "CVP_TEMPORAL__SUBMIT_STRATEGY": "jitter",
+    "CVP_TEMPORAL__POOL_CONTEXT": "prepend",
+    "CVP_TEMPORAL__EVENT_QUERY_VARIANTS": "all",
+    "CVP_TEMPORAL__CAPTION_SIGNAL_WEIGHT": "0.2",
+    "CVP_VQA__ANSWER_CANONICALIZE": "true",
+    "CVP_VQA__ANSWER_NEIGHBOR_FRAMES": "1",
+    "CVP_VQA__MAX_CALLS_PER_QUERY": "10",
+}.items():
+    os.environ[_k] = _v
+print("🎛 Gói knob AB (round-75) đã vào trận: boost 0.15 + diversify_tail + "
+      "4 knob TRAKE + vote canonical/neighbor")
 if ENGINE_MODEL in ("finetuned", "ensemble"):
     os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
         Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "checkpoints" / "vi_siglip2_best")
@@ -2355,11 +2373,12 @@ LAB_BENCH_FULL = r'''
 # Đúng cấu hình ra trận nb03: finetuned + gemini + VLM48×3 + Qwen-8B + Pro-QA.
 RUN_BENCH_FULL = True
 # ── Round-74: gói knob A/B cho chiến dịch bench (dựa trên chẩn đoán 66/67).
-# "off" = y hệt bench#2 (baseline) · "A" = ranking/hàng, KHÔNG đổi API
-# (boost cao-nguyên + đa dạng hóa đuôi 100 dòng + 4 knob TRAKE round-72) ·
-# "AB" = A + gói QA (canonicalize vote + hỏi thêm strip lân cận, ×2 call
-# Gemini mỗi nhóm QA). Chỉ đổi MỘT chữ này, không sửa gì khác.
-BENCH_PACK = "off"
+# "off" = baseline tiền-r75 · "A" = ranking/hàng, KHÔNG đổi API (boost
+# cao-nguyên + đa dạng hóa đuôi 100 dòng + 4 knob TRAKE round-72) · "AB" =
+# A + gói QA (canonicalize vote + hỏi thêm strip lân cận, ×2 call Gemini
+# mỗi nhóm QA). Round-75: gói AB thắng bench#3/#4 và đã vào nb03 ra trận →
+# mặc định bench cũng là "AB" cho đúng luật bench-là-bản-sao-trận.
+BENCH_PACK = "AB"
 import os, time
 from pathlib import Path
 _PACK_A = {

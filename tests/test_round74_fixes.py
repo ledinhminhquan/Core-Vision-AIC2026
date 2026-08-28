@@ -30,7 +30,9 @@ NB04_SRC = "".join("".join(c["source"]) for c in NB04["cells"]
 
 
 def test_r74_bench_pack_default_off_and_validated():
-    assert 'BENCH_PACK = "off"' in NB04_SRC
+    # round-75 flipped the declared default to "AB" (the adopted battle pack —
+    # mirror law); the toggle itself plus its validation stay pinned here.
+    assert 'BENCH_PACK = "AB"' in NB04_SRC
     assert 'assert BENCH_PACK in ("off", "A", "AB")' in NB04_SRC
 
 
