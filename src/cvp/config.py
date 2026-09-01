@@ -58,8 +58,10 @@ class EmbeddingCfg(BaseModel):
     openclip_arch: str = "ViT-H-14-378-quickgelu"
     openclip_pretrained: str = "dfn5b"
     # Optional native-Vietnamese MLLM embedding lane (heavy at index time).
-    qwen_embed_id: str = "Qwen/Qwen3-VL-Embedding-2B"
-    qwen_embed_dim: int = 1024          # MRL truncation (model supports 64–2048)
+    # Round-80: mặc định 8B (nghiên cứu 29/08 — MMEB-V2 77.8 vs 73.2 của 2B);
+    # lane là optional nên đổi default không đụng trận 2-lane hiện tại.
+    qwen_embed_id: str = "Qwen/Qwen3-VL-Embedding-8B"
+    qwen_embed_dim: int = 1536          # MRL truncation (8B supports 64–4096)
     qwen_embed_instruction: str = "Represent this news-video keyframe / query for retrieval."
     mclip_id: str = "M-CLIP/XLM-Roberta-Large-Vit-L-14"
     mclip_image_arch: str = "ViT-L-14"

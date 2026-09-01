@@ -32,8 +32,8 @@ embedding:
   openclip_arch: ViT-H-14-378-quickgelu
   openclip_pretrained: dfn5b
   # Optional native-Vietnamese lane (Qwen3-VL-Embedding: best vi zero-shot R@1).
-  qwen_embed_id: Qwen/Qwen3-VL-Embedding-2B
-  qwen_embed_dim: 1024
+  qwen_embed_id: Qwen/Qwen3-VL-Embedding-8B   # round-80: 8B SOTA (2B chỉ khi thiếu VRAM)
+  qwen_embed_dim: 1536   # MRL, 8B hỗ trợ 64-4096
   qwen_embed_instruction: "Represent this news-video keyframe / query for retrieval."
   mclip_id: M-CLIP/XLM-Roberta-Large-Vit-L-14
   mclip_image_arch: ViT-L-14

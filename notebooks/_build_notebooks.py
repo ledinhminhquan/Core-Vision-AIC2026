@@ -2655,7 +2655,7 @@ Dựng lane retrieval THỨ BA từ **Qwen/Qwen3-VL-Embedding-8B** (SOTA mở 01
 MMEB-V2 77.8, tiếng Việt tường minh, Apache-2.0, cùng họ Qwen3-VL-Reranker-8B
 đang ra trận) rồi A/B ngay với đội hình trận:
 
-1. Embed 177K keyframes (bf16, MRL 1536) — **~4-8 giờ A100/G4, resume được**
+1. Embed 177K keyframes (bf16, MRL 1536) — **~8-14 giờ A100/G4, resume được**
    (mỗi video một file .npy, chạy lại là bỏ qua video đã xong).
 2. Build FAISS + đồng bộ `embeddings/qwen_embed*` + `indexes/*qwen_embed*` về Drive.
 3. A/B retrieval-only trên đề nháp: đội hình trận vs 3-lane (2 tỉ lệ) vs qwen đơn
@@ -2679,18 +2679,27 @@ if RUN_QWEN_LANE:
     _la = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"])
 
     def _sync_qwen_to_drive(tag=""):
+        _n = 0
         for _sub in ("embeddings", "indexes"):
             for _f in (_la / _sub).glob("*qwen_embed*"):
                 _dst = PROJECT / "artifacts" / _sub / _f.name
                 _dst.parent.mkdir(parents=True, exist_ok=True)
-                # round-46: embeddings/<lane> là THƯ MỤC (mỗi video một .npy) —
-                # copy2 lên thư mục từng làm sập cả cell (IsADirectoryError).
+                # round-46: embeddings/<lane> là THƯ MỤC (mỗi video một .npy).
+                # Preflight r80: chép THEO DELTA (size khác mới chép) — copytree
+                # mù quáng đẩy lại cả ~1GB mỗi 15 phút, cuối job thành O(n²).
                 if _f.is_dir():
-                    shutil.copytree(_f, _dst, dirs_exist_ok=True)
+                    _dst.mkdir(exist_ok=True)
+                    for _g in _f.iterdir():
+                        _d2 = _dst / _g.name
+                        if (not _d2.exists()
+                                or _d2.stat().st_size != _g.stat().st_size):
+                            shutil.copy2(_g, _d2)
+                            _n += 1
                 elif not _dst.exists() or _dst.stat().st_size != _f.stat().st_size:
                     shutil.copy2(_f, _dst)
+                    _n += 1
         if tag:
-            print(f"   ☁ đồng bộ qwen_embed → Drive ({tag})")
+            print(f"   ☁ đồng bộ qwen_embed → Drive ({tag}): {_n} file mới/đổi")
 
     # audit r78: job ~8-14h mà VM chết là mất sạch local — syncer nền đẩy
     # tiến độ .npy lên Drive mỗi 15 phút, phiên sau resume từ đó (per-video).
@@ -2709,8 +2718,18 @@ if RUN_QWEN_LANE:
         _run(REPO_DIR / "scripts" / "02_embed_and_index.py", "--model", "qwen_embed")
     finally:
         _sync_stop.set()
-        _syncer.join(timeout=30)
-        _sync_qwen_to_drive("chốt cuối")
+        _syncer.join(timeout=120)   # preflight r80: đợi hẳn tick dở, tránh 2 writer
+        for _att in range(3):       # sync cuối có retry — không che lỗi gốc
+            try:
+                _ensure_drive()
+                _sync_qwen_to_drive("chốt cuối")
+                break
+            except OSError as _e:
+                print(f"   ⚠ sync cuối lỗi ({_e}) — thử lại {_att + 1}/3 sau 30s")
+                _tm.sleep(30)
+        else:
+            print("   ⚠⚠ KHÔNG sync được lần cuối — tiến độ tới tick 15' gần "
+                  "nhất vẫn nằm trên Drive; VM mới sẽ resume từ đó.")
     # Lưu ý stale: nếu cell trên fail-loud vì model_tag 2B-vs-8B — Drive còn
     # kho qwen_embed đời 2B: xóa artifacts/{embeddings,indexes}/*qwen_embed*
     # trên Drive + máy ảo mới rồi chạy lại.
