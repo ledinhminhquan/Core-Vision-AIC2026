@@ -157,6 +157,12 @@ class SearchCfg(BaseModel):
     row_strategy: Literal["legacy", "diversify_tail"] = "legacy"
     row_strategy_head: int = Field(30, ge=1)       # rows kept verbatim
     row_strategy_variants: int = Field(4, ge=1, le=8)  # variants per anchor video
+    # Round-84: KIS đa cảnh — 6/19 câu KIS đề sơ tuyển 2 tả một CHUỖI cảnh
+    # ("bắt đầu với… kết thúc với…", 4 dòng 4 cảnh). Đường KIS cũ nối tất cả
+    # thành một câu và vứt cấu trúc thời gian; khi bật, các câu KIS đa cảnh
+    # được tách sự kiện và căn chỉnh bằng máy DANTE của TRAKE, rồi các frame
+    # của chuỗi khớp nhất được trộn RRF với ranking đơn-câu. Mặc định off.
+    kis_multi_event: bool = False
     # Vortex-style before/now/after context boost for "… sau khi …" queries
     # (off by default — measure on the dev pack before enabling).
     temporal_boost: bool = False

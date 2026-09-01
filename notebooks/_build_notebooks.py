@@ -2601,11 +2601,25 @@ _PACK_B = {
     "CVP_VQA__ANSWER_NEIGHBOR_FRAMES": "1",
     "CVP_VQA__MAX_CALLS_PER_QUERY": "10",
 }
-assert BENCH_PACK in ("off", "A", "AB"), f"BENCH_PACK lạ: {BENCH_PACK!r}"
-_knobs = {} if BENCH_PACK == "off" else (
-    _PACK_A if BENCH_PACK == "A" else {**_PACK_A, **_PACK_B})
-for _k in {**_PACK_A, **_PACK_B}:        # dọn sạch trước — cell chạy lại không
-    os.environ.pop(_k, None)             # được thừa kế knob của lượt trước
+# Round-84: gói X = NỖ LỰC TỐI ĐA — giờ đồng hồ đã được giải (shard 4 máy +
+# QA song song) nên lượt 1 có thể trả giá thời gian cho chất lượng. Chưa
+# từng bench → đo trước khi nhận (luật). "ABX" = AB + X.
+_PACK_X = {
+    "CVP_SEARCH__VLM_RERANK_VOTES": "5",
+    "CVP_VQA__SELF_CONSISTENCY": "5",
+    "CVP_SEARCH__TOPK": "800",
+    "CVP_QUERY__EXPANSIONS": "4",
+    "CVP_VQA__PARALLEL_CALLS": "4",
+    "CVP_VQA__ANSWER_VARIANT_ROWS": "true",
+    "CVP_VQA__EXACT_TRANSCRIPTION": "true",
+    "CVP_SEARCH__KIS_MULTI_EVENT": "true",
+}
+assert BENCH_PACK in ("off", "A", "AB", "ABX"), f"BENCH_PACK lạ: {BENCH_PACK!r}"
+_knobs = ({} if BENCH_PACK == "off" else _PACK_A if BENCH_PACK == "A"
+          else {**_PACK_A, **_PACK_B} if BENCH_PACK == "AB"
+          else {**_PACK_A, **_PACK_B, **_PACK_X})
+for _k in {**_PACK_A, **_PACK_B, **_PACK_X}:   # dọn sạch trước — cell chạy lại
+    os.environ.pop(_k, None)                     # không thừa kế knob lượt trước
 for _k, _v in _knobs.items():
     os.environ[_k] = _v
 print(f"🎛 BENCH_PACK = {BENCH_PACK}"
@@ -2642,8 +2656,8 @@ if RUN_BENCH_FULL and GT_PATH.exists():
             print("⚖ Bench dùng trọng số TUNED+shrinkage 50% (y hệt trận):", _w)
     os.environ["CVP_SEARCH__VLM_RERANK"] = "true"
     os.environ["CVP_SEARCH__VLM_RERANK_TOPK"] = "48"
-    os.environ["CVP_SEARCH__VLM_RERANK_VOTES"] = "3"
-    os.environ["CVP_VQA__SELF_CONSISTENCY"] = "3"
+    os.environ.setdefault("CVP_SEARCH__VLM_RERANK_VOTES", "3")   # gói X đặt 5
+    os.environ.setdefault("CVP_VQA__SELF_CONSISTENCY", "3")      # trước, giữ nguyên
     os.environ["CVP_SEARCH__RERANKER"] = "qwen_reranker"
     os.environ["CVP_SEARCH__LOW_CONFIDENCE_RETRY"] = "true"
     from cvp.config import load_settings

@@ -92,7 +92,7 @@ __all__ = [
     "parse_trake_events", "split_trake_query", "split_qa_line", "group_candidates",
     "compute_qa_answers", "compute_qa_answers_with_stats", "plan_consistency_rerank",
     "run_query_file", "run_query_folder", "ranking_confidence", "rrf_merge_results",
-    "maybe_retry_low_confidence",
+    "maybe_retry_low_confidence", "kis_events",
 ]
 
 
@@ -644,6 +644,93 @@ def plan_consistency_rerank(stats: Sequence[QaGroupStat], n_rows: int) -> list[i
     return promoted + [i for i in range(n_rows) if i not in promoted_set]
 
 
+_KIS_SEQUENCE_CUES = ("bắt đầu", "kết thúc", "sau đó", "tiếp theo", "cuối cùng",
+                      "lần lượt", "trước khi", "sau khi", "chuyển sang", "chuyển cảnh")
+
+
+def kis_events(lines: Sequence[str]) -> list[str]:
+    """Round-84: ordered scene sentences of a MULTI-SCENE KIS query, else [].
+
+    A KIS query is "đa cảnh" when it has ≥3 substantive sentences, or ≥2 with
+    an explicit sequence cue ("bắt đầu… kết thúc…", "sau đó"). Sentences shorter
+    than 6 words are dropped (fragments, "Video về…" lead-ins). Capped at 6.
+    """
+    text = " ".join(str(ln).strip() for ln in lines if str(ln).strip())
+    sents = [s.strip() for s in _SENTENCE_SPLIT_RE.split(text) if len(s.split()) >= 6]
+    low = text.casefold()
+    if len(sents) >= 3 or (len(sents) == 2 and any(c in low for c in _KIS_SEQUENCE_CUES)):
+        return sents[:6]
+    return []
+
+
+def _maybe_kis_multi_event(engine: SearchEngine, lines: Sequence[str],
+                           results: list[SearchResult]) -> list[SearchResult]:
+    """``search.kis_multi_event`` (round-84): fuse the single-text KIS ranking
+    with DANTE-aligned event chains of the same query.
+
+    Off (default) returns ``results`` untouched. On: the query's scene
+    sentences become TRAKE events; every (video, frame) of the top chains
+    forms a second ranking; both are RRF-fused (k=60). Chain frames absent
+    from ``results`` are materialised through the catalog (ordinal → global
+    id, verified against video/frame — a mismatch is skipped, never guessed).
+    """
+    cfg = getattr(getattr(engine, "settings", None), "search", None)
+    if not getattr(cfg, "kis_multi_event", False) or not results:
+        return results
+    events = kis_events(lines)
+    if len(events) < 2:
+        return results
+    try:
+        chains = engine.search_trake(events)
+    except Exception as e:  # noqa: BLE001 — fusion is an add-on, never a veto
+        log.warning("kis_multi_event: search_trake failed (%s) — giữ ranking đơn-câu", e)
+        return results
+    if not chains:
+        log.info("kis_multi_event: %d sự kiện nhưng không có chuỗi — giữ ranking đơn-câu",
+                 len(events))
+        return results
+    catalog = getattr(engine, "catalog", None)
+    chain_keys: list[tuple[str, int]] = []
+    chain_res: dict[tuple[str, int], SearchResult] = {}
+    for c in chains[:8]:
+        ns = list(getattr(c, "ns", []) or [])
+        for j, f in enumerate(c.frame_idxs):
+            key = (c.video_id, int(f))
+            if key in chain_res:
+                continue
+            ref = None
+            if catalog is not None and j < len(ns):
+                try:
+                    start, _count = catalog.video_span(c.video_id)
+                    cand = catalog.ref(int(start) + int(ns[j]))
+                    if cand.video_id == c.video_id and int(cand.frame_idx) == int(f):
+                        ref = cand
+                except Exception:  # noqa: BLE001 — verify-or-skip
+                    ref = None
+            if ref is None:
+                continue
+            chain_keys.append(key)
+            chain_res[key] = SearchResult(ref=ref, score=float(c.score),
+                                          signals={"kis_event": float(c.score)})
+    if not chain_keys:
+        return results
+    k = 60.0
+    fused: dict[tuple[str, int], float] = {}
+    pool: dict[tuple[str, int], SearchResult] = {}
+    for rank, r in enumerate(results):
+        key = (r.video_id, int(r.frame_idx))
+        fused[key] = fused.get(key, 0.0) + 1.0 / (k + rank + 1)
+        pool.setdefault(key, r)
+    for rank, key in enumerate(chain_keys):
+        fused[key] = fused.get(key, 0.0) + 1.0 / (k + rank + 1)
+        pool.setdefault(key, chain_res[key])
+    order = sorted(fused, key=lambda kk: -fused[kk])
+    log.info("kis_multi_event: %d sự kiện, %d chuỗi → trộn %d frame chuỗi vào ranking "
+             "(top-1 %s).", len(events), len(chains), len(chain_keys),
+             "đổi" if order[0] != (results[0].video_id, int(results[0].frame_idx)) else "giữ")
+    return [pool[kk] for kk in order][:max(len(results), 100)]
+
+
 def _maybe_answer_variants(settings: Settings | None, rows: list[tuple]) -> list[tuple]:
     """``vqa.answer_variant_rows`` (round-77): dual-format số↔chữ insurance.
 
@@ -790,6 +877,8 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
     else:
         results = engine.search_text(retrieval_text)
         results = maybe_retry_low_confidence(engine, retrieval_text, results)
+        if task == "kis":
+            results = _maybe_kis_multi_event(engine, lines, results)
 
     if not results:
         log.error("Query %s: engine returned ZERO results — no CSV written "
