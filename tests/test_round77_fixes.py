@@ -70,8 +70,10 @@ def test_r77_exact_transcription_prompt_gated():
 
 def test_r77_resume_keeps_existing_csvs(tmp_path, monkeypatch):
     from cvp.pipeline import auto_agent
-    qdir = tmp_path / "q"; qdir.mkdir()
-    out = tmp_path / "out"; out.mkdir()
+    qdir = tmp_path / "q"
+    qdir.mkdir()
+    out = tmp_path / "out"
+    out.mkdir()
     (qdir / "query-p9-1-kis.txt").write_text("mô tả một", encoding="utf-8")
     (qdir / "query-p9-2-kis.txt").write_text("mô tả hai", encoding="utf-8")
     (out / "query-p9-1-kis.csv").write_text("L01_V001,5\n", encoding="utf-8")
@@ -95,7 +97,8 @@ def test_r77_resume_keeps_existing_csvs(tmp_path, monkeypatch):
 
 def test_r77_sprint_mode_flips_settings_after_deadline(tmp_path, monkeypatch):
     from cvp.pipeline import auto_agent
-    qdir = tmp_path / "q"; qdir.mkdir()
+    qdir = tmp_path / "q"
+    qdir.mkdir()
     out = tmp_path / "out"
     for i in (1, 2):
         (qdir / f"query-p9-{i}-kis.txt").write_text("x", encoding="utf-8")
@@ -126,7 +129,8 @@ def test_r77_sprint_mode_flips_settings_after_deadline(tmp_path, monkeypatch):
 def test_r77_resume_three_shields(tmp_path):
     from cvp.pipeline.auto_agent import _keep_resumed_csv
     import os
-    q = tmp_path / "query-p9-1-kis.txt"; q.write_text("x", encoding="utf-8")
+    q = tmp_path / "query-p9-1-kis.txt"
+    q.write_text("x", encoding="utf-8")
     p = tmp_path / "query-p9-1-kis.csv"
     assert not _keep_resumed_csv(p, q)                     # missing
     p.write_text("", encoding="utf-8")
@@ -144,7 +148,8 @@ def test_r77_resume_three_shields(tmp_path):
 
 def test_r77_sprint_restore_survives_interrupt(tmp_path, monkeypatch):
     from cvp.pipeline import auto_agent
-    qdir = tmp_path / "q"; qdir.mkdir()
+    qdir = tmp_path / "q"
+    qdir.mkdir()
     (qdir / "query-p9-1-kis.txt").write_text("x", encoding="utf-8")
 
     def boom(engine, qf, out_dir, vqa, top1_times=None):
