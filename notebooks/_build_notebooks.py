@@ -2297,6 +2297,12 @@ elif RUN_PACK:
         _sh.copytree(_out, _drv, dirs_exist_ok=True)
         print(f"\n📦 {rep.zip_path.name} đã đồng bộ về Drive: {_drv}")
         print("→ Tải submission.zip từ Drive về máy, nộp ở tab 'Nộp bài' của BTC.")
+        # Round-83 (thể lệ BTC): tối đa 3 lần nộp/pack và LẦN CUỐI mới được tính —
+        # không phải lần tốt nhất. Lượt cuối phải là bản TỐT NHẤT ĐÃ BIẾT; public
+        # chỉ chấm ~50% câu và CHỈ KIS (QA/TRAKE chỉ lên private).
+        print("⚖ THỂ LỆ: lần nộp CUỐI CÙNG mới tính điểm (không phải lần cao nhất) — "
+              "bản này phải tốt hơn hoặc bằng bản đã nộp trước, nếu không thì nộp lại "
+              "bản cũ. Public chỉ chấm ~50% câu và chỉ KIS; QA/TRAKE lên private.")
     else:
         print("⚠ KHÔNG có zip — sửa lỗi validate ở trên rồi chạy lại cell này "
               "(đừng nộp tay CSV lẻ).")
