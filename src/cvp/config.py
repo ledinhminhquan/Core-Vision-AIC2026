@@ -360,6 +360,13 @@ class VqaCfg(BaseModel):
     # when the top group's ballots disagree (an unstable top answer usually
     # means the wrong moment or an unreadable frame).
     consistency_rerank: bool = False
+    # Round-77: nộp thêm dòng song-định-dạng số↔chữ trên cùng (video, frame)
+    # cho các answer có số ("sáu"↔"6") — thay các dòng ĐUÔI cùng số lượng,
+    # đầu bảng không đổi. BTC chấm exact text nên đây là bảo hiểm định dạng.
+    answer_variant_rows: bool = False
+    # Round-77 (bài học q19 sơ tuyển 2: đáp án lệch GT đúng MỘT chữ): khi bật,
+    # prompt QA yêu cầu CHÉP NGUYÊN VĂN chữ hiển thị thay vì diễn đạt lại.
+    exact_transcription: bool = False
 
 
 class SubmissionCfg(BaseModel):
@@ -373,6 +380,11 @@ class SubmissionCfg(BaseModel):
     dres_evaluation_id: str = ""
     dres_timeout_s: float = 6.0
     auto_submit: bool = False            # automatic track: submit without confirmation
+    # Round-77 (bài học đêm 28/08: bão 504 kéo pack từ 60' lên 142' và đề đóng
+    # cửa khi còn 3 câu): quá mốc này (phút, 0 = tắt) run_auto BẬT chế độ nước
+    # rút cho các câu còn lại — QA votes 1, tắt neighbor strips, tắt VLM rerank
+    # (giữ retrieval + cross-rerank local) — và la lớn trong log.
+    pack_deadline_min: float = Field(0.0, ge=0.0)
 
 
 class LoggingCfg(BaseModel):

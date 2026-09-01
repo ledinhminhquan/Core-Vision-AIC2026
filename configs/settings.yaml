@@ -202,6 +202,12 @@ vqa:
   # nhóm ứng viên có phiếu ĐỒNG THUẬN TUYỆT ĐỐI được đẩy khối dòng lên đầu CSV
   # khi nhóm top bất nhất (đáp án top không ổn định thường = moment sai/ảnh mờ).
   consistency_rerank: false
+  # round-77: nộp thêm dòng song-định-dạng số↔chữ trên cùng (video, frame) —
+  # thế chỗ dòng đuôi, đầu bảng không đổi; bảo hiểm chấm exact-text của BTC
+  answer_variant_rows: false
+  # round-77: prompt QA yêu cầu chép NGUYÊN VĂN chữ hiển thị (bài học q19:
+  # đáp án lệch GT đúng một chữ vì model diễn đạt lại)
+  exact_transcription: false
 
 submission:
   package_name: submission  # folder name inside the Codabench zip
@@ -209,6 +215,10 @@ submission:
   dres_evaluation_id: ""    # DRES v2 evaluation id (announced at the finals)
   dres_timeout_s: 6.0
   auto_submit: false        # automatic track: submit without human confirmation
+  # round-77: quá mốc này (phút; 0 = tắt) run_auto bật chế độ NƯỚC RÚT cho
+  # các câu còn lại (QA votes 1, tắt neighbor strips + VLM rerank) — bài học
+  # đêm 28/08: bão 504 kéo pack 60'→142' và cổng nộp đóng khi còn 3 câu
+  pack_deadline_min: 0.0
 
 logging:
   level: INFO

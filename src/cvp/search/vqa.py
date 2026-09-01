@@ -35,6 +35,20 @@ _VQA_STRIP_PROMPT = (
 )
 
 
+# Round-77 (bài học q19 sơ tuyển 2: model diễn đạt lại câu thơ, lệch GT đúng
+# MỘT chữ): khi vqa.exact_transcription bật, mọi prompt QA yêu cầu chép
+# NGUYÊN VĂN chữ/số hiển thị thay vì paraphrase.
+_EXACT_SUFFIX = (
+    "\nNếu đáp án là chữ/số hiển thị trong video, hãy chép CHÍNH XÁC nguyên "
+    "văn từng chữ, từng dấu như trên màn hình — không thêm bớt từ, không "
+    "diễn đạt lại."
+)
+
+
+def _exact_suffix(cfg) -> str:
+    return _EXACT_SUFFIX if getattr(cfg, "exact_transcription", False) else ""
+
+
 def _with_context(prompt: str, context: str) -> str:
     """Prepend the ASR transcript around the candidate moment.
 
@@ -175,7 +189,8 @@ class VqaAssistant:
         return generate_with_fallback(
             self._gemini_client,
             gemini_model_chain(self.settings, self.cfg.gemini_model),
-            [_with_context(_VQA_PROMPT.format(question=question), context), img],
+            [_with_context(_VQA_PROMPT.format(question=question)
+                           + _exact_suffix(self.cfg), context), img],
             timeout_s=gemini_wall_timeout(self.settings),
             economical=True,      # round-45: suggests are advisory — cheap tier
         )
@@ -204,7 +219,8 @@ class VqaAssistant:
 
         pixel_values = load_image_tiles(image_path, max_num=self.settings.caption.max_tiles)
         pixel_values = pixel_values.to(device=device, dtype=dtype)
-        prompt = "<image>\n" + _with_context(_VQA_PROMPT.format(question=question), context)
+        prompt = "<image>\n" + _with_context(
+            _VQA_PROMPT.format(question=question) + _exact_suffix(self.cfg), context)
         gen_cfg = dict(max_new_tokens=64, do_sample=False, num_beams=2)
         answer = model.chat(tokenizer, pixel_values, prompt, gen_cfg)
         return str(answer).strip()
@@ -232,8 +248,8 @@ class VqaAssistant:
             chain.insert(1, self.cfg.gemini_model)
         return generate_with_fallback(
             self._gemini_client, chain,
-            [_with_context(_VQA_STRIP_PROMPT.format(n=len(imgs), question=question),
-                           context), *imgs],
+            [_with_context(_VQA_STRIP_PROMPT.format(n=len(imgs), question=question)
+                           + _exact_suffix(self.cfg), context), *imgs],
             timeout_s=wall,
         )
 

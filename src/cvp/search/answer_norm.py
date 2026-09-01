@@ -301,3 +301,62 @@ def majority_vote(votes: list[str], canonicalize: bool = False,
     raws = [b for b in ballots if canonical_key(b, tier) == best]
     rep = Counter(raws).most_common(1)[0][0]
     return VoteResult(rep, n, len(ballots))
+
+
+# ── Round-77: dual-format answer variants (số ↔ chữ) ─────────────────────────
+# The organisers grade answers as (near-)exact text: if the model answers
+# "sáu" but GT says "6" (or vice versa), the row scores 0 even on the right
+# moment. ``answer_format_variant`` produces the OTHER surface form so the
+# submission can carry both on the same (video, frame) — the writer already
+# allows same-frame different-answer rows, and the metric takes max per row.
+
+_UNITS_VI = ["không", "một", "hai", "ba", "bốn", "năm",
+             "sáu", "bảy", "tám", "chín"]
+_STANDALONE_NUM_RE = re.compile(r"(?<![\w.,])(\d{1,3})(?![\w.,])")
+
+
+def num_to_words_vi(n: int) -> str:
+    """0-999 → chữ tiếng Việt, theo chính tả phổ thông (21 → "hai mươi mốt",
+    25 → "hai mươi lăm", 105 → "một trăm linh năm")."""
+    if not 0 <= n <= 999:
+        raise ValueError(f"num_to_words_vi chỉ nhận 0-999, nhận {n}")
+    if n < 10:
+        return _UNITS_VI[n]
+    if n < 20:
+        u = n % 10
+        tail = {0: "", 1: " một", 5: " lăm"}.get(u, f" {_UNITS_VI[u]}")
+        return "mười" + tail
+    if n < 100:
+        t, u = divmod(n, 10)
+        tail = {0: "", 1: " mốt", 4: " tư", 5: " lăm"}.get(u, f" {_UNITS_VI[u]}")
+        return f"{_UNITS_VI[t]} mươi" + tail
+    h, r = divmod(n, 100)
+    if r == 0:
+        return f"{_UNITS_VI[h]} trăm"
+    if r < 10:
+        return f"{_UNITS_VI[h]} trăm linh {_UNITS_VI[r]}"
+    return f"{_UNITS_VI[h]} trăm {num_to_words_vi(r)}"
+
+
+def answer_format_variant(answer: str) -> str | None:
+    """The OTHER number format of an answer, or None when no fold applies.
+
+    "6" → "sáu" · "sáu" → "6" · "27 cái" → "hai mươi bảy cái" ·
+    "hai mươi bảy cái" → "27 cái". Trả None khi không có số nào, khi biến thể
+    trùng bản gốc, hoặc khi đáp án là fallback "không rõ" (bảo vệ round-73).
+    """
+    raw = _WS_RE.sub(" ", unicodedata.normalize("NFC", str(answer))).strip()
+    if not raw or raw.casefold() == "không rõ":
+        return None
+    low = raw.casefold()
+    # chữ → số: fold_numbers_vi đổi được gì thì đó là biến thể digits
+    folded = fold_numbers_vi(low)
+    if folded != low:
+        out = _WS_RE.sub(" ", folded).strip()
+        return out if out and out != low else None
+    # số → chữ: thay từng số 1-3 chữ số đứng độc lập
+    def _sub(m: re.Match) -> str:
+        return num_to_words_vi(int(m.group(1)))
+    out = _STANDALONE_NUM_RE.sub(_sub, low)
+    out = _WS_RE.sub(" ", out).strip()
+    return out if out != low else None

@@ -9,7 +9,9 @@ Per query file the task is inferred from the filename (``trake`` → ``avs`` →
     AVS   → ``engine.search_avs``             → ``write_kis`` (same row shape)
 
 Afterwards the CSVs written by THIS run are re-validated (``packager.validate_file``;
-stale files from earlier runs never block or ride along) and, when clean,
+stale files from earlier runs never block or ride along — EXCEPT with
+``resume=True``, which deliberately keeps same-stem CSVs that pass the
+three-shield gate in :func:`_keep_resumed_csv`) and, when clean,
 zipped Codabench-style with a sha256 manifest. With ``submit=True`` the top-1
 row of each CSV is pushed through the DRES client — but ONLY when the run is
 error-free, ``settings.submission.auto_submit`` is true and
@@ -124,6 +126,33 @@ def _submit_top1(written: list[Path], client: Any,
     return out
 
 
+def _keep_resumed_csv(prev: Path, qf: Path) -> bool:
+    """Round-77 resume gate — giữ CSV cũ CHỈ khi cả ba lá chắn đều qua.
+
+    (1) tồn tại và không rỗng (OSError kiểu DriveFS = coi như không có, chạy
+    lại thay vì sập cả pack); (2) KHÔNG cũ hơn file đề ``qf`` — đề pack MỚI
+    trùng tên stem với pack cũ là bẫy nộp nhầm đáp án vòng trước (audit r77);
+    (3) validate sạch — CSV hỏng mà giữ lại sẽ phủ quyết zip của TẤT CẢ các
+    câu, nên tự chữa bằng cách chạy lại câu đó.
+    """
+    try:
+        if not (prev.is_file() and prev.stat().st_size > 0):
+            return False
+        if prev.stat().st_mtime < qf.stat().st_mtime:
+            log.warning("resume: %s CŨ HƠN file đề — coi như đề mới, chạy lại "
+                        "(chống nộp nhầm đáp án pack trước).", prev.name)
+            return False
+    except OSError as e:
+        log.warning("resume: không đọc được %s (%s) — chạy lại câu này.",
+                    prev.name, e)
+        return False
+    if has_errors(validate_file(prev, strict=True)):
+        log.warning("resume: %s có lỗi validate — bỏ bản cũ, chạy lại câu này "
+                    "(giữ lại sẽ chặn zip của cả pack).", prev.name)
+        return False
+    return True
+
+
 def run_auto(
     query_dir: str | Path,
     out_dir: str | Path,
@@ -133,6 +162,7 @@ def run_auto(
     engine_factory: Callable[[Settings], Any] | None = None,
     vqa: Any | None = None,
     client_factory: Callable[[Settings], Any] | None = None,
+    resume: bool = False,
 ) -> AutoRunReport:
     """Run the full automatic track over a query pack.
 
@@ -147,6 +177,10 @@ def run_auto(
         vqa: optional pre-built VQA assistant (default: ``VqaAssistant`` when
             ``settings.vqa.provider != "none"``).
         client_factory: optional ``Settings -> DresClient`` override for tests.
+        resume: keep existing VALID query CSVs in ``out_dir`` (same stem, not
+            older than the query file, validate-clean) and only run the rest —
+            round-77, for crashed-VM recovery mid-pack. Kept files DO enter
+            validation + packaging.
 
     Returns:
         AutoRunReport with written CSVs, validation issues, zip path (when
@@ -188,24 +222,68 @@ def run_auto(
 
     report = AutoRunReport()
     top1_times: dict[str, list[float]] = {}
-    for qf in qfiles:
-        try:
-            p = run_query_file(engine, qf, out_dir, vqa, top1_times=top1_times)
-        except Exception as e:  # noqa: BLE001 — one bad query must not stop the pack
-            log.error("Query %s failed: %s", qf.name, e)
-            report.failed[qf.stem] = f"error: {e}"
-            continue
-        if p:
-            report.written.append(p)
-            log.info("%s → %s", qf.name, p.name)
-        else:
-            report.failed[qf.stem] = "no submission produced (empty/unparseable query?)"
+    # Round-77 (bài học đêm 28/08): resume sau khi VM chết + thống đốc thời
+    # gian chống bão 504. Cả hai mặc định TẮT — hành vi cũ y nguyên.
+    import time as _time
+    _t0 = _time.time()
+    _deadline = float(getattr(settings.submission, "pack_deadline_min", 0.0) or 0.0)
+    _sprint = False
+    _resumed = 0
+    # Nước rút chỉ áp cho CÁC CÂU CÒN LẠI CỦA PACK NÀY — settings là object
+    # dùng chung của kernel, không trả lại nguyên trạng thì lượt pack sau
+    # trong cùng phiên sẽ âm thầm kẹt ở chế độ nước rút.
+    _pre_sprint = (settings.vqa.self_consistency,
+                   settings.vqa.answer_neighbor_frames,
+                   settings.search.vlm_rerank)
+    try:
+        for qf in qfiles:
+            if resume and _keep_resumed_csv(out_dir / f"{qf.stem}.csv", qf):
+                report.written.append(out_dir / f"{qf.stem}.csv")
+                _resumed += 1
+                continue
+            if _deadline and not _sprint and (_time.time() - _t0) / 60.0 > _deadline:
+                _sprint = True
+                settings.vqa.self_consistency = 1
+                settings.vqa.answer_neighbor_frames = 0
+                settings.search.vlm_rerank = False
+                log.warning(
+                    "⏰ QUÁ %.0f phút — BẬT CHẾ ĐỘ NƯỚC RÚT cho các câu còn lại: "
+                    "QA votes 1, tắt neighbor strips, tắt VLM rerank (giữ nguyên "
+                    "retrieval 2 lane + cross-rerank local). Nộp sớm vẫn hơn "
+                    "chạy đẹp mà trễ giờ.", _deadline)
+            try:
+                p = run_query_file(engine, qf, out_dir, vqa, top1_times=top1_times)
+            except Exception as e:  # noqa: BLE001 — one bad query must not stop the pack
+                log.error("Query %s failed: %s", qf.name, e)
+                report.failed[qf.stem] = f"error: {e}"
+                continue
+            if p:
+                report.written.append(p)
+                log.info("%s → %s", qf.name, p.name)
+            else:
+                report.failed[qf.stem] = "no submission produced (empty/unparseable query?)"
+    finally:
+        # Audit r77: restore phải nằm trong finally — Ctrl+C/Stop giữa nước
+        # rút mà không trả settings là mọi query sau trong phiên âm thầm chạy
+        # cấu hình bị hạ cấp.
+        if _sprint:
+            (settings.vqa.self_consistency, settings.vqa.answer_neighbor_frames,
+             settings.search.vlm_rerank) = _pre_sprint
+            log.warning("nước rút KẾT THÚC — settings đã trả về nguyên trạng "
+                        "cho các lượt chạy sau trong phiên.")
+    if _resumed:
+        log.warning("resume: giữ nguyên %d CSV hợp lệ từ lượt trước (không "
+                    "chạy lại) — chúng vẫn được validate + đóng gói.", _resumed)
+        if submit:
+            log.error("resume + DRES submit: %d câu giữ lại KHÔNG có timestamp "
+                      "top-1 (top1_times chỉ ghi khi chạy thật) — DRES sẽ nhận "
+                      "answer thiếu vùng thời gian cho các câu đó.", _resumed)
     if report.failed:
         log.error("%d/%d query files produced NO submission: %s — these queries "
                   "score 0 unless fixed.", len(report.failed),
                   len(report.failed) + len(report.written), sorted(report.failed))
 
-    # Validate (and later package) ONLY the CSVs THIS run wrote — stale files
+    # Validate (and later package) the CSVs this run wrote OR kept (resume) — stale files
     # from earlier runs in the same folder must never block or ride along.
     report.issues = [i for p in report.written for i in validate_file(p, strict=True)]
     if not report.written:

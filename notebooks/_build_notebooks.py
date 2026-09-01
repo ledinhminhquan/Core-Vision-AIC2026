@@ -2089,6 +2089,12 @@ RUN_PACK   = False     # bật True khi đề đã nằm đúng chỗ
 REZIP_ONLY = False     # True: KHÔNG search lại — chỉ validate + zip lại các
                        # query-*.csv hiện có trong pack (dùng SAU khi soát tay
                        # bằng UI và ghi đè vài file CSV bằng bản người chọn)
+RESUME_PACK = True     # round-77: VM chết giữa pack → chạy lại cell này sẽ GIỮ
+                       # các query-*.csv đã xong và chỉ chạy phần thiếu (đêm
+                       # 28/08 mất trắng 27 câu vì thiếu cái này)
+PACK_DEADLINE_MIN = 0  # round-77: >0 = quá số phút này thì các câu còn lại
+                       # chạy chế độ NƯỚC RÚT (QA votes 1, tắt VLM rerank);
+                       # đặt ~60-70% thời gian còn lại tới giờ đóng cổng nộp
 _qdir = PROJECT / "queries" / QUERY_PACK
 if RUN_PACK and not (_qdir.is_dir() and any(_qdir.glob("*.txt"))):
     # Round-34: đêm thi Run all chạy TRƯỚC giờ BTC phát đề — cell này crash
@@ -2118,7 +2124,10 @@ elif RUN_PACK:
 
         # engine_factory tái dùng engine ô 5 (đang nóng, đúng cấu hình ra
         # trận) — để mặc định sẽ build engine THỨ HAI và nhân đôi RAM/VRAM.
-        rep = run_auto(_qdir, _out, settings, submit=False,
+        # gán VÔ ĐIỀU KIỆN — settings sống dai trong kernel, đặt 60 rồi hạ
+        # về 0 mà chỉ gán-khi-truthy thì governor cũ vẫn âm thầm còn vũ trang
+        settings.submission.pack_deadline_min = float(PACK_DEADLINE_MIN)
+        rep = run_auto(_qdir, _out, settings, submit=False, resume=RESUME_PACK,
                        engine_factory=lambda _s: engine)
     print(f"\nCSV viết được: {len(rep.written)}")
     if rep.failed:

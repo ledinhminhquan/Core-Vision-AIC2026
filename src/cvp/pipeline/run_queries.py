@@ -625,6 +625,44 @@ def plan_consistency_rerank(stats: Sequence[QaGroupStat], n_rows: int) -> list[i
     return promoted + [i for i in range(n_rows) if i not in promoted_set]
 
 
+def _maybe_answer_variants(settings: Settings | None, rows: list[tuple]) -> list[tuple]:
+    """``vqa.answer_variant_rows`` (round-77): dual-format số↔chữ insurance.
+
+    BTC chấm answer theo (near-)exact text — "sáu" vs GT "6" là 0 điểm dù
+    moment đúng. Với mỗi answer PHÂN BIỆT trong 30 dòng đầu có dạng số quy đổi
+    được, thêm một dòng (video, frame, answer-định-dạng-kia); các dòng thêm
+    THAY THẾ đúng chừng đó dòng cuối bảng (đầu bảng bất khả xâm phạm — chỉ
+    hy sinh vé số đuôi). Mặc định off = trả về CHÍNH ``rows``.
+    """
+    if not getattr(getattr(settings, "vqa", None), "answer_variant_rows", False):
+        return rows
+    if not rows:
+        return rows
+    from cvp.search.answer_norm import answer_format_variant
+
+    seen: set[str] = set()
+    variants: list[tuple] = []
+    for r in rows[:30]:
+        if len(r) < 3:
+            continue
+        key = str(r[2]).strip().casefold()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        alt = answer_format_variant(str(r[2]))
+        if alt:
+            variants.append((r[0], r[1], alt))
+        if len(variants) >= 8:      # đuôi chỉ hy sinh tối đa 8 vé số
+            break
+    if not variants:
+        return rows
+    keep = max(1, MAX_SUBMISSION_ROWS - len(variants))
+    out = list(rows[:keep]) + variants
+    log.info("answer_variant_rows: thêm %d dòng song-định-dạng (thế chỗ %d dòng "
+             "đuôi ngoài top-%d).", len(variants), max(0, len(rows) - keep), keep)
+    return out
+
+
 def _maybe_diversify_rows(engine: SearchEngine, task: str, rows: list[tuple]) -> list[tuple]:
     """Apply ``search.row_strategy`` to KIS/QA rows (Nhiệm vụ D, round-74).
 
@@ -758,6 +796,7 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
                        (results[0].video_id, int(results[0].frame_idx)))
         qa_rows = _maybe_diversify_rows(
             engine, "qa", [(r.video_id, r.frame_idx, a) for r, a in zip(results, answers)])
+        qa_rows = _maybe_answer_variants(settings_, qa_rows)
         return _reconcile_times(write_qa(out_path, qa_rows))
     kis_rows = _maybe_diversify_rows(
         engine, task, [(r.video_id, r.frame_idx) for r in results])
