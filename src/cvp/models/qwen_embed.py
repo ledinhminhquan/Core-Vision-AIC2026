@@ -65,14 +65,23 @@ class QwenEmbedModel(EmbeddingModel):
         )
 
         log.info("Loading %s (%s, %s, MRL dim %d)", self.model_id, self.device, self.dtype, self.mrl_dim)
-        try:      # transformers 5.x: torch_dtype= đổi tên thành dtype=
-            _m = AutoModel.from_pretrained(self.model_id, dtype=self.dtype,
-                                           trust_remote_code=True)
-        except TypeError:
-            _m = AutoModel.from_pretrained(self.model_id, torch_dtype=self.dtype,
-                                           trust_remote_code=True)
-        self.model = _m.to(self.device).eval()
-        self.processor = AutoProcessor.from_pretrained(self.model_id, trust_remote_code=True)
+        from cvp.models.hf_compat import resilient_from_pretrained
+
+        def _load_model(mid):
+            try:      # transformers 5.x: torch_dtype= đổi tên thành dtype=
+                return AutoModel.from_pretrained(mid, dtype=self.dtype,
+                                                 trust_remote_code=True)
+            except TypeError:
+                return AutoModel.from_pretrained(mid, torch_dtype=self.dtype,
+                                                 trust_remote_code=True)
+
+        # Audit r82: kho HF trên Drive FUSE từng trả file RÁCH (nb08 A/B config 4
+        # rớt lane vì thế) — resilient loader tải lại về đĩa local rồi thử lại,
+        # như siglip2/captioner đã làm từ round-22/57.
+        self.model = resilient_from_pretrained(_load_model, self.model_id).to(self.device).eval()
+        self.processor = resilient_from_pretrained(
+            lambda mid: AutoProcessor.from_pretrained(mid, trust_remote_code=True),
+            self.model_id)
         self._dim: int | None = None
 
     @property

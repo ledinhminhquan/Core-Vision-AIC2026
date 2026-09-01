@@ -25,17 +25,19 @@ def _engine_cell() -> str:
 
 def test_r76_battle_engine_asserts_both_lanes():
     cell = _engine_cell()
-    assert '== ["finetuned", "metaclip2"]' in cell
-    assert "không ra trận thiếu lane" in cell
+    # round-82: the expected member list follows LINEUP (battle = 2 lanes,
+    # diverse = 3) — the assert compares against `_want`
+    assert "== _want" in cell and '["finetuned", "metaclip2"]' in cell
+    assert "ra trận thiếu lane" in cell          # r82 wraps the message across literals
     # the gate fires after the engine is built and before the ready print
     assert cell.index("engine = SearchEngine(settings)") \
-        < cell.index('== ["finetuned", "metaclip2"]') \
+        < cell.index("== _want") \
         < cell.index("engine ready in")
 
 
 def test_r76_assert_scoped_to_ensemble_mode():
     cell = _engine_cell()
-    assert 'if ENGINE_MODEL == "ensemble":\n    assert' in cell
+    assert 'if ENGINE_MODEL == "ensemble":\n    _want = (' in cell
     # single-lane fallback modes (finetuned-only) stay usable in an emergency
     assert 'ENGINE_MODEL   = "ensemble"' in cell
 

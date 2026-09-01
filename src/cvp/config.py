@@ -374,6 +374,10 @@ class VqaCfg(BaseModel):
     # Round-77 (bài học q19 sơ tuyển 2: đáp án lệch GT đúng MỘT chữ): khi bật,
     # prompt QA yêu cầu CHÉP NGUYÊN VĂN chữ hiển thị thay vì diễn đạt lại.
     exact_transcription: bool = False
+    # Round-82 (đêm 28/08: QA ăn ~2/3 thời gian pack vì 5 nhóm × 10 strip gọi
+    # Gemini TUẦN TỰ): số nhóm ứng viên được hỏi SONG SONG. Kết quả áp theo
+    # đúng thứ tự nhóm nên bit-identical với 1; chỉ đổi thời gian + áp lực RPM.
+    parallel_calls: int = Field(1, ge=1, le=8)
 
 
 class SubmissionCfg(BaseModel):

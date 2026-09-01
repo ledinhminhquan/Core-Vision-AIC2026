@@ -360,3 +360,37 @@ def answer_format_variant(answer: str) -> str | None:
     out = _STANDALONE_NUM_RE.sub(_sub, low)
     out = _WS_RE.sub(" ", out).strip()
     return out if out != low else None
+
+
+_LEADING_NUMBER_RE = re.compile(r"^\s*(\d{1,4}(?:[.,]\d+)?)\s+(\S.*)$")
+
+
+def answer_variants(answer: str, limit: int = 3) -> list[str]:
+    """Round-82: MỌI dạng thay thế đáng nộp của một đáp án (không trùng gốc).
+
+    Chấm exact-text nên "7 cái." có thể trượt GT "7" dù đúng hoàn toàn. Trả về
+    (theo thứ tự ưu tiên): dạng số↔chữ (:func:`answer_format_variant`), dạng
+    CHỈ-SỐ khi đáp án mở đầu bằng số + từ đếm/đơn vị ("7 cái" → "7",
+    "500g" giữ nguyên vì dính liền), và dạng bỏ đuôi đếm bằng chữ số-hóa.
+    Không bao giờ trả "" hay fallback "không rõ".
+    """
+    raw = _WS_RE.sub(" ", unicodedata.normalize("NFC", str(answer))).strip()
+    if not raw or raw.casefold() == "không rõ":
+        return []
+    low = raw.casefold()
+    out: list[str] = []
+
+    def _add(v: str | None) -> None:
+        v = (v or "").strip()
+        if v and v.casefold() != low and v.casefold() not in {o.casefold() for o in out}:
+            out.append(v)
+
+    _add(answer_format_variant(raw))
+    m = _LEADING_NUMBER_RE.match(raw.rstrip(" .!?"))
+    if m:
+        _add(m.group(1))                              # "7 cái." → "7"
+    digits = fold_numbers_vi(low)
+    m2 = _LEADING_NUMBER_RE.match(digits.rstrip(" .!?"))
+    if m2 and not m:
+        _add(m2.group(1))                             # "bảy cái" → "7"
+    return out[:limit]

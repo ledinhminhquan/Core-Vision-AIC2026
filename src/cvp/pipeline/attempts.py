@@ -221,6 +221,16 @@ def query_confidence(
 # ── weak-query selection + plan ──────────────────────────────────────────────
 
 
+# ── Round-82 EVIDENCE NOTE (30/08) ──────────────────────────────────────────
+# Validated offline on two full bench runs (23 câu, official per-query scores):
+#   Pearson(query_confidence, điểm thật) = +0.10 và −0.04  → KHÔNG có sức dự báo;
+#   ngưỡng mặc định 0.35 đánh dấu 0/23 câu yếu; câu conf=0.4 điểm 1.0 và câu
+#   conf=1.0 điểm 0.0 lẫn lộn. Đồng thời 2 lượt cùng stack ĐỒNG THUẬN 21/23 câu
+#   và THUA GIỐNG NHAU ở các câu khó → thất bại là hệ thống, không phải ngẫu
+#   nhiên. Kết luận vận hành: KHÔNG dựa vào select_weak để chọn câu đánh lại;
+#   lượt 2 = chạy lại TRỌN pack bằng ĐỘI HÌNH KHÁC (nb03 LINEUP="diverse",
+#   shard nhiều máy ảo) rồi rrf_merge_runs — phần merge là phần đã được kiểm
+#   chứng (0.6587 > cả hai lượt gốc). select_weak giữ lại cho nghiên cứu.
 def select_weak(
     confidences: dict[str, QueryConfidence],
     threshold: float = 0.35,

@@ -212,6 +212,8 @@ vqa:
   # round-77: prompt QA yêu cầu chép NGUYÊN VĂN chữ hiển thị (bài học q19:
   # đáp án lệch GT đúng một chữ vì model diễn đạt lại)
   exact_transcription: false
+  # round-82: số nhóm QA hỏi Gemini song song (1 = tuần tự như cũ; trận đề xuất 4)
+  parallel_calls: 1
 
 submission:
   package_name: submission  # folder name inside the Codabench zip

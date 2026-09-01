@@ -512,7 +512,11 @@ def compute_qa_answers_with_stats(
     extra_per_group = _round_robin_extras(n_primary, neighbor_n, extra_budget)
     stats: list[QaGroupStat] = []
     fallback = ""
-    for g_idx, group in enumerate(groups[:budget]):
+
+    def _answer_one_group(g_idx: int, group: list[int]) -> tuple[str, int, int]:
+        """All model calls for ONE candidate group — pure function of (g_idx,
+        group) so groups can run in parallel (round-82 ``vqa.parallel_calls``).
+        Returns (answer, votes_for, total_votes); a failed group yields ""."""
         best = group[0]
         ans = ""
         votes_for = total_votes = 0
@@ -571,6 +575,21 @@ def compute_qa_answers_with_stats(
                         votes_for = total_votes = 1
         except Exception as e:  # noqa: BLE001 — one failed group must not sink the query
             log.warning("VQA failed for group at rank %d: %s", best + 1, e)
+        return ans, votes_for, total_votes
+
+    todo = list(enumerate(groups[:budget]))
+    n_par = max(1, int(getattr(cfg, "parallel_calls", 1) or 1))
+    if n_par > 1 and len(todo) > 1:
+        # Round-82: các nhóm độc lập nhau — chạy song song, nhưng KẾT QUẢ
+        # được áp theo ĐÚNG thứ tự nhóm cũ (stamp answers, stats, fallback)
+        # nên đầu ra bit-identical với đường tuần tự, chỉ nhanh hơn.
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=min(n_par, len(todo))) as _ex:
+            outcomes = list(_ex.map(lambda t: _answer_one_group(*t), todo))
+    else:
+        outcomes = [_answer_one_group(g_idx, group) for g_idx, group in todo]
+    for (g_idx, group), (ans, votes_for, total_votes) in zip(todo, outcomes):
         for i in group:
             answers[i] = ans
         stats.append(QaGroupStat(rows=list(group), answer=ans,
@@ -638,7 +657,7 @@ def _maybe_answer_variants(settings: Settings | None, rows: list[tuple]) -> list
         return rows
     if not rows:
         return rows
-    from cvp.search.answer_norm import answer_format_variant
+    from cvp.search.answer_norm import answer_variants
 
     seen: set[str] = set()
     variants: list[tuple] = []
@@ -649,10 +668,10 @@ def _maybe_answer_variants(settings: Settings | None, rows: list[tuple]) -> list
         if not key or key in seen:
             continue
         seen.add(key)
-        alt = answer_format_variant(str(r[2]))
-        if alt:
+        for alt in answer_variants(str(r[2])):      # round-82: nhiều dạng/đáp án
             variants.append((r[0], r[1], alt))
-        if len(variants) >= 8:      # đuôi chỉ hy sinh tối đa 8 vé số
+        if len(variants) >= 10:     # đuôi chỉ hy sinh tối đa 10 vé số
+            variants = variants[:10]
             break
     if not variants:
         return rows

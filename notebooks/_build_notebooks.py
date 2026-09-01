@@ -1868,6 +1868,10 @@ NB3_ENGINE = r'''
 #                0.5522 vs finetuned đơn 0.5370 (retrieval-thuần, 23/23 câu).
 #                (Cặp cũ finetuned+openclip đã thua A/B 20/08 và bị thay.)
 ENGINE_MODEL   = "ensemble"         # ← cấu hình ra trận đợt 2 (bench 23/08)
+LINEUP = "battle"   # round-82: "battle" = finetuned+metaclip2 60/40 (đội hình 0.6826)
+                    # "diverse" = 3 lane + qwen_embed 45/30/25 — CHỈ cho lượt nộp 2
+                    # (máy-học-từ-máy: chạy lại TRỌN pack bằng đội hình KHÁC rồi trộn
+                    # RRF ở cell 9b qua MERGE_PACKS; cần kho qwen_embed từ nb08 trên Drive)
 # "none"   = test offline, không gọi Gemini (nhanh, không tốn quota)
 # "gemini" = dịch + mở rộng query (CẦN secret GEMINI_API_KEY; tự rơi về
 #            Google-Translate miễn phí rồi passthrough nếu API lỗi — A/B 20/08:
@@ -1947,12 +1951,23 @@ for _k, _v in {
     os.environ[_k] = _v
 print("🎛 Gói knob AB (round-75) đã vào trận: boost 0.15 + diversify_tail + "
       "4 knob TRAKE + vote canonical/neighbor")
+# Round-82: QA là 2/3 thời gian pack (5 nhóm × 10 strip gọi Gemini TUẦN TỰ).
+# Hỏi các nhóm SONG SONG — kết quả bit-identical (áp theo đúng thứ tự nhóm),
+# chỉ nhanh hơn ~3-4×. Bão 429/504 thì chain dự phòng vẫn đỡ như cũ.
+QA_PARALLEL = 4
+os.environ["CVP_VQA__PARALLEL_CALLS"] = str(QA_PARALLEL)
 if ENGINE_MODEL in ("finetuned", "ensemble"):
     os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
         Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "checkpoints" / "vi_siglip2_best")
+assert LINEUP in ("battle", "diverse"), f"LINEUP lạ: {LINEUP!r}"
 if ENGINE_MODEL == "ensemble":
-    os.environ["CVP_EMBEDDING__ENSEMBLE_MEMBERS"] = '["finetuned", "metaclip2"]'
-    os.environ["CVP_EMBEDDING__ENSEMBLE_WEIGHTS"] = "[0.6, 0.4]"
+    if LINEUP == "diverse":
+        os.environ["CVP_EMBEDDING__ENSEMBLE_MEMBERS"] = '["finetuned", "metaclip2", "qwen_embed"]'
+        os.environ["CVP_EMBEDDING__ENSEMBLE_WEIGHTS"] = "[0.45, 0.3, 0.25]"
+    else:
+        os.environ["CVP_EMBEDDING__ENSEMBLE_MEMBERS"] = '["finetuned", "metaclip2"]'
+        os.environ["CVP_EMBEDDING__ENSEMBLE_WEIGHTS"] = "[0.6, 0.4]"
+    print(f"🧬 LINEUP = {LINEUP}: {os.environ['CVP_EMBEDDING__ENSEMBLE_MEMBERS']}")
 
 # Round-76 (audit tiền-trận): thiếu GEMINI key là hỏng ÂM THẦM và MUỘN —
 # enhancement rơi về Google-Translate, VLM rerank tắt, QA rơi về Vintern;
@@ -1972,11 +1987,14 @@ engine = SearchEngine(settings)
 # thiếu lane là đánh cả đêm với nửa vũ khí, chỉ có một dòng warning chìm
 # trong log. Fail TO TIẾNG tại đây; thuốc: đổi máy ảo MỚI rồi Run all lại.
 if ENGINE_MODEL == "ensemble":
-    assert getattr(engine, "member_names", None) == ["finetuned", "metaclip2"], (
-        f"Ensemble thiếu lane: {getattr(engine, 'member_names', None)} — "
-        "index/checkpoint chưa nạp đủ (máy ảo lười metadata?). Đổi máy ảo "
-        "MỚI và Run all lại — TUYỆT ĐỐI không ra trận thiếu lane.")
-    print("✓ ensemble đủ 2 lane:", engine.member_names)
+    _want = (["finetuned", "metaclip2", "qwen_embed"] if LINEUP == "diverse"
+             else ["finetuned", "metaclip2"])
+    assert getattr(engine, "member_names", None) == _want, (
+        f"Ensemble thiếu lane: {getattr(engine, 'member_names', None)} (cần {_want}) — "
+        "index/checkpoint chưa nạp đủ (máy ảo lười metadata? kho HF trên Drive giở "
+        "chứng?). Chạy lại cell này; vẫn thiếu → đổi máy ảo MỚI. TUYỆT ĐỐI không "
+        "ra trận thiếu lane.")
+    print(f"✓ ensemble đủ {len(_want)} lane:", engine.member_names)
 print(f"engine ready in {time.time()-t0:.1f}s — {len(engine.catalog):,} keyframes")
 '''
 
@@ -2095,6 +2113,13 @@ RESUME_PACK = True     # round-77: VM chết giữa pack → chạy lại cell n
 PACK_DEADLINE_MIN = 0  # round-77: >0 = quá số phút này thì các câu còn lại
                        # chạy chế độ NƯỚC RÚT (QA votes 1, tắt VLM rerank);
                        # đặt ~60-70% thời gian còn lại tới giờ đóng cổng nộp
+SHARD_INDEX = 0        # round-82: máy ảo này chạy phần nào của pack (0..SHARD_TOTAL-1)
+SHARD_TOTAL = 1        # số máy ảo chạy SONG SONG cùng pack (3×A100 + 1×G4 = 4); 1 = như
+                       # cũ. Mỗi máy: cùng QUERY_PACK, KHÁC SHARD_INDEX. Xong hết →
+                       # trên MỘT máy: REZIP_ONLY=True chạy lại cell này để gom + zip.
+MERGE_PACKS = []       # round-82 lượt nộp 2 (chỉ với REZIP_ONLY=True): tên các pack
+                       # Drive khác để TRỘN RRF với pack này, vd ["sotuyen2_diverse"]
+                       # (pack lượt 1 là gốc — luôn đứng đầu phép trộn)
 _qdir = PROJECT / "queries" / QUERY_PACK
 if RUN_PACK and not (_qdir.is_dir() and any(_qdir.glob("*.txt"))):
     # Round-34: đêm thi Run all chạy TRƯỚC giờ BTC phát đề — cell này crash
@@ -2104,21 +2129,76 @@ if RUN_PACK and not (_qdir.is_dir() and any(_qdir.glob("*.txt"))):
 elif RUN_PACK:
     import shutil as _sh
 
-    _out = settings.paths.art("submissions", QUERY_PACK)
+    _lineup = globals().get("LINEUP", "battle")
+    _pack_name = QUERY_PACK if _lineup == "battle" else f"{QUERY_PACK}_{_lineup}"
+    _out = settings.paths.art("submissions", _pack_name)
+    _drv = PROJECT / "artifacts" / "submissions" / _pack_name
     if REZIP_ONLY:
         from cvp.submission.packager import has_errors, package_codabench, validate_file
 
+        # Round-82: GOM shard từ Drive (mọi máy đã đẩy query-*.csv lên đó) rồi
+        # tùy chọn TRỘN RRF với các pack khác (lượt nộp 2 máy-học-từ-máy).
+        _out.mkdir(parents=True, exist_ok=True)
+        _expected = {f.stem for f in _qdir.glob("*.txt")}   # stem của ĐỀ hiện tại
+        if _drv.is_dir():
+            import time as _t2
+            _ensure_drive()
+            for _att in range(3):                       # nudge metadata Drive (r62)
+                try:
+                    list(_drv.iterdir())
+                    break
+                except OSError:
+                    _t2.sleep(10)
+            _n_g = 0
+            for _c in _drv.glob("query-*.csv"):
+                if _c.stem not in _expected:
+                    continue                             # CSV đề cũ trùng tên pack: bỏ
+                _l = _out / _c.name
+                if not _l.exists() or _l.stat().st_size != _c.stat().st_size:
+                    _sh.copy2(_c, _l)
+                    _n_g += 1
+            print(f"gom từ Drive {_drv.name}: {_n_g} CSV mới/đổi → local")
+        # audit r82 (blocker): cổng phủ đề — zip thiếu câu phải LA LÊN, không im.
+        _have = {f.stem for f in _out.glob("query-*.csv")} & _expected
+        _missing = sorted(_expected - _have)
+        if _missing:
+            print(f"\n⚠⚠⚠ THIẾU {len(_missing)}/{len(_expected)} câu trong pack: {_missing}")
+            print("    Shard nào chưa xong / chưa đẩy Drive? Zip vẫn được đóng với phần "
+                  "hiện có (nộp thiếu còn hơn không nộp), nhưng hãy chắc là bạn CHỦ ĐỘNG.")
+        else:
+            print(f"✓ đủ {len(_expected)}/{len(_expected)} câu của đề")
+        _zip_dir = _out
+        if MERGE_PACKS:
+            from cvp.pipeline.attempts import load_run, rrf_merge_runs, write_merged
+            _runs = [load_run(_out)]
+            for _mp in MERGE_PACKS:
+                _mdir = PROJECT / "artifacts" / "submissions" / _mp
+                assert _mdir.is_dir() and any(_mdir.glob("query-*.csv")), (
+                    f"MERGE_PACKS: không thấy CSV trong Drive submissions/{_mp}")
+                _runs.append(load_run(_mdir))
+            _merged = {k: v for k, v in rrf_merge_runs(_runs, weights=None, k=60).items()
+                       if k in _expected}
+            # audit r82: trộn ra thư mục MỚI <pack>_merged — không đè lượt gốc
+            # trên Drive (idempotent; chạy lại không trộn-của-trộn).
+            _zip_dir = settings.paths.art("submissions", f"{_pack_name}_merged")
+            _sh.rmtree(_zip_dir, ignore_errors=True)
+            write_merged(_merged, _zip_dir)
+            _drv = PROJECT / "artifacts" / "submissions" / f"{_pack_name}_merged"
+            print(f"🔀 đã trộn RRF {len(_runs)} lượt ({_pack_name} + {MERGE_PACKS}) → {_zip_dir}")
+
         class rep:  # noqa: N801 — cùng hình dạng với AutoRunReport phía dưới
-            written = sorted(_out.glob("query-*.csv"))
+            written = sorted(p for p in _zip_dir.glob("query-*.csv")
+                             if p.stem in _expected)
             failed: dict = {}
             issues = [i for p in written for i in validate_file(p, strict=True)]
             zip_path = None
         if rep.written and not has_errors(rep.issues):
-            _zp = _out / f"{settings.submission.package_name}.zip"
+            _zp = _zip_dir / f"{settings.submission.package_name}.zip"
             if not has_errors(package_codabench(
-                    _out, _zp, package_name=settings.submission.package_name,
+                    _zip_dir, _zp, package_name=settings.submission.package_name,
                     files=rep.written)):
                 rep.zip_path = _zp
+        _out = _zip_dir      # đồng bộ cuối cell đẩy đúng thư mục đã zip
     else:
         from cvp.pipeline.auto_agent import run_auto
 
@@ -2127,15 +2207,92 @@ elif RUN_PACK:
         # gán VÔ ĐIỀU KIỆN — settings sống dai trong kernel, đặt 60 rồi hạ
         # về 0 mà chỉ gán-khi-truthy thì governor cũ vẫn âm thầm còn vũ trang
         settings.submission.pack_deadline_min = float(PACK_DEADLINE_MIN)
-        rep = run_auto(_qdir, _out, settings, submit=False, resume=RESUME_PACK,
-                       engine_factory=lambda _s: engine)
+        _qsrc = _qdir
+        _pusher_stop = None
+        if SHARD_TOTAL > 1:
+            import threading as _th
+            import time as _t2
+            assert 0 <= SHARD_INDEX < SHARD_TOTAL, "SHARD_INDEX phải trong [0, SHARD_TOTAL)"
+            # audit r82: listing Drive lười có thể thiếu file → cắt shard lệch.
+            # Đọc listing tới khi ỔN ĐỊNH 2 lần liên tiếp rồi mới cắt.
+            _prev_ls = None
+            for _att in range(6):
+                _ls = sorted(f.name for f in _qdir.glob("*.txt"))
+                if _ls == _prev_ls:
+                    break
+                _prev_ls = _ls
+                _t2.sleep(5)
+            _all = sorted(_qdir.glob("*.txt"))
+            _qsrc = Path(f"/content/queries_shard{SHARD_INDEX}")
+            _sh.rmtree(_qsrc, ignore_errors=True)
+            _qsrc.mkdir(parents=True)
+            _mine = _all[SHARD_INDEX::SHARD_TOTAL]
+            for _f in _mine:
+                _sh.copy2(_f, _qsrc / _f.name)
+            print(f"🧩 SHARD {SHARD_INDEX + 1}/{SHARD_TOTAL}: {len(_mine)}/{len(_all)} câu → "
+                  f"{[f.stem for f in _mine]}")
+            print("   (mọi máy phải in cùng tổng số câu — lệch là listing Drive lười, chạy lại cell)")
+            # audit r82: gate tạo thư mục Drive chống sinh đôi (r52) — lệch pha
+            # ngẫu nhiên rồi kiểm tra lại trước khi mkdir.
+            import random as _rnd
+            _ensure_drive()
+            if not _drv.is_dir():
+                _t2.sleep(_rnd.uniform(0, 12))
+                try:
+                    list(_drv.parent.iterdir())
+                except OSError:
+                    pass
+                if not _drv.is_dir():
+                    _drv.mkdir(parents=True, exist_ok=True)
+            _twins = [d for d in _drv.parent.iterdir() if d.name == _drv.name]
+            if len(_twins) > 1:
+                print(f"⚠⚠ Drive có {len(_twins)} thư mục SINH ĐÔI tên {_drv.name} — gộp tay "
+                      "trên web Drive (Ctrl+A → Move) trước khi REZIP.")
+            # resume xuyên VM: kéo CSV của CHÍNH shard này từ Drive về local
+            _n_pull = 0
+            for _f in _mine:
+                _c = _drv / f"{_f.stem}.csv"
+                if _c.is_file() and _c.stat().st_size > 0 and not (_out / _c.name).exists():
+                    _out.mkdir(parents=True, exist_ok=True)
+                    _sh.copy2(_c, _out / _c.name)
+                    _n_pull += 1
+            if _n_pull:
+                print(f"   ↩ kéo {_n_pull} CSV đã xong từ Drive (resume xuyên máy ảo)")
+            # đẩy CSV lên Drive MỖI 2 PHÚT trong lúc chạy — VM chết không mất câu đã xong
+            _pusher_stop = _th.Event()
+
+            def _push_loop():
+                while not _pusher_stop.wait(120):
+                    try:
+                        for _c in _out.glob("query-*.csv"):
+                            _d2 = _drv / _c.name
+                            if not _d2.exists() or _d2.stat().st_size != _c.stat().st_size:
+                                _sh.copy2(_c, _d2)
+                    except OSError as _e:
+                        print("   ⚠ pusher:", _e)
+
+            _th.Thread(target=_push_loop, daemon=True).start()
+        try:
+            rep = run_auto(_qsrc, _out, settings, submit=False, resume=RESUME_PACK,
+                           engine_factory=lambda _s: engine)
+        finally:
+            if _pusher_stop is not None:
+                _pusher_stop.set()
     print(f"\nCSV viết được: {len(rep.written)}")
     if rep.failed:
         print(f"⚠ {len(rep.failed)} query KHÔNG ra CSV (sẽ 0 điểm): {sorted(rep.failed)}")
     for _i in rep.issues:
         print("  ", _i)
-    if rep.zip_path:
-        _drv = PROJECT / "artifacts" / "submissions" / QUERY_PACK
+    if SHARD_TOTAL > 1 and not REZIP_ONLY:
+        # shard chỉ đẩy CSV (zip riêng lẻ của shard là đồ dở — đừng nộp)
+        _drv.mkdir(parents=True, exist_ok=True)
+        for _c in _out.glob("query-*.csv"):
+            _sh.copy2(_c, _drv / _c.name)
+        print(f"\n🧩 SHARD {SHARD_INDEX + 1}/{SHARD_TOTAL} xong — {len(rep.written)} CSV đã "
+              f"đẩy Drive: {_drv}")
+        print("→ Khi TẤT CẢ shard báo xong: trên MỘT máy đặt REZIP_ONLY=True, chạy lại "
+              "cell này để gom + validate + zip. KHÔNG nộp zip của shard lẻ.")
+    elif rep.zip_path:
         _drv.mkdir(parents=True, exist_ok=True)
         _sh.copytree(_out, _drv, dirs_exist_ok=True)
         print(f"\n📦 {rep.zip_path.name} đã đồng bộ về Drive: {_drv}")

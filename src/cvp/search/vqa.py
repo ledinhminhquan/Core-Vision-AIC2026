@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from dataclasses import dataclass
 
 from cvp.config import Settings
@@ -180,9 +181,17 @@ class VqaAssistant:
 
     # ── providers ────────────────────────────────────────────────────────
 
+    # Audit r82: with vqa.parallel_calls > 1 several groups call this object
+    # from pool threads. The lazy local model (Vintern / hf_auto) is a single
+    # GPU resource — its load AND its use are serialized; the lazy Gemini
+    # client init is double-checked so only one instance is built.
+    _LOCK = threading.RLock()
+
     def _ask_gemini(self, image_path: str, question: str, context: str = "") -> str:
         if self._gemini_client is None:
-            self._gemini_client = make_gemini_client(self.settings)
+            with self._LOCK:
+                if self._gemini_client is None:
+                    self._gemini_client = make_gemini_client(self.settings)
         img = load_rgb(image_path)
         if img is None:
             raise RuntimeError(f"Unreadable image: {image_path}")
@@ -199,9 +208,10 @@ class VqaAssistant:
         """Local VQA fallback — Vintern (mặc định) hoặc một VLM chat-template
         bất kỳ qua ``vqa.local_backend="hf_auto"`` (round-79: Qwen3.5-class).
         """
-        if getattr(self.cfg, "local_backend", "vintern") == "hf_auto":
-            return self._ask_local_hf_auto(image_path, question, context)
-        return self._ask_local_vintern(image_path, question, context)
+        with self._LOCK:      # one GPU model, one caller at a time
+            if getattr(self.cfg, "local_backend", "vintern") == "hf_auto":
+                return self._ask_local_hf_auto(image_path, question, context)
+            return self._ask_local_vintern(image_path, question, context)
 
     def _ask_local_hf_auto(self, image_path: str, question: str,
                            context: str = "") -> str:
@@ -284,7 +294,9 @@ class VqaAssistant:
     def _ask_gemini_strip(self, image_paths: list[str], question: str,
                           context: str = "") -> str:
         if self._gemini_client is None:
-            self._gemini_client = make_gemini_client(self.settings)
+            with self._LOCK:
+                if self._gemini_client is None:
+                    self._gemini_client = make_gemini_client(self.settings)
         imgs = []
         for p in image_paths:
             img = load_rgb(p)
