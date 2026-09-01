@@ -185,6 +185,10 @@ vqa:
   answer_model: gemini-3.1-pro-preview
   answer_timeout_s: 90.0
   local_model: 5CD-AI/Vintern-1B-v3_5
+  # round-79: "hf_auto" + local_hf_id = fallback local thế hệ Qwen3.5 khi
+  # Gemini sập (nạp lười, không tốn VRAM lúc thường); mặc định giữ vintern
+  local_backend: vintern
+  local_hf_id: ""
   top_frames: 5
   frames_per_answer: 3      # temporal strip per answer group (1 = single frame)
   answers_per_query: 5      # distinct candidate groups answered in batch mode

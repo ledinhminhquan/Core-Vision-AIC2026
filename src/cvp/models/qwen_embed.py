@@ -6,7 +6,7 @@ last-layer hidden state of the final ([EOS]) token is the semantic vector
 class (32.13 R@1 UIT-OpenViIC), but heavy at index time — an *optional*
 ensemble member, off by default.
 
-Matryoshka (MRL) output: the model supports 64–2048 dims; vectors are
+Matryoshka (MRL) output: 64–2048 dims on the 2B, 64–4096 on the 8B; vectors are
 truncated to ``embedding.qwen_embed_dim`` and re-normalized, trading a little
 recall for index size/speed. Text QUERIES are instruction-prefixed
 (``embedding.qwen_embed_instruction``) via the chat template's system turn;
@@ -65,11 +65,13 @@ class QwenEmbedModel(EmbeddingModel):
         )
 
         log.info("Loading %s (%s, %s, MRL dim %d)", self.model_id, self.device, self.dtype, self.mrl_dim)
-        self.model = (
-            AutoModel.from_pretrained(self.model_id, torch_dtype=self.dtype, trust_remote_code=True)
-            .to(self.device)
-            .eval()
-        )
+        try:      # transformers 5.x: torch_dtype= đổi tên thành dtype=
+            _m = AutoModel.from_pretrained(self.model_id, dtype=self.dtype,
+                                           trust_remote_code=True)
+        except TypeError:
+            _m = AutoModel.from_pretrained(self.model_id, torch_dtype=self.dtype,
+                                           trust_remote_code=True)
+        self.model = _m.to(self.device).eval()
         self.processor = AutoProcessor.from_pretrained(self.model_id, trust_remote_code=True)
         self._dim: int | None = None
 
@@ -87,23 +89,27 @@ class QwenEmbedModel(EmbeddingModel):
 
     # ── internals ─────────────────────────────────────────────────────────
 
+    # Official Qwen3VLEmbedder default — EVERY input gets a system-turn
+    # instruction; documents use this default, queries use the config one.
+    # (Round-78 audit: query-side-only instruction là quy ước của Qwen3-Embedding
+    # TEXT, không phải của Qwen3-VL-Embedding.)
+    DOC_INSTRUCTION = "Represent the user's input."
+
     def _messages(self, *, text: str | None = None, image: Image.Image | None = None,
                   with_instruction: bool = True) -> list[dict]:
-        """One chat-template conversation; the instruction system turn is only
-        added for QUERIES (``with_instruction=True``) — documents (keyframe
-        images) are encoded plain, per the official Qwen3VLEmbedder usage."""
+        """One chat-template conversation, ALWAYS carrying a system-turn
+        instruction (official Qwen3VLEmbedder wraps every input): queries get
+        ``embedding.qwen_embed_instruction``, documents get DOC_INSTRUCTION."""
         content: list[dict] = []
         if image is not None:
             content.append({"type": "image", "image": image})
         if text is not None:
             content.append({"type": "text", "text": text})
-        messages: list[dict] = []
-        if with_instruction:
-            messages.append(
-                {"role": "system", "content": [{"type": "text", "text": self.instruction}]}
-            )
-        messages.append({"role": "user", "content": content})
-        return messages
+        instr = self.instruction if with_instruction else self.DOC_INSTRUCTION
+        return [
+            {"role": "system", "content": [{"type": "text", "text": instr}]},
+            {"role": "user", "content": content},
+        ]
 
     def _embed_batch(self, conversations: list[list[dict]],
                      images: list[Image.Image] | None = None) -> np.ndarray:
@@ -111,7 +117,10 @@ class QwenEmbedModel(EmbeddingModel):
         import torch
 
         texts = [
-            self.processor.apply_chat_template(conv, tokenize=False, add_generation_prompt=False)
+            # Round-78 audit: official Qwen3VLEmbedder dùng add_generation_prompt=True
+            # — token cuối được pool là đuôi generation prompt, đúng token model
+            # được huấn luyện làm vật mang ngữ nghĩa. False là lệch công thức.
+            self.processor.apply_chat_template(conv, tokenize=False, add_generation_prompt=True)
             for conv in conversations
         ]
         kwargs: dict = {"text": texts, "padding": True, "return_tensors": "pt"}
@@ -138,7 +147,7 @@ class QwenEmbedModel(EmbeddingModel):
         feats = []
         for i in range(0, len(images), self.batch_size):
             batch = images[i : i + self.batch_size]
-            # Documents are embedded WITHOUT the instruction turn (queries only).
+            # Documents carry the OFFICIAL default instruction (round-78 audit).
             convs = [self._messages(image=im, with_instruction=False) for im in batch]
             feats.append(self._embed_batch(convs, images=batch))
         return _truncate_and_renorm(np.concatenate(feats, axis=0), self.mrl_dim)

@@ -124,10 +124,12 @@ def test_query_cache_key_covers_model_and_english_enhance():
 # ── qwen_embed: instruction on the QUERY side only ───────────────────────────
 
 
-def test_qwen_messages_instruction_only_for_queries():
-    """Fix L2 (review 2026-07-08): documents (images) are embedded WITHOUT the
-    instruction system turn, matching the official Qwen3VLEmbedder convention;
-    text queries keep it. Uses __new__ — no torch/weights needed."""
+def test_qwen_messages_instruction_convention():
+    """Round-78 CORRECTION of the 2026-07-08 pin: the official Qwen3VLEmbedder
+    wraps EVERY input (documents included) in a system-turn instruction —
+    docs get the official default, queries get the configured one. The old
+    query-side-only pin was the Qwen3-Embedding TEXT convention, verified
+    wrong for Qwen3-VL-Embedding against the official repo (audit r78)."""
     from cvp.models.qwen_embed import QwenEmbedModel
 
     m = object.__new__(QwenEmbedModel)
@@ -138,8 +140,9 @@ def test_qwen_messages_instruction_only_for_queries():
     assert query_msgs[0]["content"][0]["text"] == m.instruction
 
     doc_msgs = m._messages(image=object(), with_instruction=False)
-    assert all(turn["role"] != "system" for turn in doc_msgs)
-    assert doc_msgs[0]["role"] == "user"
+    assert doc_msgs[0]["role"] == "system"
+    assert doc_msgs[0]["content"][0]["text"] == QwenEmbedModel.DOC_INSTRUCTION
+    assert doc_msgs[1]["role"] == "user"
 
 
 # ── config: dead knobs removed, stray keys tolerated ─────────────────────────

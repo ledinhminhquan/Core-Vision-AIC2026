@@ -334,6 +334,11 @@ class VqaCfg(BaseModel):
     answer_model: str = "gemini-3.1-pro-preview"
     answer_timeout_s: float = 90.0
     local_model: str = "5CD-AI/Vintern-1B-v3_5"
+    # Round-79: chọn backend fallback local. "vintern" = đường cũ y nguyên;
+    # "hf_auto" = VLM chat-template bất kỳ (Qwen3.5-class) — id khai ở dưới,
+    # nạp lười CHỈ khi Gemini sập. Đổi backend không đụng đường Gemini.
+    local_backend: Literal["vintern", "hf_auto"] = "vintern"
+    local_hf_id: str = ""            # vd "Qwen/Qwen3.5-9B-Instruct" sau khi kiểm chứng id
     top_frames: int = 5               # frames sent to the VQA model per answer group
     # Frames per answer_group strip (ONE Gemini call sees the whole strip).
     # 1 = old single-frame behaviour; 3 covers text that spans several frames.

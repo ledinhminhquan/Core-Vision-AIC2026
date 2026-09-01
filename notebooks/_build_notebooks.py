@@ -2648,25 +2648,129 @@ elif RUN_METACLIP:
     print("⚠ Chưa có GT — chạy cell L1 trước.")
 '''
 
-LAB_KEEPALIVE = r'''
-# ── L6 · 🫀 Giữ phiên sống sau khi Lab xong (bấm ⏹ của ô này để dừng) ──
-# Round-46: phiên Lab từng bị Colab thu hồi vì "không hoạt động". Kernel bận
-# chạy ô này = hoạt động. Kết quả các stage đã được LƯU THẲNG LÊN DRIVE ngay
-# khi có (bench_full.json / best_weights.json / lane_ab.json / lab_full/),
-# nên dù phiên chết cũng không mất bài — ô này chỉ giữ máy ảo cho bạn quay
-# lại chạy thêm stage. GIỮ TAB TRÌNH DUYỆT MỞ trong lúc Lab chạy.
-import time as _tm
-print("🫀 Lab watchkeeper — phiên được giữ sống.")
-try:
-    _n = 0
-    while True:
-        _tm.sleep(30)
-        _n += 1
-        if _n % 10 == 0:
-            print(f"🫀 {_tm.strftime('%H:%M')} phiên sống")
-except KeyboardInterrupt:
-    print("⏹ Dừng — phiên sẽ tính là nhàn rỗi từ giờ.")
+
+NB8_TITLE = r'''# 🧲 Core Vision Perfect V1 — 08 · Lane Qwen3-VL-Embedding-8B (round-78)
+
+Dựng lane retrieval THỨ BA từ **Qwen/Qwen3-VL-Embedding-8B** (SOTA mở 01/2026,
+MMEB-V2 77.8, tiếng Việt tường minh, Apache-2.0, cùng họ Qwen3-VL-Reranker-8B
+đang ra trận) rồi A/B ngay với đội hình trận:
+
+1. Embed 177K keyframes (bf16, MRL 1536) — **~4-8 giờ A100/G4, resume được**
+   (mỗi video một file .npy, chạy lại là bỏ qua video đã xong).
+2. Build FAISS + đồng bộ `embeddings/qwen_embed*` + `indexes/*qwen_embed*` về Drive.
+3. A/B retrieval-only trên đề nháp: đội hình trận vs 3-lane (2 tỉ lệ) vs qwen đơn
+   → `lab/lane_qwen_ab.json`. **Thắng mới nhận** (luật bench-before-adopt).
+
+Zero-edit: upload → Run all. Drive chỉ sinh đúng các tên đã khai ở trên.'''
+
+LAB_QWEN = r'''
+# ── Q1 · Embed lane qwen_embed (8B) + FAISS + A/B 3 đội hình ──
+RUN_QWEN_LANE = True
+QWEN_ID  = "Qwen/Qwen3-VL-Embedding-8B"   # round-78: bản 8B (MMEB-V2 77.8; 2B chỉ 73.2)
+QWEN_DIM = 1536                            # MRL: 8B hỗ trợ 64-4096
+QWEN_BATCH = 16   # audit r78: batch 64 mặc định OOM chắc chắn trên A100 40GB
+                  # (64 ảnh × ~1.175 vision token qua model 8B); 16 an toàn mọi máy
+if RUN_QWEN_LANE:
+    import gc, os, shutil, threading, time as _tm, torch
+    from pathlib import Path
+    os.environ["CVP_EMBEDDING__QWEN_EMBED_ID"] = QWEN_ID
+    os.environ["CVP_EMBEDDING__QWEN_EMBED_DIM"] = str(QWEN_DIM)
+    os.environ["CVP_EMBEDDING__BATCH_SIZE"] = str(QWEN_BATCH)
+    _la = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"])
+
+    def _sync_qwen_to_drive(tag=""):
+        for _sub in ("embeddings", "indexes"):
+            for _f in (_la / _sub).glob("*qwen_embed*"):
+                _dst = PROJECT / "artifacts" / _sub / _f.name
+                _dst.parent.mkdir(parents=True, exist_ok=True)
+                # round-46: embeddings/<lane> là THƯ MỤC (mỗi video một .npy) —
+                # copy2 lên thư mục từng làm sập cả cell (IsADirectoryError).
+                if _f.is_dir():
+                    shutil.copytree(_f, _dst, dirs_exist_ok=True)
+                elif not _dst.exists() or _dst.stat().st_size != _f.stat().st_size:
+                    shutil.copy2(_f, _dst)
+        if tag:
+            print(f"   ☁ đồng bộ qwen_embed → Drive ({tag})")
+
+    # audit r78: job ~8-14h mà VM chết là mất sạch local — syncer nền đẩy
+    # tiến độ .npy lên Drive mỗi 15 phút, phiên sau resume từ đó (per-video).
+    _sync_stop = threading.Event()
+
+    def _sync_loop():
+        while not _sync_stop.wait(900):
+            try:
+                _sync_qwen_to_drive("nền 15 phút")
+            except OSError as _e:
+                print("   ⚠ syncer nền:", _e)
+
+    _syncer = threading.Thread(target=_sync_loop, daemon=True)
+    _syncer.start()
+    try:
+        _run(REPO_DIR / "scripts" / "02_embed_and_index.py", "--model", "qwen_embed")
+    finally:
+        _sync_stop.set()
+        _syncer.join(timeout=30)
+        _sync_qwen_to_drive("chốt cuối")
+    # Lưu ý stale: nếu cell trên fail-loud vì model_tag 2B-vs-8B — Drive còn
+    # kho qwen_embed đời 2B: xóa artifacts/{embeddings,indexes}/*qwen_embed*
+    # trên Drive + máy ảo mới rồi chạy lại.
+if RUN_QWEN_LANE and not GT_PATH.exists():
+    print("⚠ Chưa có GT — embed đã xong/đồng bộ, nhưng BỎ QUA A/B. Upload "
+          "thunghiem-ref.zip, chạy lại cell L1 rồi cell này để đo lane.")
+if RUN_QWEN_LANE and GT_PATH.exists():
+    # A/B retrieval-only (tắt reranker nặng để so LANE cho sạch và nhanh)
+    from cvp.config import load_settings
+    from cvp.eval.official import score_run
+    from cvp.pipeline.run_queries import run_query_folder
+    os.environ["CVP_SEARCH__RERANKER"] = "none"
+    os.environ["CVP_SEARCH__VLM_RERANK"] = "false"
+    os.environ["CVP_QUERY__PROVIDER"] = "gemini"
+    # Round-74 (audit): knob pack sống dai trong kernel — A/B lane phải thuần.
+    for _k in ("CVP_SEARCH__NEIGHBOR_CONSISTENCY_BOOST", "CVP_SEARCH__ROW_STRATEGY",
+               "CVP_TEMPORAL__SUBMIT_STRATEGY", "CVP_TEMPORAL__POOL_CONTEXT",
+               "CVP_TEMPORAL__EVENT_QUERY_VARIANTS",
+               "CVP_TEMPORAL__CAPTION_SIGNAL_WEIGHT",
+               "CVP_VQA__ANSWER_CANONICALIZE", "CVP_VQA__ANSWER_NEIGHBOR_FRAMES",
+               "CVP_VQA__MAX_CALLS_PER_QUERY"):
+        os.environ.pop(_k, None)
+    # Lane finetuned dùng đúng checkpoint trận (giống L2/L4 nb04)
+    os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
+        Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "checkpoints" / "vi_siglip2_best")
+    CONFIGS = {
+        "qwen-solo": {"CVP_EMBEDDING__MODEL": "qwen_embed"},
+        "battle(f+m)": {"CVP_EMBEDDING__MODEL": "ensemble",
+                        "CVP_EMBEDDING__ENSEMBLE_MEMBERS": '["finetuned", "metaclip2"]',
+                        "CVP_EMBEDDING__ENSEMBLE_WEIGHTS": "[0.6, 0.4]"},
+        "3lane-45.30.25": {"CVP_EMBEDDING__MODEL": "ensemble",
+                           "CVP_EMBEDDING__ENSEMBLE_MEMBERS":
+                               '["finetuned", "metaclip2", "qwen_embed"]',
+                           "CVP_EMBEDDING__ENSEMBLE_WEIGHTS": "[0.45, 0.3, 0.25]"},
+        "3lane-40.25.35": {"CVP_EMBEDDING__MODEL": "ensemble",
+                           "CVP_EMBEDDING__ENSEMBLE_MEMBERS":
+                               '["finetuned", "metaclip2", "qwen_embed"]',
+                           "CVP_EMBEDDING__ENSEMBLE_WEIGHTS": "[0.4, 0.25, 0.35]"},
+    }
+    _ab = {}
+    print(f"\n{'đội hình':16s} mean_final (retrieval-only)")
+    for _name, _env in CONFIGS.items():
+        for k, v in _env.items():
+            os.environ[k] = v
+        _out = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "submissions" / f"labq_{_name[:9]}"
+        run_query_folder(load_settings(), TRIAL_DIR, _out, with_vqa=False)
+        _r = score_run(_out, GT_PATH)
+        print(f"{_name:16s} {_r.mean_final:.4f}")
+        _ab[_name] = _r.mean_final
+        gc.collect(); torch.cuda.empty_cache()
+    import json as _json
+    _drv_lab = PROJECT / "artifacts" / "lab"
+    _drv_lab.mkdir(parents=True, exist_ok=True)
+    (_drv_lab / "lane_qwen_ab.json").write_text(
+        _json.dumps({"qwen_id": QWEN_ID, "mrl_dim": QWEN_DIM, "scores": _ab},
+                    ensure_ascii=False, indent=2), encoding="utf-8")
+    print("\nBảng đã lưu Drive: lab/lane_qwen_ab.json — 3-lane THẮNG battle(f+m)")
+    print("mới nhận lane mới (báo Claude khóa vào nb03 + cập nhật assert 3 lane).")
 '''
+
 
 LAB_KEEPALIVE = r'''
 # ── L6 · 🫀 Giữ phiên sống sau khi Lab xong (bấm ⏹ của ô này để dừng) ──
@@ -2687,6 +2791,7 @@ try:
 except KeyboardInterrupt:
     print("⏹ Dừng — phiên sẽ tính là nhàn rỗi từ giờ.")
 '''
+
 
 LAB_ASR_LARGE = r'''
 # ── L5 · CA ĐÊM: ASR PhoWhisper-large toàn bộ 873 video (~10–20 giờ) ──
@@ -3495,6 +3600,20 @@ def main() -> None:
         code(LAB_BENCH_FULL),
         code(LAB_TUNE),
         code(LAB_METACLIP),
+        code(LAB_KEEPALIVE),
+    ])
+    # Round-78: lane Qwen3-VL-Embedding-8B — embed + A/B, bench-gated.
+    write_nb("08_qwen_lane.ipynb", [
+        md(NB8_TITLE),
+        code(CELL_PARAMS),
+        code(CELL_MOUNT),
+        code(CELL_REPO_DEPS),
+        code(CELL_ENV_GPU),
+        code(NB1_LOCAL_COPY),
+        code(NB3_OBJECTS),
+        code(NB3_ARTIFACTS_LOCAL),
+        code(LAB_GT),
+        code(LAB_QWEN),
         code(LAB_KEEPALIVE),
     ])
     # Round-51: shard notebooks đặt sẵn chỉ số — upload & Run all, zero chỉnh.

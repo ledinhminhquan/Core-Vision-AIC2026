@@ -196,10 +196,66 @@ class VqaAssistant:
         )
 
     def _ask_local(self, image_path: str, question: str, context: str = "") -> str:
+        """Local VQA fallback — Vintern (mặc định) hoặc một VLM chat-template
+        bất kỳ qua ``vqa.local_backend="hf_auto"`` (round-79: Qwen3.5-class).
+        """
+        if getattr(self.cfg, "local_backend", "vintern") == "hf_auto":
+            return self._ask_local_hf_auto(image_path, question, context)
+        return self._ask_local_vintern(image_path, question, context)
+
+    def _ask_local_hf_auto(self, image_path: str, question: str,
+                           context: str = "") -> str:
+        """Round-79: fallback local thế-hệ-2026 qua chat template chuẩn HF.
+
+        Nghiên cứu 29/08: Qwen3.5-9B/27B (201 ngôn ngữ, Apache-2.0) vượt xa
+        Vintern-1B khi Gemini sập — nạp lười CHỈ lúc cần, id lấy từ
+        ``vqa.local_hf_id`` (bắt buộc khai — không đoán id chưa kiểm chứng).
+        """
+        model_id = str(getattr(self.cfg, "local_hf_id", "") or "").strip()
+        if not model_id:
+            raise RuntimeError(
+                "vqa.local_backend='hf_auto' nhưng vqa.local_hf_id trống — "
+                "khai id model (vd bản Qwen3.5 đã kiểm chứng) rồi chạy lại.")
+        import torch
+
+        if self._local is not None and self._local[0] != "hf_auto":
+            self._local = None      # audit r79: đổi backend giữa phiên → nạp lại
+        if self._local is None:
+            from transformers import AutoModelForImageTextToText, AutoProcessor
+
+            log.info("Loading local hf_auto VQA model %s", model_id)
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            dtype = torch.bfloat16 if device == "cuda" else torch.float32
+            model = AutoModelForImageTextToText.from_pretrained(
+                model_id, torch_dtype=dtype).to(device).eval()
+            processor = AutoProcessor.from_pretrained(model_id)
+            self._local = ("hf_auto", model, processor, device)
+        _tag, model, processor, device = self._local
+        img = load_rgb(image_path)
+        if img is None:
+            raise RuntimeError(f"Unreadable image: {image_path}")
+        prompt = _with_context(
+            _VQA_PROMPT.format(question=question) + _exact_suffix(self.cfg), context)
+        messages = [{"role": "user", "content": [
+            {"type": "image", "image": img},
+            {"type": "text", "text": prompt}]}]
+        inputs = processor.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=True,
+            return_dict=True, return_tensors="pt").to(device)
+        with torch.inference_mode():
+            out = model.generate(**inputs, max_new_tokens=64, do_sample=False)
+        new_tokens = out[0][inputs["input_ids"].shape[1]:]
+        answer = processor.decode(new_tokens, skip_special_tokens=True)
+        return str(answer).strip()
+
+    def _ask_local_vintern(self, image_path: str, question: str,
+                           context: str = "") -> str:
         """Vintern-1B (InternVL family) — loaded lazily, cached."""
         import torch
         from transformers import AutoModel
 
+        if self._local is not None and self._local[0] != "vintern":
+            self._local = None      # audit r79: đổi backend giữa phiên → nạp lại
         if self._local is None:
             model_id = self.cfg.local_model
             log.info("Loading local VQA model %s", model_id)
@@ -212,8 +268,8 @@ class VqaAssistant:
                 model_id, torch_dtype=dtype, trust_remote_code=True
             ).to(device).eval()
             tokenizer = load_tokenizer(model_id)
-            self._local = (model, tokenizer, device, dtype)
-        model, tokenizer, device, dtype = self._local
+            self._local = ("vintern", model, tokenizer, device, dtype)
+        _tag, model, tokenizer, device, dtype = self._local
 
         from cvp.auxindex.vintern_preprocess import load_image_tiles
 
@@ -328,7 +384,8 @@ class VqaAssistant:
                     log.warning("Gemini VQA failed (%s) — trying local model", e)
             if not answer and self.cfg.provider in ("gemini", "vintern"):
                 try:
-                    answer, provider = self._ask_local(path, question, context), "vintern"
+                    answer = self._ask_local(path, question, context)
+                    provider = getattr(self.cfg, "local_backend", "vintern")
                 except Exception as e:  # noqa: BLE001
                     log.warning("Local VQA failed: %s", e)
             if answer:
