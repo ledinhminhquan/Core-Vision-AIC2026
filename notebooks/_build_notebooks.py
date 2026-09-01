@@ -2786,8 +2786,17 @@ if RUN_QWEN_LANE and GT_PATH.exists():
     (_drv_lab / "lane_qwen_ab.json").write_text(
         _json.dumps({"qwen_id": QWEN_ID, "mrl_dim": QWEN_DIM, "scores": _ab},
                     ensure_ascii=False, indent=2), encoding="utf-8")
-    print("\nBảng đã lưu Drive: lab/lane_qwen_ab.json — 3-lane THẮNG battle(f+m)")
-    print("mới nhận lane mới (báo Claude khóa vào nb03 + cập nhật assert 3 lane).")
+    # Round-81: phán quyết TỰ ĐỘNG — bản cũ in "3-lane thắng" vô điều kiện.
+    _battle = _ab.get("battle(f+m)")
+    _best3 = max((v for k, v in _ab.items() if k.startswith("3lane")), default=None)
+    print("\nBảng đã lưu Drive: lab/lane_qwen_ab.json")
+    if _battle is not None and _best3 is not None and _best3 > _battle:
+        print(f"✅ 3-lane THẮNG battle ({_best3:.4f} > {_battle:.4f}) — báo Claude "
+              "khóa vào nb03 + cập nhật assert 3 lane.")
+    else:
+        print(f"⚖ 3-lane KHÔNG thắng battle ({_best3} vs {_battle}) — trận giữ "
+              "nguyên 2 lane (luật bench-before-adopt); lane qwen nằm kho làm "
+              "quân dự bị đa dạng hóa cho merge nhiều lượt.")
 '''
 
 
