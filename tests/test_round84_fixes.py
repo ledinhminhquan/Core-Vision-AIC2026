@@ -120,7 +120,7 @@ def test_r84_defaults_and_bench_pack_x():
     nb = json.loads((REPO / "notebooks" / "04_lab_artifacts.ipynb")
                     .read_text(encoding="utf-8"))
     src = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
-    assert 'assert BENCH_PACK in ("off", "A", "AB", "ABK", "ABX")' in src
+    assert 'assert BENCH_PACK in ("off", "A", "AB", "ABK", "ABKD", "ABX")' in src
     for k in ("CVP_SEARCH__VLM_RERANK_VOTES", "CVP_VQA__SELF_CONSISTENCY",
               "CVP_SEARCH__TOPK", "CVP_QUERY__EXPANSIONS", "CVP_SEARCH__KIS_MULTI_EVENT"):
         assert k in src, k

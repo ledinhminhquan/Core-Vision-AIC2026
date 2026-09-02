@@ -35,7 +35,7 @@ def test_r74_bench_pack_default_off_and_validated():
     # round-85: battle pack is ABK (AB + multi-scene KIS, bench 0.6913)
     assert 'BENCH_PACK = "ABK"' in NB04_SRC
     # round-84 added the max-effort pack "ABX" to the allowed set
-    assert 'assert BENCH_PACK in ("off", "A", "AB", "ABK", "ABX")' in NB04_SRC
+    assert 'assert BENCH_PACK in ("off", "A", "AB", "ABK", "ABKD", "ABX")' in NB04_SRC
 
 
 def test_r74_pack_a_is_ranking_only_and_pack_b_is_qa():

@@ -163,6 +163,15 @@ class SearchCfg(BaseModel):
     # được tách sự kiện và căn chỉnh bằng máy DANTE của TRAKE, rồi các frame
     # của chuỗi khớp nhất được trộn RRF với ranking đơn-câu. Mặc định off.
     kis_multi_event: bool = False
+    # Round-86: mô tả QA cũng hay tả chuỗi cảnh ("Đoạn clip… Sau đó góc quay
+    # chuyển…") — cùng cơ chế căn chỉnh DANTE cho bước TÌM MOMENT của QA.
+    qa_multi_event: bool = False
+    # Round-86: đa dạng hóa ĐẦU bảng theo video cho KIS/QA — boost hàng xóm
+    # gom frame cùng video vào top-5; nếu video đó sai thì cả 5 vé hỏng.
+    # Khi bật: cố gắng ≤2 dòng/video trong top-5 và ≤5 trong top-20 (best-
+    # effort — thiếu video khác thì cửa sổ ngắn lại, dòng lùi đặt ngay sau
+    # cửa sổ, không mất dòng nào). Mặc định off.
+    head_diversity: bool = False
     # Vortex-style before/now/after context boost for "… sau khi …" queries
     # (off by default — measure on the dev pack before enabling).
     temporal_boost: bool = False

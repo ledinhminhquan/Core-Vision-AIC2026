@@ -333,6 +333,7 @@ def merge_rows(
     k: int,
     task: str,
     limit: int = MAX_SUBMISSION_ROWS,
+    qa_keep_all_answers: bool = False,
 ) -> Rows:
     """Weighted RRF over N rankings of ONE query.
 
@@ -356,7 +357,56 @@ def merge_rows(
                 best_rank[key] = rank
                 keep[key] = row
     order = sorted(score, key=lambda kk: -score[kk])
-    return [keep[kk] for kk in order][:limit]
+    out = [keep[kk] for kk in order][:limit]
+    if task == "qa" and qa_keep_all_answers:
+        out = _qa_hedge_rows(out, rankings, limit)
+    return out
+
+
+_QA_HEDGE_HEAD = 20      # frames whose alternative answers are worth a ticket
+_QA_HEDGE_MAX = 10       # extra rows — they REPLACE the tail, never the head
+
+
+def _qa_hedge_rows(merged: Rows, rankings: Sequence[Rows], limit: int) -> Rows:
+    """Round-86b QA hedge (audit-shaped): two runs answering the SAME frame
+    differently (A100-vs-G4 measured 2/7 QA answers agreeing) — append the
+    other run's REAL answer as an extra row for frames in the merged head,
+    replacing tail rows only (bounded: ≤ _QA_HEDGE_MAX). Fallback/empty
+    answers never hedge; answers equal under the official normalizer never
+    duplicate. The metric takes the max over rows, so the head is untouched
+    and the cost is ≤ 10 tail tickets.
+    """
+    from cvp.eval.official import normalize_answer
+    from cvp.pipeline.run_queries import QA_FALLBACK_ANSWER
+
+    fb = normalize_answer(QA_FALLBACK_ANSWER)
+
+    def _norm(row: Sequence[str]) -> str:
+        return normalize_answer(row[2] if len(row) > 2 else "")
+
+    alts: dict[tuple[str, str], list[list[str]]] = {}
+    for ranking in rankings:
+        for row in ranking:
+            n = _norm(row)
+            if not n or n == fb:
+                continue
+            alts.setdefault((row[0], row[1]), []).append([row[0], row[1], row[2]])
+    extra: list[list[str]] = []
+    seen = {(r[0], r[1], _norm(r)) for r in merged}
+    for row in merged[:_QA_HEDGE_HEAD]:
+        for alt in alts.get((row[0], row[1]), []):
+            k = (alt[0], alt[1], _norm(alt))
+            if k not in seen:
+                seen.add(k)
+                extra.append(alt)
+            if len(extra) >= _QA_HEDGE_MAX:
+                break
+        if len(extra) >= _QA_HEDGE_MAX:
+            break
+    if not extra:
+        return merged
+    keep_n = max(_QA_HEDGE_HEAD, limit - len(extra))
+    return (list(merged[:keep_n]) + extra)[:limit]
 
 
 def rrf_merge_runs(
@@ -365,6 +415,7 @@ def rrf_merge_runs(
     weights: Sequence[float] | None = None,
     k: int = 60,
     limit: int = MAX_SUBMISSION_ROWS,
+    qa_keep_all_answers: bool = False,
 ) -> dict[str, Rows]:
     """Weighted N-run RRF over whole runs (union of stems).
 
@@ -385,7 +436,7 @@ def rrf_merge_runs(
     stems = sorted(set().union(*(set(r) for r in runs)))
     return {
         stem: merge_rows([r.get(stem, []) for r in runs], ws, k,
-                         infer_task(stem), limit)
+                         infer_task(stem), limit, qa_keep_all_answers)
         for stem in stems
     }
 

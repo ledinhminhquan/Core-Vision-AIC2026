@@ -96,6 +96,10 @@ search:
   row_strategy_variants: 4
   # round-84: KIS đa cảnh — tách sự kiện + căn chỉnh DANTE rồi trộn RRF (bench-gated)
   kis_multi_event: false
+  # round-86: căn chỉnh chuỗi cảnh cho bước tìm moment của QA (bench-gated)
+  qa_multi_event: false
+  # round-86: đa dạng hóa đầu bảng theo video (top-5 ≤2/video, top-20 ≤5/video)
+  head_diversity: false
   temporal_boost: false  # Vortex before/now/after boost for "… sau khi …" queries
   temporal_boost_weight: 0.25
   temporal_boost_window: 12

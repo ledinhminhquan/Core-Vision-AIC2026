@@ -92,7 +92,7 @@ __all__ = [
     "parse_trake_events", "split_trake_query", "split_qa_line", "group_candidates",
     "compute_qa_answers", "compute_qa_answers_with_stats", "plan_consistency_rerank",
     "run_query_file", "run_query_folder", "ranking_confidence", "rrf_merge_results",
-    "maybe_retry_low_confidence", "kis_events",
+    "maybe_retry_low_confidence", "kis_events", "head_diversify",
 ]
 
 
@@ -664,7 +664,8 @@ def kis_events(lines: Sequence[str]) -> list[str]:
 
 
 def _maybe_kis_multi_event(engine: SearchEngine, lines: Sequence[str],
-                           results: list[SearchResult]) -> list[SearchResult]:
+                           results: list[SearchResult], *,
+                           force: bool = False) -> list[SearchResult]:
     """``search.kis_multi_event`` (round-84): fuse the single-text KIS ranking
     with DANTE-aligned event chains of the same query.
 
@@ -675,7 +676,7 @@ def _maybe_kis_multi_event(engine: SearchEngine, lines: Sequence[str],
     id, verified against video/frame — a mismatch is skipped, never guessed).
     """
     cfg = getattr(getattr(engine, "settings", None), "search", None)
-    if not getattr(cfg, "kis_multi_event", False) or not results:
+    if not (force or getattr(cfg, "kis_multi_event", False)) or not results:
         return results
     events = kis_events(lines)
     if len(events) < 2:
@@ -749,6 +750,49 @@ def _maybe_kis_multi_event(engine: SearchEngine, lines: Sequence[str],
              "(top-1 %s).", len(events), len(chains), len(chain_keys),
              "đổi" if order[0] != (results[0].video_id, int(results[0].frame_idx)) else "giữ")
     return [pool[kk] for kk in order][:max(len(results), 100)]
+
+
+_HEAD_DIVERSITY_WINDOWS = ((5, 2), (20, 5))   # (window, max rows per video)
+
+
+def head_diversify(rows: list[tuple]) -> list[tuple]:
+    """Round-86: BEST-EFFORT per-video caps inside the head windows (top-5 ≤2,
+    top-20 ≤5): excess rows are demoted to just after the window, order
+    otherwise preserved, nothing lost. Best-effort = when too few other
+    videos exist the window fills short and the demoted rows flow straight
+    back (audit r86) — a hard cap would have to DROP rows. Row 1 never moves.
+    Not combined with vqa.consistency_rerank (would split its promoted
+    block); that knob is off in every battle pack. Pure."""
+    out = list(rows)
+    for window, cap in _HEAD_DIVERSITY_WINDOWS:
+        if len(out) <= window:
+            continue
+        head, tail = [], []
+        seen: dict[str, int] = {}
+        for r in out:
+            if len(head) < window:
+                v = str(r[0])
+                if seen.get(v, 0) < cap:
+                    seen[v] = seen.get(v, 0) + 1
+                    head.append(r)
+                    continue
+            tail.append(r)
+        out = head + tail
+    return out
+
+
+def _maybe_head_diversity(settings: Settings | None, task: str,
+                          rows: list[tuple]) -> list[tuple]:
+    """``search.head_diversity`` (round-86): off = the SAME list object."""
+    if task not in ("kis", "qa"):
+        return rows
+    if not getattr(getattr(settings, "search", None), "head_diversity", False):
+        return rows
+    out = head_diversify(rows)
+    if out[:20] != rows[:20]:
+        log.info("head_diversity: đầu bảng đổi — top-5 videos %s",
+                 sorted({str(r[0]) for r in out[:5]}))
+    return out
 
 
 def _maybe_answer_variants(settings: Settings | None, rows: list[tuple]) -> list[tuple]:
@@ -899,6 +943,12 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
         results = maybe_retry_low_confidence(engine, retrieval_text, results)
         if task == "kis":
             results = _maybe_kis_multi_event(engine, lines, results)
+        elif task == "qa" and getattr(getattr(getattr(engine, "settings", None),
+                                              "search", None), "qa_multi_event", False):
+            # Round-86: mô tả QA (KHÔNG gồm câu hỏi) cũng là chuỗi cảnh —
+            # dùng retrieval_text đã tách, đúng ở mọi nhánh của parse_query_lines
+            # (audit: lines[:-1] rò câu hỏi vào sự kiện ở nhánh fallback).
+            results = _maybe_kis_multi_event(engine, [retrieval_text], results, force=True)
 
     if not results:
         log.error("Query %s: engine returned ZERO results — no CSV written "
@@ -922,12 +972,14 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
                 t = _time_of(results[0])
                 record([t] if t is not None else None,
                        (results[0].video_id, int(results[0].frame_idx)))
-        qa_rows = _maybe_diversify_rows(
-            engine, "qa", [(r.video_id, r.frame_idx, a) for r, a in zip(results, answers)])
+        qa_rows = _maybe_head_diversity(
+            settings_, "qa", [(r.video_id, r.frame_idx, a) for r, a in zip(results, answers)])
+        qa_rows = _maybe_diversify_rows(engine, "qa", qa_rows)
         qa_rows = _maybe_answer_variants(settings_, qa_rows)
         return _reconcile_times(write_qa(out_path, qa_rows))
-    kis_rows = _maybe_diversify_rows(
-        engine, task, [(r.video_id, r.frame_idx) for r in results])
+    kis_rows = _maybe_head_diversity(
+        getattr(engine, "settings", None), task, [(r.video_id, r.frame_idx) for r in results])
+    kis_rows = _maybe_diversify_rows(engine, task, kis_rows)
     return _reconcile_times(write_kis(out_path, kis_rows))
 
 

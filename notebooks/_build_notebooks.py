@@ -2180,7 +2180,10 @@ elif RUN_PACK:
                 assert _mdir.is_dir() and any(_mdir.glob("query-*.csv")), (
                     f"MERGE_PACKS: không thấy CSV trong Drive submissions/{_mp}")
                 _runs.append(load_run(_mdir))
-            _merged = {k: v for k, v in rrf_merge_runs(_runs, weights=None, k=60).items()
+            # Round-86 QA hedge: hai lượt trả lời KHÁC nhau trên cùng frame →
+            # giữ CẢ HAI dòng (chấm max theo dòng; chỉ tốn vé số đuôi).
+            _merged = {k: v for k, v in rrf_merge_runs(
+                _runs, weights=None, k=60, qa_keep_all_answers=True).items()
                        if k in _expected}
             # audit r82: trộn ra thư mục MỚI <pack>_merged — không đè lượt gốc
             # trên Drive (idempotent; chạy lại không trộn-của-trộn).
@@ -2620,12 +2623,21 @@ _PACK_X = {
 }
 # "ABK" = AB + CHỈ KIS đa cảnh (round-84b: đo cách ly, không dính bão gói X)
 _PACK_K = {"CVP_SEARCH__KIS_MULTI_EVENT": "true"}
-assert BENCH_PACK in ("off", "A", "AB", "ABK", "ABX"), f"BENCH_PACK lạ: {BENCH_PACK!r}"
+# "ABKD" = ABK + gói D (round-86): đa dạng hóa đầu bảng theo video, chuỗi cảnh
+# cho bước tìm moment QA, nới pool TRAKE (recall pool 67% theo chẩn đoán 66).
+_PACK_D = {
+    "CVP_SEARCH__HEAD_DIVERSITY": "true",
+    "CVP_SEARCH__QA_MULTI_EVENT": "true",
+    "CVP_TEMPORAL__PER_EVENT_TOPK": "300",
+    "CVP_TEMPORAL__MAX_VIDEOS": "60",
+}
+assert BENCH_PACK in ("off", "A", "AB", "ABK", "ABKD", "ABX"), f"BENCH_PACK lạ: {BENCH_PACK!r}"
 _knobs = ({} if BENCH_PACK == "off" else _PACK_A if BENCH_PACK == "A"
           else {**_PACK_A, **_PACK_B} if BENCH_PACK == "AB"
           else {**_PACK_A, **_PACK_B, **_PACK_K} if BENCH_PACK == "ABK"
+          else {**_PACK_A, **_PACK_B, **_PACK_K, **_PACK_D} if BENCH_PACK == "ABKD"
           else {**_PACK_A, **_PACK_B, **_PACK_X})
-for _k in {**_PACK_A, **_PACK_B, **_PACK_X}:   # dọn sạch trước — cell chạy lại
+for _k in {**_PACK_A, **_PACK_B, **_PACK_K, **_PACK_D, **_PACK_X}:   # dọn sạch
     os.environ.pop(_k, None)                     # không thừa kế knob lượt trước
 for _k, _v in _knobs.items():
     os.environ[_k] = _v
