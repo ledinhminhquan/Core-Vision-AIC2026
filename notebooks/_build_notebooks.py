@@ -2614,9 +2614,12 @@ _PACK_X = {
     "CVP_VQA__EXACT_TRANSCRIPTION": "true",
     "CVP_SEARCH__KIS_MULTI_EVENT": "true",
 }
-assert BENCH_PACK in ("off", "A", "AB", "ABX"), f"BENCH_PACK lạ: {BENCH_PACK!r}"
+# "ABK" = AB + CHỈ KIS đa cảnh (round-84b: đo cách ly, không dính bão gói X)
+_PACK_K = {"CVP_SEARCH__KIS_MULTI_EVENT": "true"}
+assert BENCH_PACK in ("off", "A", "AB", "ABK", "ABX"), f"BENCH_PACK lạ: {BENCH_PACK!r}"
 _knobs = ({} if BENCH_PACK == "off" else _PACK_A if BENCH_PACK == "A"
           else {**_PACK_A, **_PACK_B} if BENCH_PACK == "AB"
+          else {**_PACK_A, **_PACK_B, **_PACK_K} if BENCH_PACK == "ABK"
           else {**_PACK_A, **_PACK_B, **_PACK_X})
 for _k in {**_PACK_A, **_PACK_B, **_PACK_X}:   # dọn sạch trước — cell chạy lại
     os.environ.pop(_k, None)                     # không thừa kế knob lượt trước

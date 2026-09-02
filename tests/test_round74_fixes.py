@@ -34,7 +34,7 @@ def test_r74_bench_pack_default_off_and_validated():
     # mirror law); the toggle itself plus its validation stay pinned here.
     assert 'BENCH_PACK = "AB"' in NB04_SRC
     # round-84 added the max-effort pack "ABX" to the allowed set
-    assert 'assert BENCH_PACK in ("off", "A", "AB", "ABX")' in NB04_SRC
+    assert 'assert BENCH_PACK in ("off", "A", "AB", "ABK", "ABX")' in NB04_SRC
 
 
 def test_r74_pack_a_is_ranking_only_and_pack_b_is_qa():

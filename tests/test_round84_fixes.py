@@ -58,12 +58,16 @@ class _Chain:
 
 
 class _Catalog:
-    # video L01_V002 owns global ids 100..199; ordinal n → frame 10*n
-    def video_span(self, vid):
-        return (100, 100) if vid == "L01_V002" else (0, 100)
+    # manifest: video L01_V002 keyframes n = 1..100 (BTC numbering, 1-based)
+    # with global ids 100..199 and frame_idx = 10*n
+    def load(self):
+        import pandas as pd
+        return pd.DataFrame({"video_id": ["L01_V002"] * 100,
+                             "n": list(range(1, 101)),
+                             "global_id": list(range(100, 200))})
 
     def ref(self, gid):
-        n = gid - 100
+        n = gid - 100 + 1
         return _Ref("L01_V002", 10 * n)
 
 
@@ -97,12 +101,26 @@ def test_r84_multi_event_off_is_identity_and_on_fuses_chain_frames():
     assert len(out) >= len(base)
 
 
+def test_r84_multi_event_is_loud_when_no_frame_materialises(caplog):
+    import logging
+    from cvp.pipeline.run_queries import _maybe_kis_multi_event
+    lines = ["Đoạn clip bắt đầu với cảnh một người chụp ảnh bức tranh tê giác trên tường. "
+             "Đoạn clip kết thúc với cảnh người đó chụp ảnh ba chú khỉ trên một cây cầu"]
+    base = [_Res("L01_V009", 500, 0.9)]
+    eng = _Engine(True)
+    eng.catalog = None                       # no way to materialise chain frames
+    with caplog.at_level(logging.WARNING, logger="cvp.pipeline.run_queries"):
+        out = _maybe_kis_multi_event(eng, lines, base)
+    assert out is base
+    assert "KNOB VÔ HIỆU" in caplog.text     # never a silent no-op again
+
+
 def test_r84_defaults_and_bench_pack_x():
     assert Settings().search.kis_multi_event is False
     nb = json.loads((REPO / "notebooks" / "04_lab_artifacts.ipynb")
                     .read_text(encoding="utf-8"))
     src = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
-    assert 'assert BENCH_PACK in ("off", "A", "AB", "ABX")' in src
+    assert 'assert BENCH_PACK in ("off", "A", "AB", "ABK", "ABX")' in src
     for k in ("CVP_SEARCH__VLM_RERANK_VOTES", "CVP_VQA__SELF_CONSISTENCY",
               "CVP_SEARCH__TOPK", "CVP_QUERY__EXPANSIONS", "CVP_SEARCH__KIS_MULTI_EVENT"):
         assert k in src, k

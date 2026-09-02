@@ -692,27 +692,47 @@ def _maybe_kis_multi_event(engine: SearchEngine, lines: Sequence[str],
     catalog = getattr(engine, "catalog", None)
     chain_keys: list[tuple[str, int]] = []
     chain_res: dict[tuple[str, int], SearchResult] = {}
+    gid_maps: dict[str, dict[int, int]] = {}
     for c in chains[:8]:
         ns = list(getattr(c, "ns", []) or [])
+        if catalog is not None and c.video_id not in gid_maps:
+            # Round-84b: ``ns`` là SỐ HIỆU keyframe ``n`` của BTC (từ 1, có thể
+            # nhảy cóc) — không phải thứ tự 0-based, nên start+n lệch. Ánh xạ
+            # n → global_id qua chính manifest của video.
+            try:
+                df = catalog.load()
+                sub = df[df["video_id"] == c.video_id]
+                gid_maps[c.video_id] = {int(n): int(g) for n, g
+                                        in zip(sub["n"], sub["global_id"])}
+            except Exception as e:  # noqa: BLE001
+                log.warning("kis_multi_event: không đọc được manifest %s (%s)",
+                            c.video_id, e)
+                gid_maps[c.video_id] = {}
         for j, f in enumerate(c.frame_idxs):
             key = (c.video_id, int(f))
             if key in chain_res:
                 continue
             ref = None
             if catalog is not None and j < len(ns):
-                try:
-                    start, _count = catalog.video_span(c.video_id)
-                    cand = catalog.ref(int(start) + int(ns[j]))
-                    if cand.video_id == c.video_id and int(cand.frame_idx) == int(f):
-                        ref = cand
-                except Exception:  # noqa: BLE001 — verify-or-skip
-                    ref = None
+                gid = gid_maps.get(c.video_id, {}).get(int(ns[j]))
+                if gid is not None:
+                    try:
+                        cand = catalog.ref(int(gid))
+                        if cand.video_id == c.video_id and int(cand.frame_idx) == int(f):
+                            ref = cand
+                    except Exception:  # noqa: BLE001 — verify-or-skip
+                        ref = None
             if ref is None:
                 continue
             chain_keys.append(key)
             chain_res[key] = SearchResult(ref=ref, score=float(c.score),
                                           signals={"kis_event": float(c.score)})
     if not chain_keys:
+        # Fail LOUD (audit law): bench ABX 02/09 ran this path silently for
+        # every query and measured baseline while the knob looked "on".
+        log.warning("kis_multi_event: %d chuỗi nhưng KHÔNG dựng được frame nào qua "
+                    "catalog (ns↔global_id lệch?) — giữ ranking đơn-câu. KNOB VÔ HIỆU.",
+                    len(chains))
         return results
     k = 60.0
     fused: dict[tuple[str, int], float] = {}
