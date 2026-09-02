@@ -32,7 +32,8 @@ NB04_SRC = "".join("".join(c["source"]) for c in NB04["cells"]
 def test_r74_bench_pack_default_off_and_validated():
     # round-75 flipped the declared default to "AB" (the adopted battle pack —
     # mirror law); the toggle itself plus its validation stay pinned here.
-    assert 'BENCH_PACK = "AB"' in NB04_SRC
+    # round-85: battle pack is ABK (AB + multi-scene KIS, bench 0.6913)
+    assert 'BENCH_PACK = "ABK"' in NB04_SRC
     # round-84 added the max-effort pack "ABX" to the allowed set
     assert 'assert BENCH_PACK in ("off", "A", "AB", "ABK", "ABX")' in NB04_SRC
 

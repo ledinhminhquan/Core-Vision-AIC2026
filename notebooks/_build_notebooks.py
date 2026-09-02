@@ -1947,10 +1947,14 @@ for _k, _v in {
     "CVP_VQA__ANSWER_CANONICALIZE": "true",
     "CVP_VQA__ANSWER_NEIGHBOR_FRAMES": "1",
     "CVP_VQA__MAX_CALLS_PER_QUERY": "10",
+    # Round-85: KIS đa cảnh — bench ABK 0.6913 > AB 0.6826 (q5/q12/q14 +0.2 mỗi
+    # câu, đều là câu tả chuỗi cảnh). Câu KIS ≥2 cảnh được căn chỉnh DANTE rồi
+    # trộn RRF với ranking đơn-câu; câu đơn cảnh không đổi một byte.
+    "CVP_SEARCH__KIS_MULTI_EVENT": "true",
 }.items():
     os.environ[_k] = _v
-print("🎛 Gói knob AB (round-75) đã vào trận: boost 0.15 + diversify_tail + "
-      "4 knob TRAKE + vote canonical/neighbor")
+print("🎛 Gói knob ABK (round-85) đã vào trận: boost 0.15 + diversify_tail + "
+      "4 knob TRAKE + vote canonical/neighbor + KIS đa cảnh")
 # Round-82: QA là 2/3 thời gian pack (5 nhóm × 10 strip gọi Gemini TUẦN TỰ).
 # Hỏi các nhóm SONG SONG — kết quả bit-identical (áp theo đúng thứ tự nhóm),
 # chỉ nhanh hơn ~3-4×. Bão 429/504 thì chain dự phòng vẫn đỡ như cũ.
@@ -2585,7 +2589,7 @@ RUN_BENCH_FULL = True
 # A + gói QA (canonicalize vote + hỏi thêm strip lân cận, ×2 call Gemini
 # mỗi nhóm QA). Round-75: gói AB thắng bench#3/#4 và đã vào nb03 ra trận →
 # mặc định bench cũng là "AB" cho đúng luật bench-là-bản-sao-trận.
-BENCH_PACK = "AB"
+BENCH_PACK = "ABK"   # round-85: = đội hình trận (luật bench-là-bản-sao-trận)
 import os, time
 from pathlib import Path
 _PACK_A = {

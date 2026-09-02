@@ -30,6 +30,7 @@ KNOBS = {
     "CVP_VQA__ANSWER_CANONICALIZE": "true",
     "CVP_VQA__ANSWER_NEIGHBOR_FRAMES": "1",
     "CVP_VQA__MAX_CALLS_PER_QUERY": "10",
+    "CVP_SEARCH__KIS_MULTI_EVENT": "true",     # round-85 (bench ABK 0.6913)
 }
 
 
@@ -43,12 +44,13 @@ def test_r75_battle_engine_cell_sets_the_full_ab_pack():
     for k, v in KNOBS.items():
         assert f'"{k}": "{v}"' in cell, (k, v)
     # the pack lands BEFORE the engine is built, so it reaches load_settings
-    assert cell.index("Gói knob AB (round-75)") < cell.index("engine = SearchEngine(settings)")
+    # round-85 renamed the pack print to ABK (multi-scene KIS adopted)
+    assert cell.index("Gói knob ABK (round-85)") < cell.index("engine = SearchEngine(settings)")
 
 
 def test_r75_bench_defaults_to_the_battle_pack():
     cell = next(s for s in _cells("04_lab_artifacts.ipynb") if "BENCH_PACK" in s)
-    assert 'BENCH_PACK = "AB"' in cell
+    assert 'BENCH_PACK = "ABK"' in cell            # round-85 battle pack
     # the values benched are the values fielded — bench pack A == battle values
     for k, v in KNOBS.items():
         assert f'"{k}": "{v}"' in cell, (k, v)
