@@ -81,6 +81,8 @@ class World:
         self.fallback_storm: dict[str, int] = {}
         self.tuner_delta = 0.03
         self.score_bias: dict[str, float] = {}
+        self.lane_short_times = 0      # first N engine builds drop metaclip2 (DriveFS EIO)
+        self.lane_short_forever = False
         self._install(monkeypatch)
 
     # ── stubs ──────────────────────────────────────────────────────────
@@ -101,6 +103,9 @@ class World:
             def __init__(self, settings):
                 self.settings = settings
                 self.member_names = list(settings.embedding.ensemble_members)
+                if world.lane_short_forever or world.lane_short_times > 0:
+                    world.lane_short_times -= 1
+                    self.member_names = [m for m in self.member_names if m != "metaclip2"]
 
             def search_prepared(self, text, skip_rerank=False, cue_text=None):
                 return []
@@ -304,3 +309,27 @@ def test_dryrun_clear_winner_passes_the_verdict_rule(tmp_path, monkeypatch):
     summ = json.loads((w.camp / "campaign_summary.json").read_text(encoding="utf-8"))
     assert "ABK+G38R" in summ["wins"] and "ABK+G38QA" in summ["wins"]
     assert "ABK+RRF" not in summ["wins"]
+
+
+def test_dryrun_transient_lane_drop_is_retried_not_fatal(tmp_path, monkeypatch):
+    w = World(tmp_path, monkeypatch)
+    w.lane_short_times = 1                               # first build short, second fine
+    w.run()
+    assert (w.camp / "ABK.json").exists()
+    assert w.payload("ABK")["env"]["CVP_EMBEDDING__ENSEMBLE_MEMBERS"].count("metaclip2") == 1
+
+
+def test_dryrun_failed_baseline_in_new_session_keeps_old_arms_and_baseline(tmp_path, monkeypatch):
+    w = World(tmp_path, monkeypatch)
+    w.run()
+    s1 = w.payload("ABK")["session"]
+    (w.camp / "ABK+G38QA.json").unlink()                 # pending arm → re-measure wanted
+    w.lane_short_forever = True                          # ...but the engine never loads the lane
+    w.run({})
+    assert w.payload("ABK")["session"] == s1             # old baseline untouched, not rotated
+    assert not list(w.camp.glob("ABK-prev*.json"))
+    assert not (w.camp / "ABK+G38QA.json").exists()      # pending arm correctly not measured
+    summ = json.loads((w.camp / "campaign_summary.json").read_text(encoding="utf-8"))
+    assert summ["base_abk"] == w.payload("ABK")["mean_final"]
+    assert "ABK+W" in summ["arms"] and "MERGE2" in summ["arms"]   # session-1 arms still visible
+    assert "≠phiên" not in " ".join(summ["flags"].get("ABK+W", []))

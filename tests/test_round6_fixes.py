@@ -139,9 +139,9 @@ def test_make_gemini_client_requires_key(monkeypatch):
 
 
 def test_no_bare_gemini_clients_left():
-    # Every genai.Client in src/ must carry the timeout discipline — only the
-    # two factories (query_processor's own + vqa.make_gemini_client) may call
-    # the constructor directly.
+    # Every genai.Client in src/ must carry the timeout discipline — since
+    # round-90 only the key-pool factory (cvp.models.gemini_keys) may call
+    # the constructor directly; both call sites build through it.
     import re as _re
 
     hits = []
@@ -149,7 +149,7 @@ def test_no_bare_gemini_clients_left():
         for i, line in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
             if _re.search(r"genai\.Client\(", line):
                 hits.append(f"{py.name}:{i}")
-    assert sorted({h.split(":")[0] for h in hits}) == ["query_processor.py", "vqa.py"], hits
+    assert sorted({h.split(":")[0] for h in hits}) == ["gemini_keys.py"], hits
 
 
 # ── R6-5 · UI hardening (source pins — streamlit apps aren't importable here) ─

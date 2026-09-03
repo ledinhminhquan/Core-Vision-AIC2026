@@ -38,10 +38,16 @@ class MetaClip2Model(EmbeddingModel):
         self.model_tag = cfg.metaclip2_id
 
         log.info("Loading MetaCLIP 2 %s", cfg.metaclip2_id)
-        self.model = AutoModel.from_pretrained(
-            cfg.metaclip2_id, torch_dtype=self.dtype
-        ).to(self.device).eval()
-        self.processor = AutoProcessor.from_pretrained(cfg.metaclip2_id)
+        from cvp.models.hf_compat import resilient_from_pretrained
+
+        # Round-90: phiên nb09 850660ee mất lane này vì "[Errno 5] Input/output
+        # error" đọc HF cache trên Drive — cùng cơ chế tải lại về đĩa cục bộ
+        # như siglip2 / qwen_embed (round-22 / verify-R23).
+        self.model = resilient_from_pretrained(
+            lambda mid: AutoModel.from_pretrained(mid, torch_dtype=self.dtype),
+            cfg.metaclip2_id).to(self.device).eval()
+        self.processor = resilient_from_pretrained(
+            AutoProcessor.from_pretrained, cfg.metaclip2_id)
 
         probe = self.encode_text(["probe"])
         self.dim = int(probe.shape[1])

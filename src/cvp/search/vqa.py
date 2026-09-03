@@ -9,7 +9,6 @@ Vintern-1B (offline fallback, Vietnamese-tuned).
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from dataclasses import dataclass
 
@@ -104,10 +103,7 @@ def make_gemini_client(settings: Settings):
     the Streamlit UI that thread IS the session, and the only operator escape
     (browser refresh) wipes every basket/hint/timer (round-6 HIGH).
     """
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not set")
-    from google import genai
+    from cvp.models.gemini_keys import build_client
 
     # Same budget as the LARGEST wall cap in play: round-46 live bug — the
     # client HTTP deadline was built from the 45s generic wall, so the QA
@@ -115,12 +111,9 @@ def make_gemini_client(settings: Settings):
     # HTTP deadline long before the Pro model finished thinking).
     budget = max(gemini_wall_timeout(settings),
                  float(getattr(settings.vqa, "answer_timeout_s", 0.0)))
-    try:
-        # google-genai HttpOptions.timeout is in MILLISECONDS.
-        return genai.Client(api_key=api_key,
-                            http_options={"timeout": int(budget * 1000)})
-    except TypeError:  # older google-genai without http_options
-        return genai.Client(api_key=api_key)
+    # Round-90: the client is a KEY POOL (GEMINI_API_KEY + GEMINI_API_KEY_2..5)
+    # — a quota-exhausted 429 rotates every caller to the next key.
+    return build_client(budget)
 
 
 def gemini_wall_timeout(settings: Settings) -> float:

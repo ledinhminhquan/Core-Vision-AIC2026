@@ -15,7 +15,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 
@@ -198,19 +197,11 @@ class QueryProcessor:
 
     def _gemini(self):
         if self._gemini_client is None:
-            from google import genai
+            from cvp.models.gemini_keys import build_client
 
-            api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-            if not api_key:
-                raise RuntimeError("GEMINI_API_KEY not set")
-            try:
-                # google-genai HttpOptions.timeout is in MILLISECONDS.
-                self._gemini_client = genai.Client(
-                    api_key=api_key,
-                    http_options={"timeout": int(self.cfg.timeout_s * 1000)},
-                )
-            except TypeError:  # older google-genai without http_options
-                self._gemini_client = genai.Client(api_key=api_key)
+            # Round-90: key pool — see cvp.models.gemini_keys. Raises
+            # "GEMINI_API_KEY not set" when no key is configured (unchanged).
+            self._gemini_client = build_client(self.cfg.timeout_s)
         return self._gemini_client
 
     def _process_gemini(self, query: str) -> ProcessedQuery:

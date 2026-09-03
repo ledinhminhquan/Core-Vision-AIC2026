@@ -75,7 +75,11 @@ def test_r46_client_budget_covers_the_pro_answer_wall(monkeypatch):
     monkeypatch.setitem(sys.modules, "google.genai", _FakeGenai)
     sys.modules["google"].genai = _FakeGenai
     monkeypatch.setenv("GEMINI_API_KEY", "x")
+    from cvp.models import gemini_keys as GK
     from cvp.search.vqa import make_gemini_client
+    GK.reset_for_tests()
     s = Settings()
-    make_gemini_client(s)
+    c = make_gemini_client(s)                     # round-90: a key POOL, inner client lazy
+    assert c._http["timeout"] >= int(s.vqa.answer_timeout_s * 1000)
+    c._inner()                                    # building it passes the same deadline
     assert captured["timeout_ms"] >= int(s.vqa.answer_timeout_s * 1000)

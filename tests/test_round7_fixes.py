@@ -108,7 +108,9 @@ def test_http_client_timeout_uses_wall_cap():
     # deadline starved the Pro answer path with 504s live.
     src = (REPO / "src" / "cvp" / "search" / "vqa.py").read_text(encoding="utf-8")
     assert "max(gemini_wall_timeout(settings)" in src
-    assert "int(budget * 1000)" in src
+    assert "build_client(budget)" in src          # round-90: the pool applies the deadline
+    gk = (REPO / "src" / "cvp" / "models" / "gemini_keys.py").read_text(encoding="utf-8")
+    assert "int(float(timeout_s) * 1000)" in gk
     assert "timeout_s * 1000 * 3" not in src
 
 

@@ -490,7 +490,9 @@ print(f"GPU: {GPU_NAME} | VRAM {VRAM_GB:.0f} GB | bf16={USE_BF16}")
 # Google AI Studio" button creates — the engine accepts either spelling.
 try:
     from google.colab import userdata
-    for _sec in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "HF_TOKEN"):
+    # round-90: GEMINI_API_KEY_2/_3 = khóa dự phòng khi khóa chính hết quota ngày
+    for _sec in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3",
+                 "HF_TOKEN"):
         try:
             _v = userdata.get(_sec)
             if _v:
@@ -3047,6 +3049,10 @@ phiên; bản ABK cũ thành `ABK-prev*.json` = thêm một lần đo nhiễu). 
 phiên 2 sẽ mang dấu "≠ phiên" (chỉ so tương đối).
 
 **Zero-edit:** upload + bật 2 secret (`GITHUB_TOKEN`, `GEMINI_API_KEY`) + Run all.
+Tùy chọn nhưng **rất nên** (round-90): thêm secret `GEMINI_API_KEY_2` (và `_3`) là khóa của
+một dự án Google Cloud **có billing** khác — phiên 03/09 đốt hết quota ngày của
+`gemini-3.1-pro-preview` sau 2 cánh (253 lỗi 429) và QA = 0 suốt phần còn lại; có khóa dự
+phòng thì mọi cuộc gọi tự chuyển sang khóa kế khi khóa đang dùng hết quota.
 Toggle duy nhất: `ARMS` ở cell C1. Thiếu khóa Gemini → dừng ngay, không chạy 9 giờ sai.
 
 **Drive (khai báo trước, không xóa gì):** ghi `artifacts/lab/campaign/` gồm
@@ -3459,7 +3465,25 @@ if RUN_CAMPAIGN and GT_PATH.exists():
                                    "— không bench 70 phút với model chết")
             print(f"   ✓ {_mid} trả lời tiền kiểm")
         _storm.reset()
-        engine = SearchEngine(settings)
+        # Round-90 (phiên 850660ee): lane metaclip2 rớt vì "[Errno 5] Input/output
+        # error" đọc HF cache trên Drive — lỗi tạm thời của DriveFS. Nudge + thử
+        # nạp lại tối đa 3 lần TRƯỚC khi bỏ cánh (loader giờ tự tải lại về đĩa
+        # cục bộ khi cache Drive hỏng).
+        for _try in range(3):
+            engine = SearchEngine(settings)
+            if engine.member_names == _want or _try == 2:
+                break
+            print(f"   ⚠ lần {_try + 1}: ensemble thiếu lane {engine.member_names} ≠ {_want} "
+                  "— nudge Drive, thử lại sau 20s")
+            for _d in ("embeddings", "indexes", "checkpoints", "hf_cache"):
+                try:
+                    list((PROJECT / "artifacts" / _d).iterdir())
+                except OSError:
+                    pass
+            del engine
+            gc.collect()
+            torch.cuda.empty_cache()
+            time.sleep(20)
         # Round-71: bench thiếu lane là đo SAI đội hình — chặn TRƯỚC khi tốn giờ.
         assert engine.member_names == _want, (
             f"[{arm}] ensemble thiếu lane: {engine.member_names} ≠ {_want} — "
@@ -3661,16 +3685,18 @@ if RUN_CAMPAIGN and GT_PATH.exists():
             _prev = _done(_arm)
             if _arm == "ABK" and _reabk:
                 _prev = None                     # baseline phải cùng phiên
-            if (_reabk and _arm in _BENCH_ARMS and _arm != "ABK"
-                    and _results.get("ABK", {}).get("session") != SESSION):
-                print(f"⏭ {_arm}: ABK phiên này chưa đo được — cánh bench không có baseline "
-                      "để so, bỏ qua (chạy lại cell sau khi ABK đo xong)")
-                continue
-            if _prev is not None:
+            if _prev is not None:                # cánh ĐÃ XONG (phiên nào cũng vậy) → nạp
                 print(f"⏭ {_arm}: đã có trên Drive (mean_final={_prev.get('mean_final', '—')}, "
                       f"phiên {_prev.get('session', '?')}) — bỏ qua (xóa lab/campaign/{_arm}.json "
                       "để đo lại)")
                 _results[_arm] = _prev
+                continue
+            # Round-90 (phiên 850660ee): chỉ cánh CHƯA ĐO mới bị chặn khi ABK
+            # phiên này hỏng — bản cũ từng chặn cả cánh đã xong, bảng mất baseline.
+            if (_reabk and _arm in _BENCH_ARMS and _arm != "ABK"
+                    and _results.get("ABK", {}).get("session") != SESSION):
+                print(f"⏭ {_arm}: ABK phiên này chưa đo được — cánh bench không có baseline "
+                      "để so, bỏ qua (chạy lại cell sau khi ABK đo xong)")
                 continue
             print(f"\n▶ CÁNH {_arm} — {_ARM_NOTE[_arm]}   [{_now()}]")
             try:
@@ -3694,6 +3720,10 @@ if RUN_CAMPAIGN and GT_PATH.exists():
             gc.collect()
             torch.cuda.empty_cache()
 
+        if "ABK" not in _results and _abk_raw and "per_query" in _abk_raw:
+            print(f"\n⚠ ABK phiên này KHÔNG đo được — dùng ABK phiên {_abk_raw.get('session')} "
+                  "làm baseline cho bảng (cánh đo ở phiên này không được xét thắng)")
+            _results["ABK"] = _abk_raw
         # ── Tổng kết: nhiễu đo được, bảng cánh, ma trận từng câu, phán quyết ──
         print("\n" + "═" * 78)
         print(f"📊 TỔNG KẾT CHIẾN DỊCH ({(time.time() - _t_all) / 60:.0f} phút phiên này)")
