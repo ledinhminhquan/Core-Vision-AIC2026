@@ -124,7 +124,12 @@ def create_app(engine=None, settings: Settings | None = None):
     @app.post("/search/qa", response_model=SearchResponse)
     def search_qa(q: QaQuery):
         e = _engine()
-        results = e.search_text(q.query, display_k=q.display_k)
+        # round-88: same cue as the batch runner (description + question); the
+        # signature check keeps stub engines in tests working
+        from cvp.pipeline.run_queries import _cue_kwargs as cue_kwargs
+        results = e.search_text(q.query, display_k=q.display_k,
+                                **cue_kwargs(e.search_text,
+                                             " ".join(t for t in (q.query, q.question) if t)))
         answers: list[str | None] = [None] * len(results)
         if q.answers and results:
             try:

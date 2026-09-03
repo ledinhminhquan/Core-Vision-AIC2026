@@ -27,6 +27,7 @@ from cvp.models.query_processor import ProcessedQuery, QueryProcessor
 from cvp.models.registry import build_model, index_key_for
 from cvp.index.store import IndexStore
 from cvp.search import fusion
+from cvp.search.query_cues import adaptive_weight_scale
 from cvp.search.avs import avs_diversify
 from cvp.search.feedback import rocchio
 from cvp.search.object_filter import ObjectBooster
@@ -261,6 +262,7 @@ class SearchEngine:
         display_k: int,
         signal_dump: dict[str, dict[int, float]] | None = None,
         skip_rerank: bool = False,
+        cue_text: str | None = None,
     ) -> list[SearchResult]:
         """Fuse dense + text + object signals over the candidate pool.
 
@@ -268,6 +270,18 @@ class SearchEngine:
         used by scripts/23_dump_signals.py to feed the weight-tuning harness.
         """
         w = self.settings.search.weights
+        # Round-88: query-conditioned OCR/ASR weight (bench-gated, default off —
+        # a neutral query keeps every weight, bit-identical to the old path).
+        _scale: dict[str, float] = {}
+        if self.settings.search.query_adaptive_weights:
+            # cue_text (round-88 audit): description + QUESTION for QA — the
+            # cue usually lives in the question line, which is not searched.
+            _scale = adaptive_weight_scale(
+                cue_text or query_text_for_bm25,
+                ocr_boost=self.settings.search.adaptive_ocr_boost,
+                asr_boost=self.settings.search.adaptive_asr_boost)
+            if _scale:
+                log.info("adaptive fusion weights %s for %r", _scale, query_text_for_bm25[:60])
         candidates = self.catalog.refs(list(dense.keys()))
 
         text_scores = {}
@@ -290,7 +304,7 @@ class SearchEngine:
             m = text_scores.get(name)
             if m:
                 maps.append(m)
-                weights.append(weight)
+                weights.append(weight * _scale.get(name, 1.0))
         if object_scores:
             maps.append(object_scores)
             weights.append(w.object)
@@ -410,7 +424,8 @@ class SearchEngine:
 
     # ── public API ───────────────────────────────────────────────────────
 
-    def search_text(self, query_vi: str, topk: int | None = None, display_k: int | None = None) -> list[SearchResult]:
+    def search_text(self, query_vi: str, topk: int | None = None, display_k: int | None = None,
+                    cue_text: str | None = None) -> list[SearchResult]:
         if not query_vi or not query_vi.strip():
             return []
         topk = topk or self.settings.search.topk
@@ -419,11 +434,12 @@ class SearchEngine:
         dense = self._dense_scores(processed, topk)
         # BM25 fields hold Vietnamese text (OCR/ASR/captions) — score with the
         # original query; diacritic folding handles sloppy typing.
-        return self._finalize(dense, query_vi, display_k)
+        return self._finalize(dense, query_vi, display_k, cue_text=cue_text)
 
     def search_prepared(self, text: str, topk: int | None = None,
                         display_k: int | None = None,
-                        skip_rerank: bool = False) -> list[SearchResult]:
+                        skip_rerank: bool = False,
+                        cue_text: str | None = None) -> list[SearchResult]:
         """Search an ALREADY-prepared text VERBATIM — the query processor is
         bypassed entirely (no Gemini call, no enhancement-of-enhancement).
 
@@ -442,7 +458,8 @@ class SearchEngine:
         processed = ProcessedQuery(original=text, translation=text,
                                    provider_used="prepared")
         dense = self._dense_scores(processed, topk)
-        return self._finalize(dense, text, display_k, skip_rerank=skip_rerank)
+        return self._finalize(dense, text, display_k, skip_rerank=skip_rerank,
+                              cue_text=cue_text)
 
     def search_text_debug(
         self, query_vi: str, topk: int | None = None, display_k: int | None = None

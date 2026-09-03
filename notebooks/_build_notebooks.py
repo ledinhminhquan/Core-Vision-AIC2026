@@ -1957,9 +1957,10 @@ print("🎛 Gói knob ABK (round-85) đã vào trận: boost 0.15 + diversify_ta
       "4 knob TRAKE + vote canonical/neighbor + KIS đa cảnh")
 # Round-82: QA là 2/3 thời gian pack (5 nhóm × 10 strip gọi Gemini TUẦN TỰ).
 # Hỏi các nhóm SONG SONG — kết quả bit-identical (áp theo đúng thứ tự nhóm).
-# Round-87: hạ 4→2 — bench ABKD 02/09 với 4 luồng hứng 48 lỗi 429
-# RESOURCE_EXHAUSTED (rate-limit do CHÍNH TA), đêm thi 4 máy = 16 luồng sẽ
-# bão chắc chắn; 2 luồng × 4 máy = 8 vẫn nhanh 2× so với tuần tự.
+# Round-87/88: hạ 4→2 — bench ABKD 02/09 (QA chạy 1 LUỒNG) vẫn hứng 48 lỗi
+# 429 RESOURCE_EXHAUSTED = quota/tải phía Google, KHÔNG phải do ta song song;
+# nhưng đêm thi 4 máy × 4 luồng = 16 luồng chỉ đổ thêm dầu vào bão đó.
+# 2 luồng × 4 máy = 8 vẫn nhanh 2× so với tuần tự.
 QA_PARALLEL = 2
 os.environ["CVP_VQA__PARALLEL_CALLS"] = str(QA_PARALLEL)
 if ENGINE_MODEL in ("finetuned", "ensemble"):
@@ -2998,6 +2999,724 @@ if RUN_QWEN_LANE and GT_PATH.exists():
 '''
 
 
+NB9_TITLE = r'''# 🧪 Core Vision Perfect V1 — 09 · CHIẾN DỊCH MỘT LẦN (round-88)
+
+**Mục đích:** đo *mọi ý tưởng còn lại* trong **một phiên, một Run all** — 11 "cánh"
+thí nghiệm chạy nối tiếp, mỗi cánh = đúng dàn vũ khí trận (gói ABK) + **một thay đổi
+duy nhất**, nên công/tội quy được cho từng ý tưởng. Kết quả từng cánh lưu riêng lên
+Drive ngay khi xong; chạy lại notebook thì cánh đã có kết quả được **bỏ qua**.
+
+| # | Cánh | Thay đổi duy nhất | Trả lời câu hỏi |
+|---|---|---|---|
+| 1 | `TUNE` | dò lại trọng số fusion trên tower mới (xuất phát từ mặc định, + cross-validation 16 fold) | ghi `best_weights-candidate.json` (KHÔNG đụng file trận) |
+| 2 | `ABK` | không (đo lại cùng phiên) | thước đo nhiễu so với bench ABK cũ trên Drive |
+| 3 | `ABK+TUNED` | ABK + trọng số ứng viên (shrinkage 50%) | trọng số mới có thắng? (tự bỏ nếu ứng viên ≡ trận hoặc tuner không thắng in-sample) |
+| 4 | `ABK+W` | trọng số OCR/ASR theo câu hỏi (heuristic) | câu trích chữ/lời có được lợi? |
+| 5 | `ABK+RRF` | fusion RRF thay weighted_sum | chưa từng đo với dàn hiện tại |
+| 6 | `DIVERSE` | 3 lane 45/30/25 + qwen_embed, ĐẦY ĐỦ reranker | lượt nộp 2 chạy nổi trên A100-40GB? điểm bao nhiêu? |
+| 7 | `ABK+V5` | VLM rerank 5 phiếu | tách riêng khỏi gói X |
+| 8 | `MERGE2` | trộn RRF `ABK ⊕ DIVERSE` (hedge QA) | kế hoạch lượt 2 THẬT được bao nhiêu? |
+| 9 | `MERGE3` | trộn RRF `ABK ⊕ DIVERSE ⊕ ABK+V5` | máy thứ 3 có đáng không? |
+| 10 | `MERGE_SIB` | đối chứng: trộn `ABK ⊕ ABK+V5` (cùng đội hình) | phần "được" của trộn chỉ là nhiễu? |
+| 11 | `MERGE2_NOHEDGE` | đối chứng: MERGE2 không hedge QA | hedge QA đóng góp bao nhiêu? |
+
+**Thứ tự** đã sắp để các cánh chỉ-đổi-retrieval đứng sát baseline trong cùng cửa sổ
+quota Gemini; cánh ngốn Gemini (V5) và nặng GPU (DIVERSE) chạy sau. 4 cánh trộn chạy
+offline vài giây.
+
+**Luật lưu (audit r88):** cánh chạy **suy thoái** — OOM, rớt lane, reranker không build,
+câu không có CSV, VLM rerank rớt trên >¼ số câu — **KHÔNG được lưu** (in ❌ rồi chạy tiếp cánh sau; chạy lại notebook
+sẽ đo lại cánh đó). Mỗi cánh ghi kèm: số bão 429/503, số suy thoái nhẹ, VRAM đỉnh,
+dấu phiên, giờ bắt đầu/kết thúc, trọng số dùng.
+
+**Phán quyết (tự tính ở cuối):** thắng khi Δ ≥ max(2×nhiễu giữa các lần đo ABK,
+2×bậc điểm 0.2/N) **và** thắng ròng ≥ 2 câu so với mọi lần đo ABK. Cánh đo ở phiên
+khác với ABK bị đánh dấu "≠ phiên" và không được xét thắng. `ABK+TUNED` còn phải không
+thua **mặc định** ở held-out (thua = overfit 23 câu; trọng số trận đã khớp cả 23 câu nên
+chỉ in để tham khảo).
+
+**Thời gian:** 6 cánh bench × ~60-85′ + dò ~30′ ≈ **7-9 giờ** một A100. Chạy qua đêm
+là vừa. Khuyến nghị **một phiên**; nếu buộc chia, phiên 2 dùng
+`ARMS = ["DIVERSE", "ABK+V5"]` rồi chạy lại với `ARMS = "all"` để trộn — các cánh
+phiên 2 sẽ mang dấu "≠ phiên" (chỉ so tương đối).
+
+**Zero-edit:** upload + bật 2 secret (`GITHUB_TOKEN`, `GEMINI_API_KEY`) + Run all.
+Toggle duy nhất: `ARMS` ở cell C1. Thiếu khóa Gemini → dừng ngay, không chạy 9 giờ sai.
+
+**Drive (khai báo trước, không xóa gì):** ghi `artifacts/lab/campaign/` gồm
+`<cánh>_run/` (CSV; khi đo lại, bản cũ xoay sang `<cánh>_run-prev*/`), `<cánh>.json`, `best_weights-candidate.json`,
+`campaign_summary.json`; L1 dựng lại `queries/gt-thunghiem.json` như nb04.
+Chỉ **đọc**: `tuning/best_weights.json`, `lab/bench_full.json`,
+`lab/bench_full-prev.json`. Chỉ ghi máy ảo: `signal_dumps/campaign`,
+`submissions/camp_*`. nb03 không bị ảnh hưởng.
+
+**Gửi lại Claude:** `lab/campaign/campaign_summary.json` + toàn bộ output cell C1
+(bảng tổng kết, ma trận điểm từng câu, cột bão/suy thoái/VRAM từng cánh).
+'''
+
+LAB_CAMPAIGN = r'''
+# ── C1 · CHIẾN DỊCH MỘT LẦN (round-88): mọi ý tưởng còn lại, một phiên, một Run all ──
+# Mỗi "cánh" = một bench đầy đủ (đúng dàn vũ khí trận, gói ABK) + MỘT thay đổi
+# duy nhất → quy được công/tội cho từng ý tưởng. Mỗi cánh xong là lưu riêng
+# lên Drive (lab/campaign/<cánh>_run/ trước, rồi <cánh>.json = dấu "đã xong");
+# chạy lại notebook thì cánh đã có kết quả được BỎ QUA (xóa .json để đo lại).
+# Audit r88: cánh chạy SUY THOÁI (OOM, rớt lane, reranker không build, câu
+# không có CSV) KHÔNG được lưu — thà mất một cánh còn hơn một điểm nói dối.
+RUN_CAMPAIGN = True
+ARMS = "all"   # hoặc danh sách con, vd ["DIVERSE", "ABK+V5"] cho phiên 2
+import gc, json, logging, os, random, re, shutil, time, uuid, torch
+from pathlib import Path
+
+_camp = PROJECT / "artifacts" / "lab" / "campaign"          # tên Drive khai báo
+# Thứ tự (audit r88): cánh chỉ-đổi-retrieval đứng SÁT baseline trong cùng cửa
+# sổ quota Gemini; cánh ngốn Gemini (V5) và nặng GPU (DIVERSE) chạy sau.
+_ARM_ORDER = ("TUNE", "ABK", "ABK+TUNED", "ABK+W", "ABK+RRF", "DIVERSE", "ABK+V5",
+              "MERGE2", "MERGE3", "MERGE_SIB", "MERGE2_NOHEDGE")
+_ARM_NOTE = {
+    "TUNE":      "dò lại trọng số fusion trên tower mới → best_weights-candidate.json",
+    "ABK":       "baseline trận (đo lại cùng phiên = thước đo nhiễu)",
+    "ABK+TUNED": "ABK với trọng số ứng viên vừa dò (shrinkage 50% như trận)",
+    "ABK+W":     "trọng số OCR/ASR theo câu hỏi (round-88, heuristic)",
+    "ABK+RRF":   "fusion RRF thay weighted_sum (chưa từng đo với dàn hiện tại)",
+    "DIVERSE":   "3 lane 45/30/25 + qwen_embed, ĐẦY ĐỦ reranker (lượt nộp 2)",
+    "ABK+V5":    "VLM rerank 5 phiếu (tách riêng khỏi gói X)",
+    "MERGE2":    "trộn RRF ABK ⊕ DIVERSE (kế hoạch lượt 2 thật, hedge QA)",
+    "MERGE3":    "trộn RRF ABK ⊕ DIVERSE ⊕ ABK+V5 (máy thứ 3 có đáng không)",
+    "MERGE_SIB": "đối chứng: trộn ABK ⊕ ABK+V5 (cùng đội hình = chỉ nhiễu)",
+    "MERGE2_NOHEDGE": "đối chứng: MERGE2 không hedge QA (tách phần thưởng hedge)",
+}
+_BENCH_ARMS = ("ABK", "ABK+TUNED", "ABK+W", "ABK+RRF", "DIVERSE", "ABK+V5")
+_MERGES = {                      # cánh: (các phần, hedge QA)
+    "MERGE2": (["ABK", "DIVERSE"], True),
+    "MERGE3": (["ABK", "DIVERSE", "ABK+V5"], True),
+    "MERGE_SIB": (["ABK", "ABK+V5"], True),
+    "MERGE2_NOHEDGE": (["ABK", "DIVERSE"], False),
+}
+_PACK_ABK = {                                   # = nb03 "Gói knob ABK (round-85)"
+    "CVP_SEARCH__NEIGHBOR_CONSISTENCY_BOOST": "0.15",
+    "CVP_SEARCH__ROW_STRATEGY": "diversify_tail",
+    "CVP_TEMPORAL__SUBMIT_STRATEGY": "jitter",
+    "CVP_TEMPORAL__POOL_CONTEXT": "prepend",
+    "CVP_TEMPORAL__EVENT_QUERY_VARIANTS": "all",
+    "CVP_TEMPORAL__CAPTION_SIGNAL_WEIGHT": "0.2",
+    "CVP_VQA__ANSWER_CANONICALIZE": "true",
+    "CVP_VQA__ANSWER_NEIGHBOR_FRAMES": "1",
+    "CVP_VQA__MAX_CALLS_PER_QUERY": "10",
+    "CVP_SEARCH__KIS_MULTI_EVENT": "true",
+}
+_LINEUP_BATTLE = {"CVP_EMBEDDING__MODEL": "ensemble",
+                  "CVP_EMBEDDING__ENSEMBLE_MEMBERS": '["finetuned", "metaclip2"]',
+                  "CVP_EMBEDDING__ENSEMBLE_WEIGHTS": "[0.6, 0.4]"}
+_LINEUP_DIVERSE = {"CVP_EMBEDDING__MODEL": "ensemble",
+                   "CVP_EMBEDDING__ENSEMBLE_MEMBERS": '["finetuned", "metaclip2", "qwen_embed"]',
+                   "CVP_EMBEDDING__ENSEMBLE_WEIGHTS": "[0.45, 0.3, 0.25]"}
+_ARM_ENV = {
+    "ABK": {},
+    "ABK+TUNED": {},          # trọng số ứng viên nạp trong _apply_env
+    "ABK+W": {"CVP_SEARCH__QUERY_ADAPTIVE_WEIGHTS": "true"},
+    "ABK+RRF": {"CVP_SEARCH__FUSION_METHOD": "rrf"},
+    "DIVERSE": _LINEUP_DIVERSE,
+    "ABK+V5": {"CVP_SEARCH__VLM_RERANK_VOTES": "5"},
+}
+# Mọi khóa env chiến dịch có thể đụng — dọn sạch trước MỖI cánh (env sống
+# dai trong kernel; audit r74). Gói D/X cũng dọn phòng khi kernel dùng chung.
+_ALL_KEYS = (set(_PACK_ABK) | set(_LINEUP_DIVERSE)
+             | {k for e in _ARM_ENV.values() for k in e}
+             | {"CVP_SEARCH__HEAD_DIVERSITY", "CVP_SEARCH__QA_MULTI_EVENT",
+                "CVP_TEMPORAL__PER_EVENT_TOPK", "CVP_TEMPORAL__MAX_VIDEOS",
+                "CVP_VQA__SELF_CONSISTENCY", "CVP_SEARCH__TOPK",
+                "CVP_QUERY__EXPANSIONS", "CVP_VQA__PARALLEL_CALLS",
+                "CVP_VQA__ANSWER_VARIANT_ROWS", "CVP_VQA__EXACT_TRANSCRIPTION",
+                "CVP_SEARCH__VLM_RERANK_VOTES", "CVP_SEARCH__FUSION_METHOD",
+                "CVP_SEARCH__QUERY_ADAPTIVE_WEIGHTS"}
+             | {f"CVP_SEARCH__WEIGHTS__{s}" for s in
+                ("VISUAL", "OCR", "ASR", "CAPTION", "METADATA", "OBJECT")})
+_BASE_W = {"visual": 1.0, "ocr": 0.35, "asr": 0.30, "caption": 0.25,
+           "metadata": 0.15, "object": 0.25}
+SESSION = uuid.uuid4().hex[:8]      # dấu phiên: Δ chỉ tin khi cùng phiên với ABK
+_GPU = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
+
+
+def _shrink(w):
+    """Trọng số tuned + shrinkage 50% về mặc định — đúng công thức trận."""
+    return {k: round(0.5 * float(w.get(k, v)) + 0.5 * v, 4) for k, v in _BASE_W.items()}
+
+
+def _read_weights(path):
+    """best.weights của một file tune (nudge DriveFS) — None nếu chưa thấy."""
+    try:
+        list(path.parent.iterdir())
+    except OSError:
+        pass
+    if not path.exists():
+        return None
+    _w = json.loads(path.read_text(encoding="utf-8")).get("best", {}).get("weights")
+    return dict(_w) if _w else None
+
+
+def _apply_env(arm, battle_w, cand_w=None):
+    """Env = bản sao y đội hình trận nb03 (round-87) + thay đổi DUY NHẤT của cánh."""
+    for _k in _ALL_KEYS:
+        os.environ.pop(_k, None)
+    os.environ.update(_LINEUP_BATTLE)
+    os.environ["CVP_QUERY__PROVIDER"] = "gemini"
+    os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
+        Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "checkpoints" / "vi_siglip2_best")
+    os.environ["CVP_SEARCH__VLM_RERANK"] = "true"
+    os.environ["CVP_SEARCH__VLM_RERANK_TOPK"] = "48"
+    os.environ["CVP_SEARCH__VLM_RERANK_VOTES"] = "3"
+    os.environ["CVP_VQA__SELF_CONSISTENCY"] = "3"
+    os.environ["CVP_SEARCH__RERANKER"] = "qwen_reranker"
+    os.environ["CVP_SEARCH__LOW_CONFIDENCE_RETRY"] = "true"
+    os.environ["CVP_VQA__PARALLEL_CALLS"] = "2"          # = nb03 round-87
+    os.environ.update(_PACK_ABK)
+    _w = _shrink(cand_w) if arm == "ABK+TUNED" else dict(battle_w)
+    for _sig, _val in _w.items():
+        os.environ[f"CVP_SEARCH__WEIGHTS__{_sig.upper()}"] = str(_val)
+    os.environ.update(_ARM_ENV.get(arm, {}))
+    return _w
+
+
+class _StormCounter(logging.Handler):
+    """Đếm theo cánh: bão API (môi trường) và SUY THOÁI cấu trúc (audit r88:
+    mọi đường hỏng trong engine — OOM, rớt lane, reranker chết — chỉ là một
+    dòng WARNING bị nuốt; phải bắt lại thành số và chặn lưu)."""
+    STORM = re.compile(r"\b(429|503|504)\b|RESOURCE_EXHAUSTED|UNAVAILABLE|DEADLINE")
+    # Audit r88b: "keeping original order" cũng là log khi VLM rerank (Gemini)
+    # bị bão → cross-encoder chỉ nhận dạng bằng cụm riêng của nó; lỗi VLM là
+    # môi trường (SOFT): đếm, in, và chỉ chặn khi rớt trên >1/4 số câu.
+    FATAL = ("out of memory", "OutOfMemory", "failed at query time",
+             "CONTINUING without", "EVERY dense lane failed",
+             "Cross-encoder rerank failed", "Cross-encoder returned",
+             "failed to build", "DISABLED until", "SKIPPING this lane")
+    SOFT = ("no usable scores", "VLM rerank failed", "VLM vote", "trying local model",
+            "Local VQA failed", "Loading local VQA", "Low-confidence retry failed")
+
+    def __init__(self):
+        super().__init__(level=logging.WARNING)
+        self.reset()
+
+    def emit(self, record):
+        try:
+            _m = record.getMessage()
+        except Exception:      # noqa: BLE001 — bộ đếm không được làm hỏng log
+            return
+        if not record.name.startswith("cvp"):
+            return
+        for _mt in self.STORM.finditer(_m):      # group(1) = mã số, else từ khóa
+            _k = _mt.group(1) or _mt.group(0)
+            self.storm[_k] = self.storm.get(_k, 0) + 1
+        for _d in self.FATAL:
+            if _d.lower() in _m.lower():
+                self.fatal[_d] = self.fatal.get(_d, 0) + 1
+                break
+        for _d in self.SOFT:
+            if _d.lower() in _m.lower():
+                self.degraded[_d] = self.degraded.get(_d, 0) + 1
+                break
+        if record.levelno >= logging.ERROR:
+            self.errors += 1
+
+    def reset(self):
+        self.storm, self.fatal, self.degraded, self.errors = {}, {}, {}, 0
+
+
+if RUN_CAMPAIGN and not GT_PATH.exists():
+    print("⚠ Chưa có GT — chạy cell L1 trước.")
+if RUN_CAMPAIGN and GT_PATH.exists():
+    from cvp.config import load_settings
+    from cvp.eval.official import score_run
+    from cvp.pipeline.attempts import load_run, rrf_merge_runs, write_merged
+    from cvp.pipeline.auto_agent import run_auto
+    from cvp.search import cross_rerank as _cr
+    from cvp.search.engine import SearchEngine
+    from cvp.search.query_cues import query_signal_cues
+    from cvp.utils.io import atomic_write_json
+
+    # ── Tiền kiểm (audit r88): mọi thứ có thể làm 9 giờ bench đo SAI đội hình
+    #    phải chặn NGAY BÂY GIỜ, không phải sau khi tốn một đêm.
+    assert os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"), (
+        "Chiến dịch CẦN Gemini (enhancement + VLM rerank + QA Pro) — không có key thì "
+        "mọi cánh đo cấu hình KHÁC trận. Bật 'Notebook access' cho secret "
+        "GEMINI_API_KEY, chạy lại cell 4 rồi cell này.")
+    _qfiles = sorted(Path(TRIAL_DIR).glob("query-*.txt"))
+    assert _qfiles, f"TRIAL_DIR trống: {TRIAL_DIR}"
+    _BATTLE_RAW = None
+    for _try in range(6):                        # nudge-poll như NB3_OBJECTS
+        _BATTLE_RAW = _read_weights(PROJECT / "artifacts" / "tuning" / "best_weights.json")
+        if _BATTLE_RAW:
+            break
+        time.sleep(5)
+    if _BATTLE_RAW is None:
+        raise RuntimeError("KHÔNG đọc được artifacts/tuning/best_weights.json — bench không "
+                           "phải bản sao trận thì KHÔNG chạy 9 giờ. Đổi máy ảo mới rồi Run all.")
+    _BATTLE_W = _shrink(_BATTLE_RAW)             # đọc MỘT lần, dùng cho mọi cánh
+    print("⚖ trọng số trận (tuned + shrink 50%):", _BATTLE_W)
+    for _p in (PROJECT / "artifacts" / "lab", _camp):    # chống thư mục sinh đôi
+        try:
+            list(_p.parent.iterdir())
+        except OSError:
+            pass
+        for _ in range(6):
+            if _p.exists():
+                break
+            time.sleep(5)
+        _p.mkdir(parents=True, exist_ok=True)
+    _local = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"])
+    _arms = list(_ARM_ORDER) if ARMS == "all" else [a for a in _ARM_ORDER if a in ARMS]
+    assert _arms, f"ARMS lạ: {ARMS!r} — chọn trong {_ARM_ORDER}"
+    _storm = _StormCounter()
+    logging.getLogger().addHandler(_storm)
+    _results = {}
+
+    def _now():
+        return time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    def _write_json(path, obj):
+        # atomic_write_json, dự phòng ghi thường — DriveFS đôi khi từ chối rename
+        try:
+            atomic_write_json(path, obj)
+        except OSError as _e:
+            print(f"   ⚠ ghi nguyên tử thất bại ({_e}) — ghi thường: {Path(path).name}")
+            Path(path).write_text(json.dumps(obj, ensure_ascii=False, indent=2),
+                                  encoding="utf-8")
+
+    def _done(arm):
+        try:
+            list(_camp.iterdir())
+        except OSError:
+            pass
+        _p = _camp / f"{arm}.json"
+        if not _p.exists():
+            return None
+        try:
+            _d = json.loads(_p.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as _e:
+            print(f"   ⚠ {arm}.json hỏng ({_e}) — đo lại")
+            return None
+        if arm == "TUNE" and not ("cv" in _d and "report" in _d):
+            print("   ⚠ TUNE.json đời cũ (thiếu cv/report) — dò lại")
+            return None
+        if "per_query" in _d:                    # dấu xong phải đi kèm đủ CSV
+            _stems = {p.stem for p in (_camp / f"{arm}_run").glob("query-*.csv")}
+            if not set(_d["per_query"]) <= _stems:
+                print(f"   ⚠ {arm}: có .json nhưng {arm}_run/ thiếu CSV — đo lại")
+                return None
+        return _d
+
+    def _save(arm, payload, run_dir=None):
+        """CSV lên Drive TRƯỚC (chép ra __tmp, kiểm đủ, đổi tên), .json SAU
+        và nguyên tử = dấu xong. Chết giữa chừng thì không có dấu → đo lại."""
+        if run_dir is not None:
+            # Audit r88b: không phụ thuộc vào xóa trên DriveFS — tmp mang dấu phiên
+            # (không đụng tmp của phiên chết), thư mục cũ được XOAY sang -prev bằng
+            # rename (một thao tác metadata) thay vì xóa đệ quy.
+            _dst, _tmp = _camp / f"{arm}_run", _camp / f"{arm}_run.__tmp-{SESSION}"
+            if _tmp.exists():
+                shutil.rmtree(_tmp)
+            shutil.copytree(run_dir, _tmp)
+            _want = {p.name for p in Path(run_dir).glob("query-*.csv")}
+            _got = set()
+            for _ in range(3):
+                try:
+                    list(_tmp.iterdir())
+                except OSError:
+                    pass
+                _got = {p.name for p in _tmp.glob("query-*.csv")}
+                if _got == _want:
+                    break
+                time.sleep(2)
+            assert _got == _want, (f"[{arm}] chép lên Drive THIẾU {sorted(_want - _got)} "
+                                   "— không ghi dấu xong")
+            try:
+                list(_camp.iterdir())
+            except OSError:
+                pass
+            if _dst.exists():
+                _prev = _camp / f"{arm}_run-prev"
+                _i = 2
+                while _prev.exists():
+                    _prev = _camp / f"{arm}_run-prev{_i}"
+                    _i += 1
+                _dst.rename(_prev)
+                print(f"   ↪ {arm}_run/ cũ xoay sang {_prev.name}/")
+            try:
+                _tmp.rename(_dst)
+            except OSError as _e:                # DriveFS từ chối rename → chép + kiểm lại
+                print(f"   ⚠ rename thất bại ({_e}) — chép thường")
+                shutil.copytree(_tmp, _dst, dirs_exist_ok=True)
+                assert {q.name for q in _dst.glob("query-*.csv")} == _want, \
+                    f"[{arm}] chép sang {_dst.name} THIẾU CSV — không ghi dấu xong"
+                shutil.rmtree(_tmp, ignore_errors=True)
+        _write_json(_camp / f"{arm}.json", payload)
+        _results[arm] = payload
+
+    def _bench(arm):
+        _cand = None
+        if arm == "ABK+TUNED":
+            _cand = _read_weights(_camp / "best_weights-candidate.json")
+            if _cand is None:
+                raise RuntimeError("ABK+TUNED cần lab/campaign/best_weights-candidate.json "
+                                   "— cánh TUNE chưa chạy hoặc hỏng")
+            _tdelta = (_results.get("TUNE") or {}).get("report", {}).get("delta")
+            if _tdelta is not None and _tdelta <= 0:
+                _save(arm, {"arm": arm, "note": _ARM_NOTE[arm], "skipped": True,
+                            "reason": f"tuner không thắng in-sample (Δ {_tdelta:+.4f}) — "
+                                      "ứng viên = mặc định, không phải trọng số dò được",
+                            "session": SESSION})
+                print("   ⏭ tuner không thắng in-sample — bỏ ABK+TUNED")
+                return _results[arm]
+            _diff = max(abs(_shrink(_cand)[k] - _BATTLE_W[k]) for k in _BASE_W)
+            if _diff < 0.01:                     # audit r88: không đo cái giống hệt
+                _save(arm, {"arm": arm, "note": _ARM_NOTE[arm], "skipped": True,
+                            "reason": f"ứng viên ≡ trọng số trận (lệch tối đa {_diff:.3f})",
+                            "abk_weights": _BATTLE_W, "candidate_weights": _shrink(_cand),
+                            "session": SESSION})
+                print(f"   ⏭ ứng viên ≡ trận (lệch {_diff:.3f}) — bỏ, không tốn 70 phút")
+                return _results[arm]
+        _w = _apply_env(arm, _BATTLE_W, _cand)
+        settings = load_settings()
+        _want = (["finetuned", "metaclip2", "qwen_embed"] if arm == "DIVERSE"
+                 else ["finetuned", "metaclip2"])
+        # Thay đổi duy nhất phải ĂN vào settings, nền phải đúng trận (audit r88)
+        _took = {"ABK+W": settings.search.query_adaptive_weights is True,
+                 "ABK+RRF": settings.search.fusion_method == "rrf",
+                 "ABK+V5": settings.search.vlm_rerank_votes == 5,
+                 "DIVERSE": list(settings.embedding.ensemble_members) == _want}
+        assert _took.get(arm, True), f"[{arm}] knob KHÔNG ăn vào settings — sai tên env"
+        assert (settings.search.reranker == "qwen_reranker" and settings.search.vlm_rerank
+                and settings.search.vlm_rerank_topk == 48 and settings.vqa.parallel_calls == 2
+                and settings.search.kis_multi_event and settings.search.low_confidence_retry
+                and abs(settings.search.weights.ocr - _w["ocr"]) < 1e-6), \
+            f"[{arm}] env nền KHÔNG đúng trận"
+        _storm.reset()
+        engine = SearchEngine(settings)
+        # Round-71: bench thiếu lane là đo SAI đội hình — chặn TRƯỚC khi tốn giờ.
+        assert engine.member_names == _want, (
+            f"[{arm}] ensemble thiếu lane: {engine.member_names} ≠ {_want} — "
+            "index/checkpoint chưa nạp đủ (DriveFS lười?). Đổi máy ảo chạy lại; "
+            "KHÔNG bench thiếu lane.")
+        # Audit r88: nạp HẾT đội hình lên GPU ngay phút 1 (lane qwen_embed 8B
+        # nạp lười; cross-reranker 8B là singleton, build hỏng thì CHỐT False
+        # cho mọi cánh sau) rồi mới đo VRAM — DIVERSE có chạy nổi 40GB hay
+        # không phải biết ở đây, không phải sau 70 phút.
+        engine.search_prepared("a man walking on a street", skip_rerank=True)
+        if _cr._RERANKER is False:               # chỉ xóa chốt HỎNG, giữ singleton tốt
+            _cr._RERANKER, _cr._RERANKER_KEY = None, None
+        assert _cr._get_reranker(settings) is not None, (
+            f"[{arm}] cross-reranker KHÔNG build được — không bench thiếu reranker")
+        _free, _total = torch.cuda.mem_get_info()
+        print(f"   ✓ lane {engine.member_names} · reranker OK · VRAM trống "
+              f"{_free / 2**30:.1f}/{_total / 2**30:.1f} GiB · trọng số {_w}")
+        if _free < 4 * 2**30:
+            raise RuntimeError(f"[{arm}] VRAM trống {_free / 2**30:.1f} GiB < 4 — đội hình "
+                               "này KHÔNG chạy nổi trên máy này (câu trả lời cho lượt 2)")
+        torch.cuda.reset_peak_memory_stats()
+        if _storm.fatal:
+            raise RuntimeError(f"[{arm}] suy thoái ngay khi nạp: {_storm.fatal}")
+        _hits = None
+        if arm == "ABK+W":                       # đúng như run_query_file: bỏ TRAKE, mô tả + câu hỏi
+            from cvp.pipeline.run_queries import load_query_lines, parse_query_lines
+            from cvp.submission.packager import infer_task
+            _hits = []
+            for _qp in _qfiles:
+                _task = infer_task(_qp.name)
+                if _task == "trake":
+                    continue
+                _rt, _qq = parse_query_lines(_task, load_query_lines(_qp))
+                if query_signal_cues(" ".join(t for t in (_rt, _qq) if t)):
+                    _hits.append(_qp.stem)
+        if _hits is not None:
+            print(f"   🎯 cue bắn vào {len(_hits)}/{len(_qfiles)} câu: {_hits}")
+        _out = _local / "submissions" / f"camp_{arm.replace('+', '_')}"
+        shutil.rmtree(_out, ignore_errors=True)
+        _t0, _start = time.time(), _now()
+        rep = run_auto(TRIAL_DIR, _out, settings, submit=False, engine_factory=lambda _s: engine)
+        if rep.failed:
+            raise RuntimeError(f"[{arm}] {len(rep.failed)} câu KHÔNG có CSV: "
+                               f"{sorted(rep.failed)} — không lưu")
+        if _storm.fatal:
+            raise RuntimeError(f"[{arm}] chạy SUY THOÁI (không phải đội hình đã khai): "
+                               f"{_storm.fatal} — không lưu")
+        _vlm_off = _storm.degraded.get("no usable scores", 0)
+        if _vlm_off > len(_qfiles) // 4:
+            raise RuntimeError(f"[{arm}] VLM rerank rớt trên {_vlm_off}/{len(_qfiles)} câu (bão "
+                               "Gemini kéo dài) — không phải đội hình trận, không lưu")
+        r = score_run(_out, GT_PATH)
+        payload = {**r.to_dict(), "arm": arm, "note": _ARM_NOTE[arm],
+                   "env": {k: os.environ[k] for k in sorted(_ALL_KEYS) if k in os.environ},
+                   "weights": _w, "minutes": round((time.time() - _t0) / 60, 1),
+                   "started_at": _start, "ended_at": _now(), "session": SESSION, "gpu": _GPU,
+                   "storm": dict(_storm.storm), "degraded": dict(_storm.degraded),
+                   "log_errors": _storm.errors,
+                   "vram_free_start_gib": round(_free / 2**30, 1),
+                   "vram_peak_gib": round(torch.cuda.max_memory_allocated() / 2**30, 1)}
+        if _hits is not None:
+            payload["cue_hits"] = _hits
+        _save(arm, payload, _out)
+        return payload
+
+    def _tune():
+        _apply_env("ABK", _BATTLE_W)
+        # Dump tín hiệu THUẦN (audit r74): không knob, không reranker, không
+        # VLM — dump chụp tín hiệu TRƯỚC rerank, chạy reranker chỉ đốt quota.
+        # Audit r88: tuner xuất phát từ MẶC ĐỊNH (giao thức round-44 mà công
+        # thức shrink 50% giả định), không từ trọng số đã shrink của trận.
+        for _k in list(_PACK_ABK) + ["CVP_SEARCH__QUERY_ADAPTIVE_WEIGHTS"]:
+            os.environ.pop(_k, None)
+        for _s in _BASE_W:
+            os.environ.pop(f"CVP_SEARCH__WEIGHTS__{_s.upper()}", None)
+        os.environ["CVP_SEARCH__RERANKER"] = "none"
+        os.environ["CVP_SEARCH__VLM_RERANK"] = "false"
+        os.environ["CVP_SEARCH__LOW_CONFIDENCE_RETRY"] = "false"
+        _dump = _local / "signal_dumps" / "campaign"
+        _cand = _camp / "best_weights-candidate.json"      # KHÔNG đụng file trận
+        _t0, _start = time.time(), _now()
+        _run(REPO_DIR / "scripts" / "23_dump_signals.py",
+             "--query-dir", TRIAL_DIR, "--out-dir", _dump)
+        _run(REPO_DIR / "scripts" / "21_tune_weights.py", "--signals-dir", _dump,
+             "--gt", GT_PATH, "--method", "random", "--trials", "400", "--out", _cand)
+        _rep = json.loads(_cand.read_text(encoding="utf-8"))
+        # Audit r88: dò và chấm trên CÙNG 23 câu = overfit. Ước lượng held-out
+        # bằng 2-fold lặp 8 lần (16 fold, vài giây CPU): dò trên nửa này, chấm
+        # nửa kia, so ứng viên (đã shrink) với trọng số trận và mặc định.
+        import importlib.util
+        _spec = importlib.util.spec_from_file_location(
+            "tune21", REPO_DIR / "scripts" / "21_tune_weights.py")
+        _m = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_m)
+        _sig = _m.load_signals(_dump)
+        _gt = {str(k): v for k, v in json.loads(Path(GT_PATH).read_text(encoding="utf-8")).items()}
+        _scorer, _sname = _m.resolve_scorer()
+        _stems = sorted(s for s in _sig if s in _gt)
+        _cv = {"candidate": [], "battle_insample": [], "default": []}
+        _net = 0
+        for _seed in range(8):
+            _sh = list(_stems)
+            random.Random(_seed).shuffle(_sh)
+            _half = len(_sh) // 2
+            for _train, _test in ((_sh[:_half], _sh[_half:]), (_sh[_half:], _sh[:_half])):
+                _r = _m.tune({s: _sig[s] for s in _train}, {s: _gt[s] for s in _train},
+                             dict(_BASE_W), trials=200, seed=_seed,
+                             scorer=_scorer, scorer_name=_sname)
+                _norm = _m.normalize_signals({s: _sig[s] for s in _test})
+                _gt_t = {s: _gt[s] for s in _test}
+                _c = _m.evaluate_weights(_shrink(_r["best"]["weights"]), _norm, _gt_t, _scorer)[0]
+                _b = _m.evaluate_weights(dict(_BATTLE_W), _norm, _gt_t, _scorer)[0]
+                _d = _m.evaluate_weights(dict(_BASE_W), _norm, _gt_t, _scorer)[0]
+                _cv["candidate"].append(_c)
+                _cv["battle_insample"].append(_b)
+                _cv["default"].append(_d)
+                _net += 1 if _c > _d else (-1 if _c < _d else 0)
+        _cv_mean = {k: round(sum(v) / len(v), 4) for k, v in _cv.items()}
+        payload = {"arm": "TUNE", "note": _ARM_NOTE["TUNE"],
+                   "report": {k: _rep.get(k) for k in ("baseline", "best", "delta",
+                                                       "per_task_delta", "trials_evaluated",
+                                                       "queries", "skipped_queries",
+                                                       "active_signals", "scorer")},
+                   "candidate_shrunk": _shrink(_rep["best"]["weights"]),
+                   "battle_shrunk": _BATTLE_W,
+                   "cv": {"mean_heldout": _cv_mean, "paired_net_folds": _net,
+                          "folds": len(_cv["candidate"]), "scorer": _sname},
+                   "minutes": round((time.time() - _t0) / 60, 1),
+                   "started_at": _start, "ended_at": _now(), "session": SESSION,
+                   "battle_weights_untouched": True}
+        _save("TUNE", payload)
+        print(f"   ⚖ ứng viên (shrink 50%): {payload['candidate_shrunk']}")
+        print(f"   ⚖ in-sample: baseline {_rep['baseline']['score']:.4f} → best "
+              f"{_rep['best']['score']:.4f} (Δ {_rep['delta']:+.4f})")
+        print(f"   ⚖ held-out 16 fold (retrieval-only): {_cv_mean} · ứng viên thắng ròng "
+              f"{_net:+d} fold so với MẶC ĐỊNH (trọng số trận đã khớp cả 23 câu nên "
+              "battle_insample chỉ để tham khảo — audit r88b)")
+        if _rep["delta"] <= 0:
+            print("   ⚠ tuner KHÔNG tìm được bộ thắng in-sample — ABK+TUNED sẽ tự bỏ")
+        if _cv_mean["candidate"] < _cv_mean["default"]:
+            print("   ⚠ held-out: ứng viên THUA cả mặc định = overfit — dù bench có thắng "
+                  "cũng chỉ là khớp 23 câu")
+        return payload
+
+    def _merge(arm):
+        parts, hedge = _MERGES[arm]
+        _missing = [p for p in parts if p not in _results or _results[p].get("skipped")]
+        if _missing:
+            print(f"   ⏭ {arm}: THIẾU cánh {_missing} — chạy các cánh đó xong rồi chạy lại cell.")
+            return None
+        for p in parts:                          # phần trộn phải ĐỦ CSV của nó
+            _dir = _camp / f"{p}_run"
+            try:
+                list(_dir.iterdir())
+            except OSError:
+                pass
+            _stems = {q.stem for q in _dir.glob("query-*.csv")}
+            _need = set(_results[p].get("per_query", {}))
+            if not _need <= _stems:
+                raise RuntimeError(f"[{arm}] {p}_run/ thiếu CSV {sorted(_need - _stems)} "
+                                   "— không trộn lượt thiếu")
+        _runs = [load_run(_camp / f"{p}_run") for p in parts]
+        _merged = rrf_merge_runs(_runs, weights=None, k=60, qa_keep_all_answers=hedge)
+        _out = _local / "submissions" / f"camp_{arm}"
+        shutil.rmtree(_out, ignore_errors=True)
+        write_merged(_merged, _out)
+        r = score_run(_out, GT_PATH)
+        payload = {**r.to_dict(), "arm": arm, "note": _ARM_NOTE[arm], "parts": parts,
+                   "hedge": hedge, "minutes": 0.0, "storm": {}, "degraded": {},
+                   "session": SESSION,
+                   "sessions_of_parts": {p: _results[p].get("session") for p in parts}}
+        _save(arm, payload, _out)
+        return payload
+
+    _t_all = time.time()
+    try:
+        for _arm in _arms:
+            _prev = _done(_arm)
+            if _prev is not None:
+                print(f"⏭ {_arm}: đã có trên Drive (mean_final={_prev.get('mean_final', '—')}, "
+                      f"phiên {_prev.get('session', '?')}) — bỏ qua (xóa lab/campaign/{_arm}.json "
+                      "để đo lại)")
+                _results[_arm] = _prev
+                continue
+            print(f"\n▶ CÁNH {_arm} — {_ARM_NOTE[_arm]}   [{_now()}]")
+            try:
+                if _arm == "TUNE":
+                    _tune()
+                elif _arm in _MERGES:
+                    _merge(_arm)
+                else:
+                    _p = _bench(_arm)
+                    if _p and "mean_final" in _p:
+                        print(f"   ⭐ {_arm}: mean_final={_p['mean_final']:.4f} "
+                              f"({_p['minutes']} phút, bão={_p['storm'] or 'không'}, "
+                              f"suy thoái nhẹ={_p['degraded'] or 'không'}, "
+                              f"VRAM đỉnh {_p['vram_peak_gib']} GiB)")
+            except Exception as _e:   # noqa: BLE001 — một cánh hỏng không được giết cả chiến dịch
+                import traceback
+                traceback.print_exc()
+                print(f"   ❌ CÁNH {_arm} HỎNG — KHÔNG LƯU: {type(_e).__name__}: {_e}\n"
+                      "   → các cánh còn lại vẫn chạy; chạy lại cell sau sẽ đo lại cánh này.")
+            gc.collect()
+            torch.cuda.empty_cache()
+
+        # ── Tổng kết: nhiễu đo được, bảng cánh, ma trận từng câu, phán quyết ──
+        print("\n" + "═" * 78)
+        print(f"📊 TỔNG KẾT CHIẾN DỊCH ({(time.time() - _t_all) / 60:.0f} phút phiên này)")
+        _abk = _results.get("ABK")
+        _draws = {}                              # các lần đo ABK: phiên này + Drive (chỉ đọc)
+        if _abk and "mean_final" in _abk:
+            _draws["ABK"] = _abk
+        try:
+            list((PROJECT / "artifacts" / "lab").iterdir())
+        except OSError:
+            pass
+        for _nm in ("bench_full.json", "bench_full-prev.json"):
+            _f = PROJECT / "artifacts" / "lab" / _nm
+            if _f.exists():
+                try:
+                    _d = json.loads(_f.read_text(encoding="utf-8"))
+                    if _d.get("bench_pack") == "ABK" and "per_query" in _d:
+                        _draws["ABK_prev" if _nm == "bench_full.json" else "ABK_prev2"] = _d
+                except (OSError, ValueError):
+                    pass
+        _base = _abk.get("mean_final") if _abk else None
+        _num_gt = (_abk or {}).get("num_gt") or len(_qfiles)
+        _step = 0.2 / _num_gt
+        _means = [d["mean_final"] for d in _draws.values()]
+        _noise = (max(_means) - min(_means)) if len(_means) > 1 else 0.0
+        _pq = {n: d["per_query"] for n, d in _draws.items()}
+        if len(_pq) > 1:
+            _a, _b = list(_pq.values())[:2]
+            _disagree = sum(1 for s in _a if s in _b
+                            and abs(_a[s]["final"] - _b[s]["final"]) > 1e-9)
+        else:
+            _disagree = None
+        _bar = max(2 * _noise, 2 * _step)
+        print(f"Nhiễu ABK: {len(_draws)} lần đo {[round(m, 4) for m in _means]} → nhiễu "
+              f"{_noise:.4f}; bậc điểm 0.2/{_num_gt} = {_step:.4f}; "
+              f"câu lệch giữa 2 lần đo: {_disagree}")
+        if len(_draws) <= 1:
+            print("⚠ KHÔNG có bench ABK cũ trên Drive (lab/bench_full*.json) — chỉ 1 lần đo ABK, "
+                  "ngưỡng thắng theo bậc điểm 2×0.2/N")
+        print(f"Luật thắng: Δ ≥ {_bar:.4f} VÀ thắng ròng ≥ 2 câu so với mọi lần đo ABK "
+              f"VÀ cùng phiên với ABK\n")
+        print(f"{'cánh':15s} {'mean_final':>10s} {'Δ vs ABK':>9s} {'ròng':>5s} {'phút':>5s} "
+              f"{'429/503':>7s} {'suythoái':>8s} {'VRAM':>5s}  ghi chú")
+        _wins, _flags = [], {}
+        for _arm in _ARM_ORDER:
+            _p = _results.get(_arm)
+            if _p is None:
+                print(f"{_arm:15s} {'—':>10s}  (chưa có)")
+                continue
+            if _p.get("skipped"):
+                print(f"{_arm:15s} {'(bỏ)':>10s}  {_p.get('reason')}")
+                continue
+            if "mean_final" not in _p:
+                _cvm = _p.get("cv", {}).get("mean_heldout", {})
+                print(f"{_arm:15s} {'(dò)':>10s} {'':>9s} {'':>5s} {_p.get('minutes', 0):>5}  "
+                      f"held-out ứng viên {_cvm.get('candidate')} vs mặc định "
+                      f"{_cvm.get('default')} (trận in-sample {_cvm.get('battle_insample')}; "
+                      f"ròng {_p.get('cv', {}).get('paired_net_folds', 0):+d} fold) "
+                      f"· in-sample Δ {_p.get('report', {}).get('delta', 0.0):+.4f}")
+                continue
+            _d = _p["mean_final"] - _base if _base is not None else None
+            _net = None
+            if _pq and _arm != "ABK":
+                _net = 0
+                for _s, _qs in _p["per_query"].items():
+                    _vals = [q[_s]["final"] for q in _pq.values() if _s in q]
+                    if not _vals:
+                        continue
+                    _net += (1 if _qs["final"] > max(_vals) + 1e-9
+                             else -1 if _qs["final"] < min(_vals) - 1e-9 else 0)
+            _fl = []
+            _sess = set(_p.get("sessions_of_parts", {}).values()) or {_p.get("session")}
+            if _abk and _arm != "ABK" and _sess != {_abk.get("session")}:
+                _fl.append("≠phiên")
+            if _p.get("degraded"):
+                _fl.append("suy thoái nhẹ")
+            if _arm == "ABK+TUNED" and "TUNE" in _results:
+                _cvm = _results["TUNE"].get("cv", {}).get("mean_heldout", {})
+                if _cvm and _cvm.get("candidate", 0) < _cvm.get("default", 0):
+                    _fl.append("thua held-out")
+            _flags[_arm] = _fl
+            _win = (_arm != "ABK" and _d is not None and _d >= _bar - 1e-9
+                    and (_net is None or _net >= 2) and "≠phiên" not in _fl
+                    and "thua held-out" not in _fl)
+            if _win:
+                _wins.append(_arm)
+            _s = _p.get("storm", {})
+            _st = f"{_s.get('429', 0)}/{_s.get('503', 0)}"
+            print(f"{_arm:15s} {_p['mean_final']:>10.4f} "
+                  f"{(f'{_d:+.4f}' if _d is not None else '—'):>9s} "
+                  f"{(f'{_net:+d}' if _net is not None else '—'):>5s} {_p.get('minutes', 0):>5} "
+                  f"{_st:>7s} {sum(_p.get('degraded', {}).values()):>8d} "
+                  f"{_p.get('vram_peak_gib', '—'):>5}  {'🏆 ' if _win else ''}"
+                  f"{_p['note']}{(' ⚠ ' + ', '.join(_fl)) if _fl else ''}")
+            if _p.get("by_task"):
+                print(f"{'':15s} theo task: "
+                      + ", ".join(f"{t}={v:.3f}" for t, v in sorted(_p["by_task"].items())))
+        _cols = ([a for a in _ARM_ORDER if a in _results and "per_query" in _results[a]]
+                 + [n for n in _pq if n != "ABK"])
+        _allpq = {**{a: _results[a]["per_query"] for a in _cols if a in _results}, **_pq}
+        _stems = sorted({s for q in _allpq.values() for s in q})
+        if _stems:
+            print("\nĐiểm từng câu (hàng = câu, cột = cánh; ABK_prev = bench ABK cũ trên Drive):")
+            print(f"{'câu':22s} {'task':5s} " + " ".join(f"{c[:9]:>9s}" for c in _cols))
+            for _s in _stems:
+                _task = next((q[_s].get("task", "") for q in _allpq.values() if _s in q), "")
+                print(f"{_s:22s} {_task:5s} " + " ".join(
+                    f"{_allpq[c].get(_s, {}).get('final', float('nan')):>9.3f}" for c in _cols))
+        print("\n🏆 THẮNG ABK theo luật trên:", _wins or "không cánh nào — trận giữ ABK")
+        _write_json(_camp / "campaign_summary.json", {
+            "base_abk": _base, "abk_draws": {n: d["mean_final"] for n, d in _draws.items()},
+            "noise": _noise, "step": _step, "win_bar": _bar, "wins": _wins, "flags": _flags,
+            "session": SESSION, "gpu": _GPU,
+            "arms": {a: {k: v for k, v in p.items() if k != "per_query"}
+                     for a, p in _results.items()},
+            "per_query": _allpq})
+        print(f"📁 Drive: {_camp} — gửi Claude campaign_summary.json + output cell này.")
+    finally:
+        logging.getLogger().removeHandler(_storm)
+'''
+
 LAB_KEEPALIVE = r'''
 # ── L6 · 🫀 Giữ phiên sống sau khi Lab xong (bấm ⏹ của ô này để dừng) ──
 # Round-46: phiên Lab từng bị Colab thu hồi vì "không hoạt động". Kernel bận
@@ -3840,6 +4559,20 @@ def main() -> None:
         code(NB3_ARTIFACTS_LOCAL),
         code(LAB_GT),
         code(LAB_QWEN),
+        code(LAB_KEEPALIVE),
+    ])
+    # Round-88: chiến dịch MỘT LẦN — mọi ý tưởng còn lại, 9 cánh, một phiên.
+    write_nb("09_campaign.ipynb", [
+        md(NB9_TITLE),
+        code(CELL_PARAMS),
+        code(CELL_MOUNT),
+        code(CELL_REPO_DEPS),
+        code(CELL_ENV_GPU),
+        code(NB1_LOCAL_COPY),
+        code(NB3_OBJECTS),
+        code(NB3_ARTIFACTS_LOCAL),
+        code(LAB_GT),
+        code(LAB_CAMPAIGN),
         code(LAB_KEEPALIVE),
     ])
     # Round-51: shard notebooks đặt sẵn chỉ số — upload & Run all, zero chỉnh.

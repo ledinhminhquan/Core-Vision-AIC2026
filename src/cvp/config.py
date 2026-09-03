@@ -172,6 +172,14 @@ class SearchCfg(BaseModel):
     # effort — thiếu video khác thì cửa sổ ngắn lại, dòng lùi đặt ngay sau
     # cửa sổ, không mất dòng nào). Mặc định off.
     head_diversity: bool = False
+    # Round-88: trọng số fusion THEO CÂU HỎI (heuristic, không gọi API) —
+    # câu trích chữ trên màn hình ("dòng chữ", "biển hiệu") → nhân trọng số
+    # OCR; câu trích lời nói ("phát biểu", "nói rằng", "bài hát") → nhân ASR.
+    # Trọng số tuned là TOÀN CỤC trên đề nháp nên với các câu này tín hiệu
+    # quyết định bị đánh giá thấp. Câu trung tính: bit-identical với off.
+    query_adaptive_weights: bool = False
+    adaptive_ocr_boost: float = Field(2.0, ge=1.0, le=5.0)
+    adaptive_asr_boost: float = Field(2.0, ge=1.0, le=5.0)
     # Vortex-style before/now/after context boost for "… sau khi …" queries
     # (off by default — measure on the dev pack before enabling).
     temporal_boost: bool = False

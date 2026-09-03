@@ -455,7 +455,8 @@ def main() -> None:
             do_vqa = c2.form_submit_button("💡 Suggest answers (VQA)")
         answer = st.text_input("Đáp án sẽ ghi vào CSV (≤100 ký tự)", key="qa_answer_input")
         if do_search and qd.strip():
-            _set_results(engine.search_text(qd, display_k=display_k), "qa")
+            _set_results(engine.search_text(qd, display_k=display_k,
+                                            cue_text=" ".join(t for t in (qd, qq) if t)), "qa")
         # Provenance-gated like the grid below: suggesting answers on another
         # tab's ranking would burn Gemini calls on frames the operator cannot
         # even see here (round-7).

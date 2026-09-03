@@ -20,6 +20,7 @@ Each query yields ``{stem}.csv`` in the output folder, ready for Codabench.
 from __future__ import annotations
 
 import csv
+import inspect
 import logging
 import re
 import unicodedata
@@ -298,8 +299,21 @@ def rrf_merge_results(rankings: Sequence[Sequence[SearchResult]],
     return out[:limit] if limit else out
 
 
+def _cue_kwargs(fn, cue_text: str | None) -> dict[str, str]:
+    """Round-88: pass ``cue_text`` only to engines whose search accepts it —
+    stub engines in tests and older callers keep their signatures."""
+    if not cue_text:
+        return {}
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return {}
+    return {"cue_text": cue_text} if "cue_text" in params else {}
+
+
 def maybe_retry_low_confidence(engine: SearchEngine, retrieval_text: str,
-                               results: list[SearchResult]) -> list[SearchResult]:
+                               results: list[SearchResult],
+                               cue_text: str | None = None) -> list[SearchResult]:
     """Auto-track upgrade: reformulate-and-merge when the ranking looks flat.
 
     Off by default (``search.low_confidence_retry``). When the confidence of
@@ -334,7 +348,9 @@ def maybe_retry_low_confidence(engine: SearchEngine, retrieval_text: str,
         search = getattr(engine, "search_prepared", None)
         for alt in alt_texts[:3]:
             if search is not None:
-                alt_results = search(alt, skip_rerank=True)
+                # round-88: same per-query cue as the primary search, so the
+                # RRF alts fuse with the same weights (audit r88).
+                alt_results = search(alt, skip_rerank=True, **_cue_kwargs(search, cue_text))
             else:  # stub engines without the method fall back to plain search
                 alt_results = engine.search_text(alt)
             if alt_results:
@@ -939,8 +955,12 @@ def run_query_file(engine: SearchEngine, path: Path, out_dir: Path,
     if task == "avs":
         results = engine.search_avs(retrieval_text)
     else:
-        results = engine.search_text(retrieval_text)
-        results = maybe_retry_low_confidence(engine, retrieval_text, results)
+        # Round-88: cue text = description + question — for QA the on-screen-
+        # text / speech cue usually lives in the QUESTION line, which
+        # parse_query_lines strips out of the retrieval text (audit r88).
+        _cue = " ".join(t for t in (retrieval_text, question) if t)
+        results = engine.search_text(retrieval_text, **_cue_kwargs(engine.search_text, _cue))
+        results = maybe_retry_low_confidence(engine, retrieval_text, results, cue_text=_cue)
         if task == "kis":
             results = _maybe_kis_multi_event(engine, lines, results)
         elif task == "qa" and getattr(getattr(getattr(engine, "settings", None),
