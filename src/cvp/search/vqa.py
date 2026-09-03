@@ -144,7 +144,8 @@ def generate_with_fallback(client, models: list[str], contents,
     rejects falls back to a config-less retry of the SAME model before the
     chain moves on (a billing knob must never cost the feature).
     """
-    from cvp.models.query_processor import _call_with_timeout, economical_config
+    from cvp.models.query_processor import (_call_with_timeout, config_rejected,
+                                            economical_config)
 
     last: Exception | None = None
     for model_id in models:
@@ -167,6 +168,9 @@ def generate_with_fallback(client, models: list[str], contents,
                 last = e
                 log.warning("Gemini model %r%s failed (%s) — trying next",
                             model_id, " (economical)" if cfg is not None else "", e)
+                if cfg is not None and not config_rejected(e):
+                    break  # round-89: transient (429/5xx/timeout) → next MODEL,
+                           # never a full-price config-less retry of the same one
             if cfg is None:
                 break  # plain attempt done — move to the next model id
     raise last if last else RuntimeError("no Gemini model succeeded")
@@ -312,8 +316,12 @@ class VqaAssistant:
         wall = max(float(getattr(self.cfg, "answer_timeout_s", 0.0)),
                    gemini_wall_timeout(self.settings))
         chain = gemini_model_chain(self.settings, primary)
-        if primary != self.cfg.gemini_model and self.cfg.gemini_model not in chain:
-            chain.insert(1, self.cfg.gemini_model)
+        # Round-89 (audit): vqa.gemini_model is the FIRST Flash rescue for QA
+        # whatever the shared fallback order — 3.7 stays battle-proven right
+        # behind Pro; 3.8 rides behind it.
+        rescue = self.cfg.gemini_model
+        if rescue and rescue != primary:
+            chain = [primary, rescue] + [m for m in chain[1:] if m != rescue]
         return generate_with_fallback(
             self._gemini_client, chain,
             [_with_context(_VQA_STRIP_PROMPT.format(n=len(imgs), question=question)

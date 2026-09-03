@@ -234,8 +234,11 @@ class QueryCfg(BaseModel):
     # Round-45: translation/enhancement is an easy text task — the Lite tier
     # ($0.30/$2.50, thinking already minimal) does it at ~1/10 the old cost.
     gemini_model: str = "gemini-3.5-flash-lite"
+    # Round-89: gemini-3.8-flash (GA 02/09/2026, "based on Gemini 3.7 Flash",
+    # same $0.75/$3.75 promo, image/video input, LVBench 87.8 vs 85.4) leads
+    # the rescue chain; 3.7 stays right behind it for launch-week 503s.
     gemini_model_fallbacks: list[str] = Field(default_factory=lambda: [
-        "gemini-3.7-flash", "gemini-3.5-flash", "gemini-flash-latest",
+        "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-flash-latest",
     ])
     enhance: bool = True              # rewrite as concrete visual description
     enhance_english: bool = True      # also enhance pure-English queries

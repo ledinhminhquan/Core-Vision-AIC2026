@@ -145,7 +145,7 @@ def test_r88_campaign_notebook():
     assert '"VLM rerank failed"' in camp and "_vlm_off > len(_qfiles) // 4" in camp
     assert "battle_insample" in camp and '< _cvm.get("default", 0)' in camp
     assert "sessions_of_parts" in camp and "parse_query_lines" in camp
-    assert "SESSION = uuid" in camp and "≠phiên" in camp     # provenance
+    assert 'SESSION = globals().get("SESSION") or uuid' in camp and "≠phiên" in camp   # provenance
     assert "mean_heldout" in camp                            # TUNE cross-validation
     assert "bench_full-prev.json" in camp                    # second ABK draw → noise
     assert "_bar = max(2 * _noise, 2 * _step)" in camp       # win rule above noise

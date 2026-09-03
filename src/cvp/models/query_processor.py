@@ -59,6 +59,24 @@ def _call_with_timeout(fn, timeout_s: float):
         return value
     raise value
 
+def config_rejected(e: BaseException) -> bool:
+    """Round-89 (audit): only a request-SHAPE rejection (400 / INVALID_ARGUMENT
+    — a thinking level or media resolution the model refuses) earns the
+    config-less retry of the SAME model. A 429/5xx/timeout is transient: the
+    chain moves to the next model instead of re-sending 48 images at default
+    media resolution + default thinking (the full-price call round-45 exists
+    to avoid)."""
+    s = str(e).lower()
+    return "400" in s or "invalid_argument" in s or "not supported" in s
+
+
+def thinking_level_for(model_id: str) -> str:
+    """Lowest ``thinking_level`` the model accepts (round-89, verified 03/09/2026
+    on ai.google.dev): the 3.5 family takes "minimal"; 3.7 / 3.8 Flash and the
+    hot-swapping "-latest" alias reject it ("returns an error") — "low"."""
+    return "minimal" if "3.5" in model_id else "low"
+
+
 def economical_config(model_id: str):
     """Round-45: strip the two hidden-spend defaults from a Gemini call.
 
@@ -66,7 +84,8 @@ def economical_config(model_id: str):
     ("medium" ≈ ~6K tokens billed at OUTPUT rates — measured 75% of the bill)
     and default image accounting (1120 tokens/image when 280 suffices for
     keyframe thumbnails). This config floors both: thinking_level to the
-    model's minimum ("minimal"; gemini-3.7-flash only accepts "low") and
+    model's minimum ("minimal" on the 3.5 family; 3.7/3.8 Flash and the
+    "-latest" alias only accept "low") and
     media_resolution to LOW. Returns None on SDKs that predate these fields —
     callers then pass no config (old behaviour).
 
@@ -77,7 +96,14 @@ def economical_config(model_id: str):
     try:
         from google.genai import types
 
-        level = "low" if "3.7" in model_id else "minimal"
+        # Round-89: Gemini 3.7 / 3.8 Flash (and whatever "-latest" now points
+        # at) REJECT "minimal" ("minimal is not supported and returns an
+        # error" — ai.google.dev model pages, verified 03/09/2026). The rescue
+        # path retries the same model with NO config, i.e. default (medium)
+        # thinking at output rates — the exact hidden spend this function
+        # exists to floor. So "minimal" only for the 3.5 family, "low" for
+        # everything else.
+        level = thinking_level_for(model_id)
         return types.GenerateContentConfig(
             thinking_level=level,
             media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW)
@@ -210,6 +236,8 @@ class QueryProcessor:
                             return client.models.generate_content(
                                 model=m, contents=prompt, config=c)
                         except Exception as e:  # noqa: BLE001 — billing knob must
+                            if not config_rejected(e):   # round-89: transient → next model
+                                raise
                             log.warning("economical config rejected by %r (%s) — "
                                         "plain retry", m, e)  # never cost the call
                     return client.models.generate_content(model=m, contents=prompt)
