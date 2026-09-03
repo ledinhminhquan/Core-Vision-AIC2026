@@ -1956,9 +1956,11 @@ for _k, _v in {
 print("🎛 Gói knob ABK (round-85) đã vào trận: boost 0.15 + diversify_tail + "
       "4 knob TRAKE + vote canonical/neighbor + KIS đa cảnh")
 # Round-82: QA là 2/3 thời gian pack (5 nhóm × 10 strip gọi Gemini TUẦN TỰ).
-# Hỏi các nhóm SONG SONG — kết quả bit-identical (áp theo đúng thứ tự nhóm),
-# chỉ nhanh hơn ~3-4×. Bão 429/504 thì chain dự phòng vẫn đỡ như cũ.
-QA_PARALLEL = 4
+# Hỏi các nhóm SONG SONG — kết quả bit-identical (áp theo đúng thứ tự nhóm).
+# Round-87: hạ 4→2 — bench ABKD 02/09 với 4 luồng hứng 48 lỗi 429
+# RESOURCE_EXHAUSTED (rate-limit do CHÍNH TA), đêm thi 4 máy = 16 luồng sẽ
+# bão chắc chắn; 2 luồng × 4 máy = 8 vẫn nhanh 2× so với tuần tự.
+QA_PARALLEL = 2
 os.environ["CVP_VQA__PARALLEL_CALLS"] = str(QA_PARALLEL)
 if ENGINE_MODEL in ("finetuned", "ensemble"):
     os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
