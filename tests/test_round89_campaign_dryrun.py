@@ -82,6 +82,7 @@ class World:
         self.tuner_delta = 0.03
         self.score_bias: dict[str, float] = {}
         self.lane_short_times = 0      # first N engine builds drop metaclip2 (DriveFS EIO)
+        self.quota_storm = 0           # Pro "exceeded your current quota" warnings per arm
         self.lane_short_forever = False
         self._install(monkeypatch)
 
@@ -126,6 +127,9 @@ class World:
             for m, n in world.fallback_storm.items():
                 for _ in range(n):
                     vlog.warning("Gemini model %r failed (503 UNAVAILABLE) — trying next", m)
+            for _ in range(world.quota_storm):
+                vlog.warning("Gemini model 'gemini-3.1-pro-preview' failed (429 RESOURCE_EXHAUSTED. "
+                             "You exceeded your current quota, please check your plan) — trying next")
             for i, stem in enumerate(STEMS):
                 vid = f"L01_V{i + 1:03d}"
                 if stem.endswith("qa"):
@@ -333,3 +337,15 @@ def test_dryrun_failed_baseline_in_new_session_keeps_old_arms_and_baseline(tmp_p
     assert summ["base_abk"] == w.payload("ABK")["mean_final"]
     assert "ABK+W" in summ["arms"] and "MERGE2" in summ["arms"]   # session-1 arms still visible
     assert "≠phiên" not in " ".join(summ["flags"].get("ABK+W", []))
+
+
+def test_dryrun_daily_quota_exhaustion_is_flagged_and_never_wins(tmp_path, monkeypatch):
+    w = World(tmp_path, monkeypatch)
+    w.score_bias = {"gemini-3.8-flash": 0.08}            # would win on score alone...
+    w.quota_storm = 4                                    # ...but Pro quota ran out
+    w.run()
+    p = w.payload("ABK+G38R")
+    assert p["quota_429"] == 4 and p["model_fallbacks"] == {"gemini-3.1-pro-preview": 4}
+    summ = json.loads((w.camp / "campaign_summary.json").read_text(encoding="utf-8"))
+    assert any(f.startswith("hết quota") for f in summ["flags"]["ABK+G38R"])
+    assert "ABK+G38R" not in summ["wins"] and "ABK+G38QA" not in summ["wins"]

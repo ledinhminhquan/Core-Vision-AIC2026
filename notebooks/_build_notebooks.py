@@ -3048,6 +3048,12 @@ phiên; bản ABK cũ thành `ABK-prev*.json` = thêm một lần đo nhiễu). 
 `ARMS = ["DIVERSE", "ABK+V5"]` rồi chạy lại với `ARMS = "all"` để trộn — các cánh
 phiên 2 sẽ mang dấu "≠ phiên" (chỉ so tương đối).
 
+**Quota (round-91, đo trên dashboard AI Studio 04/09):** `gemini-3.1-pro-preview` chỉ có
+**250 request/ngày** trên khóa của K (Flash: 10.000/ngày). Một cánh bench ≈ 90 cuộc gọi Pro
+(3 câu QA) → **tối đa 2 cánh dùng Pro mỗi ngày**; cánh `ABK+G38QA` trả lời bằng Flash nên
+không tốn Pro và chạy trước. Cánh nào gặp 429 "exceeded your current quota" bị gắn cờ
+"hết quota" và không được xét thắng (QA của nó đã do model cứu viện trả lời).
+
 **Zero-edit:** upload + bật 2 secret (`GITHUB_TOKEN`, `GEMINI_API_KEY`) + Run all.
 Tùy chọn nhưng **rất nên** (round-90): thêm secret `GEMINI_API_KEY_2` (và `_3`) là khóa của
 một dự án Google Cloud **có billing** khác — phiên 03/09 đốt hết quota ngày của
@@ -3085,7 +3091,10 @@ _camp = PROJECT / "artifacts" / "lab" / "campaign"          # tên Drive khai b�
 # sổ quota Gemini; cánh ngốn Gemini (V5) và nặng GPU (DIVERSE) chạy sau.
 _ARM_ORDER = ("TUNE", "ABK", "ABK+TUNED", "ABK+W", "ABK+RRF", "DIVERSE", "ABK+V5",
               "MERGE2", "MERGE3", "MERGE_SIB", "MERGE2_NOHEDGE",
-              "ABK+G38R", "ABK+G38QA")        # round-89: Gemini 3.8 Flash (GA 02/09/2026)
+              "ABK+G38QA", "ABK+G38R")        # round-89: Gemini 3.8 Flash (GA 02/09/2026)
+# Round-91: khóa của K chỉ có 250 request/NGÀY cho gemini-3.1-pro-preview (dashboard
+# AI Studio 04/09); một cánh bench ≈ 90 cuộc gọi Pro (3 câu QA) → tối đa 2 cánh
+# dùng Pro mỗi ngày. G38QA trả lời QA bằng Flash (10.000/ngày) nên đứng trước G38R.
 _ARM_NOTE = {
     "TUNE":      "dò lại trọng số fusion trên tower mới → best_weights-candidate.json",
     "ABK":       "baseline trận (đo lại cùng phiên = thước đo nhiễu)",
@@ -3247,10 +3256,13 @@ class _StormCounter(logging.Handler):
         _fb = self.FALLBACK.search(_m)
         if _fb:
             self.fallback[_fb.group(1)] = self.fallback.get(_fb.group(1), 0) + 1
+        if "exceeded your current quota" in _m.lower():   # round-91: hết quota NGÀY
+            self.quota += 1
 
     def reset(self):
         self.storm, self.fatal, self.degraded, self.errors = {}, {}, {}, 0
         self.fallback = {}
+        self.quota = 0
 
 
 if RUN_CAMPAIGN and not GT_PATH.exists():
@@ -3546,6 +3558,7 @@ if RUN_CAMPAIGN and GT_PATH.exists():
                    "started_at": _start, "ended_at": _now(), "session": SESSION, "gpu": _GPU,
                    "storm": dict(_storm.storm), "degraded": dict(_storm.degraded),
                    "model_fallbacks": dict(_storm.fallback), "declared_model": _mid,
+                   "quota_429": _storm.quota,
                    "log_errors": _storm.errors,
                    "vram_free_start_gib": round(_free / 2**30, 1),
                    "vram_peak_gib": round(torch.cuda.max_memory_allocated() / 2**30, 1)}
@@ -3711,6 +3724,7 @@ if RUN_CAMPAIGN and GT_PATH.exists():
                               f"({_p['minutes']} phút, bão={_p['storm'] or 'không'}, "
                               f"suy thoái nhẹ={_p['degraded'] or 'không'}, "
                               f"rớt model={_p.get('model_fallbacks') or 'không'}, "
+                              f"hết quota={_p.get('quota_429') or 0}×, "
                               f"VRAM đỉnh {_p['vram_peak_gib']} GiB)")
             except Exception as _e:   # noqa: BLE001 — một cánh hỏng không được giết cả chiến dịch
                 import traceback
@@ -3818,6 +3832,8 @@ if RUN_CAMPAIGN and GT_PATH.exists():
             _dm = _p.get("declared_model")
             if _dm and _p.get("model_fallbacks", {}).get(_dm):
                 _fl.append(f"rớt model {_p['model_fallbacks'][_dm]}×")
+            if _p.get("quota_429"):
+                _fl.append(f"hết quota {_p['quota_429']}×")   # QA đo bằng model cứu viện
             if _arm == "ABK+TUNED" and "TUNE" in _results:
                 _cvm = _results["TUNE"].get("cv", {}).get("mean_heldout", {})
                 if _cvm and _cvm.get("candidate", 0) < _cvm.get("default", 0):
@@ -3826,7 +3842,7 @@ if RUN_CAMPAIGN and GT_PATH.exists():
             _win = (_arm != "ABK" and _d is not None and _d >= _bar - 1e-9
                     and (_net is None or _net >= 2) and "≠phiên" not in _fl
                     and "thua held-out" not in _fl
-                    and not any(f.startswith("rớt model") for f in _fl))
+                    and not any(f.startswith(("rớt model", "hết quota")) for f in _fl))
             if _win:
                 _wins.append(_arm)
             _s = _p.get("storm", {})
