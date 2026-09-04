@@ -70,7 +70,7 @@ def test_r89_campaign_arms_and_session_baseline():
     # audit r89: stable session per kernel, rotate-on-save, model preflight + fallback gate
     assert 'SESSION = globals().get("SESSION") or uuid' in camp
     assert "_reabk" in camp and "_abk_p.rename(_rot)" in camp
-    assert "không bench 70 phút với model chết" in camp
+    assert "không bench 70 phút với " in camp and "thử lại {_try + 2}/6" in camp   # r92 retry
     assert '"model_fallbacks": dict(_storm.fallback)' in camp and "rớt model" in camp
     md = next("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "markdown")
     assert "ABK-prev*.json" in md and "`ABK+G38R`" in md and "`ABK+G38QA`" in md

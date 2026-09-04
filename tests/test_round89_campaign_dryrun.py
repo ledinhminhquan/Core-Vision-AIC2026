@@ -83,6 +83,8 @@ class World:
         self.score_bias: dict[str, float] = {}
         self.lane_short_times = 0      # first N engine builds drop metaclip2 (DriveFS EIO)
         self.quota_storm = 0           # Pro "exceeded your current quota" warnings per arm
+        self.flaky_preflight: dict[str, int] = {}   # model -> initial 503s before it answers
+        self.http_profile: dict[str, tuple] = {}    # model -> (n_200, n_503) httpx lines per run
         self.lane_short_forever = False
         self._install(monkeypatch)
 
@@ -130,6 +132,13 @@ class World:
             for _ in range(world.quota_storm):
                 vlog.warning("Gemini model 'gemini-3.1-pro-preview' failed (429 RESOURCE_EXHAUSTED. "
                              "You exceeded your current quota, please check your plan) — trying next")
+            hlog = logging.getLogger("httpx")
+            hlog.setLevel(logging.INFO)
+            for m, (n_ok, n_bad) in world.http_profile.items():
+                for code, n in (("200 OK", n_ok), ("503 Service Unavailable", n_bad)):
+                    for _ in range(n):
+                        hlog.info('HTTP Request: POST https://generativelanguage.googleapis.com/'
+                                  'v1beta/models/%s:generateContent "HTTP/1.1 %s"', m, code)
             for i, stem in enumerate(STEMS):
                 vid = f"L01_V{i + 1:03d}"
                 if stem.endswith("qa"):
@@ -172,6 +181,9 @@ class World:
             def generate_content(self_, model, contents, config=None):
                 if model in world.dead_models:
                     raise RuntimeError("404 NOT_FOUND: model not found for this key")
+                if world.flaky_preflight.get(model, 0) > 0:
+                    world.flaky_preflight[model] -= 1
+                    raise RuntimeError("503 UNAVAILABLE. This model is currently experiencing high demand")
                 return type("Resp", (), {"text": "pong"})()
 
         class FakeClient:
@@ -349,3 +361,37 @@ def test_dryrun_daily_quota_exhaustion_is_flagged_and_never_wins(tmp_path, monke
     summ = json.loads((w.camp / "campaign_summary.json").read_text(encoding="utf-8"))
     assert any(f.startswith("hết quota") for f in summ["flags"]["ABK+G38R"])
     assert "ABK+G38R" not in summ["wins"] and "ABK+G38QA" not in summ["wins"]
+
+
+def test_dryrun_preflight_survives_a_transient_503_storm(tmp_path, monkeypatch):
+    w = World(tmp_path, monkeypatch)
+    w.flaky_preflight = {"gemini-3.8-flash": 4}          # 4 x 503 then it answers
+    w.run()
+    assert (w.camp / "ABK+G38QA.json").exists()          # retried, then measured
+    assert w.flaky_preflight["gemini-3.8-flash"] == 0
+
+
+def test_dryrun_declared_model_share_gate(tmp_path, monkeypatch):
+    # ≥90% self-answered → eligible; 75-90% → saved but flagged; <75% → not saved
+    w = World(tmp_path, monkeypatch)
+    w.score_bias = {"gemini-3.8-flash": 0.08}
+    w.http_profile = {"gemini-3.8-flash": (95, 5), "gemini-3.1-pro-preview": (60, 0)}
+    w.run()
+    p = w.payload("ABK+G38QA")
+    assert p["declared_share"] == 0.95 and p["http_by_model"]["gemini-3.8-flash"] == {"200": 95, "503": 5}
+    summ = json.loads((w.camp / "campaign_summary.json").read_text(encoding="utf-8"))
+    assert "ABK+G38QA" in summ["wins"] and not summ["flags"].get("ABK+G38QA")
+
+    w2 = World(tmp_path / "b", monkeypatch)
+    w2.score_bias = {"gemini-3.8-flash": 0.08}
+    w2.http_profile = {"gemini-3.8-flash": (80, 20)}
+    w2.run()
+    assert w2.payload("ABK+G38R")["declared_share"] == 0.8
+    summ2 = json.loads((w2.camp / "campaign_summary.json").read_text(encoding="utf-8"))
+    assert any(f.startswith("rớt model") for f in summ2["flags"]["ABK+G38R"])
+    assert "ABK+G38R" not in summ2["wins"]
+
+    w3 = World(tmp_path / "c", monkeypatch)
+    w3.http_profile = {"gemini-3.8-flash": (50, 50)}
+    w3.run()
+    assert not (w3.camp / "ABK+G38R.json").exists() and not (w3.camp / "ABK+G38QA.json").exists()

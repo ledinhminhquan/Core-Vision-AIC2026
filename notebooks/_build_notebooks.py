@@ -3029,8 +3029,9 @@ quota Gemini; cánh ngốn Gemini (V5) và nặng GPU (DIVERSE) chạy sau. 4 c�
 offline vài giây.
 
 **Luật lưu (audit r88):** cánh chạy **suy thoái** — OOM, rớt lane, reranker không build,
-câu không có CSV, VLM rerank rớt trên >¼ số câu, cánh "đo model X" mà X rớt về model
-khác trên >¼ số câu (X còn phải trả lời một cuộc gọi tiền kiểm trước khi bench) — **KHÔNG được lưu** (in ❌ rồi chạy tiếp cánh sau; chạy lại notebook
+câu không có CSV, VLM rerank rớt trên >¼ số câu, cánh "đo model X" mà X **tự trả lời dưới 75%**
+cuộc gọi (đếm từ log HTTP theo model; X còn phải qua tiền kiểm, thử lại 6 lần khi bão 503/429;
+từ 75% đến 90% thì lưu nhưng gắn cờ "rớt model" và không xét thắng) — **KHÔNG được lưu** (in ❌ rồi chạy tiếp cánh sau; chạy lại notebook
 sẽ đo lại cánh đó). Mỗi cánh ghi kèm: số bão 429/503, số suy thoái nhẹ, VRAM đỉnh,
 dấu phiên, giờ bắt đầu/kết thúc, trọng số dùng.
 
@@ -3228,9 +3229,12 @@ class _StormCounter(logging.Handler):
     # đếm theo model để cánh "đo model X" không âm thầm đo model Y. Chỉ khớp
     # dạng THƯỜNG (không có "(economical)" = retry cùng model, chưa rớt).
     FALLBACK = re.compile(r"Gemini model '([^']+)' failed \(.*— trying next")
+    # Round-92: đếm 200/lỗi THEO MODEL từ log httpx (INFO) — cánh "đo model X"
+    # được chấm theo tỷ lệ X TỰ trả lời, không phải theo số lần rớt tuyệt đối.
+    HTTP = re.compile(r"models/([^:/]+):generateContent \"HTTP/1\.1 (\d{3})")
 
     def __init__(self):
-        super().__init__(level=logging.WARNING)
+        super().__init__(level=logging.INFO)     # INFO chỉ để hứng httpx
         self.reset()
 
     def emit(self, record):
@@ -3238,7 +3242,13 @@ class _StormCounter(logging.Handler):
             _m = record.getMessage()
         except Exception:      # noqa: BLE001 — bộ đếm không được làm hỏng log
             return
-        if not record.name.startswith("cvp"):
+        if record.name == "httpx":
+            _hm = self.HTTP.search(_m)
+            if _hm:
+                _d = self.http.setdefault(_hm.group(1), {})
+                _d[_hm.group(2)] = _d.get(_hm.group(2), 0) + 1
+            return
+        if not record.name.startswith("cvp") or record.levelno < logging.WARNING:
             return
         for _mt in self.STORM.finditer(_m):      # group(1) = mã số, else từ khóa
             _k = _mt.group(1) or _mt.group(0)
@@ -3263,6 +3273,7 @@ class _StormCounter(logging.Handler):
         self.storm, self.fatal, self.degraded, self.errors = {}, {}, {}, 0
         self.fallback = {}
         self.quota = 0
+        self.http = {}
 
 
 if RUN_CAMPAIGN and not GT_PATH.exists():
@@ -3466,15 +3477,29 @@ if RUN_CAMPAIGN and GT_PATH.exists():
             from cvp.models.query_processor import _call_with_timeout, economical_config
             from cvp.search.vqa import make_gemini_client
             _cfg = economical_config(_mid) if arm == "ABK+G38R" else None
-            try:
-                _cl = make_gemini_client(settings)
-                _call_with_timeout(
-                    lambda: _cl.models.generate_content(
-                        model=_mid, contents="ping",
-                        **({"config": _cfg} if _cfg is not None else {})), 45.0)
-            except Exception as _e:   # noqa: BLE001 — mọi lỗi = model chết với key này
-                raise RuntimeError(f"[{arm}] {_mid} KHÔNG gọi được ({type(_e).__name__}: {_e}) "
-                                   "— không bench 70 phút với model chết")
+            _cl = make_gemini_client(settings)
+            # Round-92: 503/429/504/timeout là bão TẠM (phiên 90485020: một 503 duy
+            # nhất đã giết cả hai cánh 3.8 trong 3 giây) → thử lại 6 lần cách 20 s;
+            # 4xx khác (404/400/403) = model chết với khóa này → dừng ngay.
+            for _try in range(6):
+                try:
+                    _call_with_timeout(
+                        lambda: _cl.models.generate_content(
+                            model=_mid, contents="ping",
+                            **({"config": _cfg} if _cfg is not None else {})), 45.0)
+                    break
+                except Exception as _e:   # noqa: BLE001 — phân loại rồi quyết
+                    _msg = str(_e)
+                    _transient = any(t in _msg for t in (
+                        "503", "429", "504", "UNAVAILABLE", "RESOURCE_EXHAUSTED",
+                        "DEADLINE", "wall clock", "timed out"))
+                    if not _transient or _try == 5:
+                        raise RuntimeError(
+                            f"[{arm}] {_mid} KHÔNG gọi được sau {_try + 1} lần "
+                            f"({type(_e).__name__}: {_msg[:160]}) — không bench 70 phút với "
+                            "model chết") from _e
+                    print(f"   ⏳ {_mid} bão ({_msg[:70]}…) — thử lại {_try + 2}/6 sau 20 s")
+                    time.sleep(20)
             print(f"   ✓ {_mid} trả lời tiền kiểm")
         _storm.reset()
         # Round-90 (phiên 850660ee): lane metaclip2 rớt vì "[Errno 5] Input/output
@@ -3548,9 +3573,20 @@ if RUN_CAMPAIGN and GT_PATH.exists():
             raise RuntimeError(f"[{arm}] VLM rerank rớt trên {_vlm_off}/{len(_qfiles)} câu (bão "
                                "Gemini kéo dài) — không phải đội hình trận, không lưu")
         _fb = _storm.fallback.get(_mid, 0) if _mid else 0
-        if _fb > len(_qfiles) // 4:
-            raise RuntimeError(f"[{arm}] {_mid} rớt về model khác {_fb} lần (> 1/4 số câu) — "
-                               f"điểm không thuộc về {_mid}, không lưu")
+        _share = None
+        if _mid:
+            _h = _storm.http.get(_mid, {})
+            _ok = _h.get("200", 0)
+            _bad = sum(v for k, v in _h.items() if k != "200")
+            if _ok + _bad:                        # round-92: tỷ lệ model đã khai TỰ trả lời
+                _share = _ok / (_ok + _bad)
+                if _share < 0.75:
+                    raise RuntimeError(f"[{arm}] {_mid} chỉ tự trả lời {_share:.0%} cuộc gọi "
+                                       f"({_ok} OK / {_bad} hỏng) — điểm không thuộc về {_mid}, "
+                                       "không lưu")
+            elif _fb > len(_qfiles) // 4:         # không có log httpx → luật cũ
+                raise RuntimeError(f"[{arm}] {_mid} rớt về model khác {_fb} lần (> 1/4 số câu) — "
+                                   f"điểm không thuộc về {_mid}, không lưu")
         r = score_run(_out, GT_PATH)
         payload = {**r.to_dict(), "arm": arm, "note": _ARM_NOTE[arm],
                    "env": {k: os.environ[k] for k in sorted(_ALL_KEYS) if k in os.environ},
@@ -3558,6 +3594,8 @@ if RUN_CAMPAIGN and GT_PATH.exists():
                    "started_at": _start, "ended_at": _now(), "session": SESSION, "gpu": _GPU,
                    "storm": dict(_storm.storm), "degraded": dict(_storm.degraded),
                    "model_fallbacks": dict(_storm.fallback), "declared_model": _mid,
+                   "declared_share": None if _share is None else round(_share, 3),
+                   "http_by_model": {m: dict(c) for m, c in _storm.http.items()},
                    "quota_429": _storm.quota,
                    "log_errors": _storm.errors,
                    "vram_free_start_gib": round(_free / 2**30, 1),
@@ -3725,6 +3763,7 @@ if RUN_CAMPAIGN and GT_PATH.exists():
                               f"suy thoái nhẹ={_p['degraded'] or 'không'}, "
                               f"rớt model={_p.get('model_fallbacks') or 'không'}, "
                               f"hết quota={_p.get('quota_429') or 0}×, "
+                              f"tự trả lời={_p.get('declared_share')}, "
                               f"VRAM đỉnh {_p['vram_peak_gib']} GiB)")
             except Exception as _e:   # noqa: BLE001 — một cánh hỏng không được giết cả chiến dịch
                 import traceback
@@ -3830,7 +3869,11 @@ if RUN_CAMPAIGN and GT_PATH.exists():
             if _p.get("degraded"):
                 _fl.append("suy thoái nhẹ")
             _dm = _p.get("declared_model")
-            if _dm and _p.get("model_fallbacks", {}).get(_dm):
+            _sh = _p.get("declared_share")
+            if _dm and _sh is not None:           # round-92: ≥90% tự trả lời mới được xét thắng
+                if _sh < 0.9:
+                    _fl.append(f"rớt model {1 - _sh:.0%}")
+            elif _dm and _p.get("model_fallbacks", {}).get(_dm):
                 _fl.append(f"rớt model {_p['model_fallbacks'][_dm]}×")
             if _p.get("quota_429"):
                 _fl.append(f"hết quota {_p['quota_429']}×")   # QA đo bằng model cứu viện
