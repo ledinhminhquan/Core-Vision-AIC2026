@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import json
 import logging
 import math
@@ -180,15 +181,36 @@ def answer_consensus(rows: Rows, head: int = 10) -> float:
     return top_share / len(answers)
 
 
-def qa_fallback_only(rows: Rows) -> bool:
-    """True when a QA CSV carries no real answer — every answered row is the
-    fallback answer (or the answer column is empty). Such a query scored 0
-    (VQA produced nothing: Gemini storm / daily quota) and is worth a second
-    attempt."""
+# Round-94: the rehearsal of 04/09 showed that when Pro is out of quota the Flash
+# rescue answers "Không có thông tin trong dữ liệu được cung cấp." / "Không có
+# thông tin về X." — a refusal wearing different words. Any of these scores 0
+# exactly like the fallback answer, so the rescue must treat them alike.
+_NON_ANSWER_RE = re.compile(
+    r"^\W*(?:"
+    r"không\s+(?:rõ|có\s+thông\s+tin|xác\s+định|thể\s+(?:xác\s+định|trả\s+lời)|biết|"
+    r"tìm\s+thấy|đủ\s+(?:thông\s+tin|dữ\s+liệu))"
+    r"|chưa\s+(?:rõ|xác\s+định|có\s+thông\s+tin)"
+    r"|unknown|n/?a|no\s+information|not\s+(?:available|enough|found|specified)"
+    r")\b", re.IGNORECASE)
+
+
+def is_non_answer(answer: str) -> bool:
+    """A QA answer that is really "I don't know": the fallback string or a
+    refusal phrase (Vietnamese or English). A bare "Không" is a legitimate
+    yes/no answer and is NOT a non-answer."""
     from cvp.pipeline.run_queries import QA_FALLBACK_ANSWER  # lazy: engine stack
 
-    answers = [r[2].strip().casefold() for r in rows if len(r) > 2 and r[2].strip()]
-    return not answers or all(a == QA_FALLBACK_ANSWER.casefold() for a in answers)
+    a = (answer or "").strip()
+    return not a or a.casefold() == QA_FALLBACK_ANSWER.casefold() or bool(_NON_ANSWER_RE.match(a))
+
+
+def qa_fallback_only(rows: Rows) -> bool:
+    """True when a QA CSV carries no real answer — every answered row is the
+    fallback answer or a refusal phrase (or the answer column is empty). Such
+    a query scored 0 (VQA produced nothing: Gemini storm / daily quota) and is
+    worth a second attempt."""
+    answers = [r[2].strip() for r in rows if len(r) > 2 and r[2].strip()]
+    return not answers or all(is_non_answer(a) for a in answers)
 
 
 def rescue_fallback_qa(run_dir: str | Path) -> list[str]:

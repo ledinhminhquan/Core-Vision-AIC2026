@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from cvp.pipeline.attempts import qa_fallback_only, rescue_fallback_qa
+from cvp.pipeline.attempts import is_non_answer, qa_fallback_only, rescue_fallback_qa
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -25,6 +25,24 @@ def test_r93_qa_fallback_only():
     assert qa_fallback_only([]) is True
     assert not qa_fallback_only([["L01_V001", "10", "không rõ"], ["L01_V002", "20", "7"]])
     assert not qa_fallback_only([["L01_V001", "10", "Con hến"]])
+
+
+def test_r94_refusal_phrases_are_non_answers():
+    # seen in the 04/09 rehearsal when Pro was out of quota and Flash answered
+    assert is_non_answer("Không có thông tin trong dữ liệu được cung cấp.")
+    assert is_non_answer("Không có thông tin về X.")
+    assert is_non_answer("Không xác định được")
+    assert is_non_answer("Không thể xác định từ hình ảnh")
+    assert is_non_answer("Chưa rõ")
+    assert is_non_answer("Unknown") and is_non_answer("N/A") and is_non_answer("không rõ")
+    # legitimate answers stay answers
+    assert not is_non_answer("Không")                 # yes/no question
+    assert not is_non_answer("Không Gian Xanh")       # a proper name
+    assert not is_non_answer("Cá hồi") and not is_non_answer("7 cái") and not is_non_answer("2")
+    rows = [["L01_V001", "10", "Không có thông tin trong dữ liệu được cung cấp."],
+            ["L01_V002", "20", "Không có thông tin về X."]]
+    assert qa_fallback_only(rows)
+    assert not qa_fallback_only(rows + [["L01_V003", "30", "Cá bống mú"]])
 
 
 def test_r93_rescue_deletes_only_all_fallback_qa_csvs(tmp_path):
