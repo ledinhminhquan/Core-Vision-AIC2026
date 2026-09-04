@@ -98,7 +98,7 @@ def test_r82_nb03_toggles_present_and_defaults_legacy():
     engine = next(s for s in cells if "engine = SearchEngine(settings)" in s)
     pack = next(s for s in cells if "RUN_PACK" in s and "SHARD_TOTAL" in s)
     assert 'LINEUP = "battle"' in engine
-    assert "QA_PARALLEL = 2" in engine     # round-87: 8 streams over 4 VMs, not 16
+    assert "QA_PARALLEL = 1" in engine     # round-93: Pro RPM 25 with 4 shards
     assert '"finetuned", "metaclip2", "qwen_embed"' in engine     # diverse lineup
     assert "SHARD_INDEX = 0" in pack and "SHARD_TOTAL = 1" in pack
     assert "MERGE_PACKS = []" in pack

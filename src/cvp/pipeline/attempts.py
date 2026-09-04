@@ -180,6 +180,34 @@ def answer_consensus(rows: Rows, head: int = 10) -> float:
     return top_share / len(answers)
 
 
+def qa_fallback_only(rows: Rows) -> bool:
+    """True when a QA CSV carries no real answer — every answered row is the
+    fallback answer (or the answer column is empty). Such a query scored 0
+    (VQA produced nothing: Gemini storm / daily quota) and is worth a second
+    attempt."""
+    from cvp.pipeline.run_queries import QA_FALLBACK_ANSWER  # lazy: engine stack
+
+    answers = [r[2].strip().casefold() for r in rows if len(r) > 2 and r[2].strip()]
+    return not answers or all(a == QA_FALLBACK_ANSWER.casefold() for a in answers)
+
+
+def rescue_fallback_qa(run_dir: str | Path) -> list[str]:
+    """Round-93 — attempt 2 as a RESCUE, not a re-run: delete the QA CSVs of
+    ``run_dir`` whose rows are all fallback answers so a resumed ``run_auto``
+    re-answers exactly those queries. KIS/TRAKE rows and QA queries that
+    already have an answer are untouched, so the rescued pack can never score
+    below the original (a 'không rõ' row scores 0 either way). Returns the
+    stems removed."""
+    p = Path(run_dir)
+    removed: list[str] = []
+    for f in sorted(p.glob("query-*-qa.csv")):
+        rows = [r for r in csv.reader(io.StringIO(f.read_text(encoding="utf-8-sig"))) if r]
+        if qa_fallback_only(rows):
+            f.unlink()
+            removed.append(f.stem)
+    return removed
+
+
 def query_confidence(
     stem: str,
     rows: Rows,

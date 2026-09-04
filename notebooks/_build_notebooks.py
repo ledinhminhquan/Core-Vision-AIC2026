@@ -1959,11 +1959,11 @@ print("🎛 Gói knob ABK (round-85) đã vào trận: boost 0.15 + diversify_ta
       "4 knob TRAKE + vote canonical/neighbor + KIS đa cảnh")
 # Round-82: QA là 2/3 thời gian pack (5 nhóm × 10 strip gọi Gemini TUẦN TỰ).
 # Hỏi các nhóm SONG SONG — kết quả bit-identical (áp theo đúng thứ tự nhóm).
-# Round-87/88: hạ 4→2 — bench ABKD 02/09 (QA chạy 1 LUỒNG) vẫn hứng 48 lỗi
-# 429 RESOURCE_EXHAUSTED = quota/tải phía Google, KHÔNG phải do ta song song;
-# nhưng đêm thi 4 máy × 4 luồng = 16 luồng chỉ đổ thêm dầu vào bão đó.
-# 2 luồng × 4 máy = 8 vẫn nhanh 2× so với tuần tự.
-QA_PARALLEL = 2
+# Round-93: dashboard AI Studio 04/09 — gemini-3.1-pro-preview chỉ có 25 request/
+# PHÚT và 250/ngày trên khóa của K. 4 máy shard × 2 luồng = 8 cuộc gọi Pro đồng
+# thời (mỗi cuộc 10-60 s) chạm trần 25 RPM → 429 dù còn quota → QA rớt về Flash.
+# 1 luồng/máy × 4 máy = 4 đồng thời, an toàn. Chạy 1 máy thì đặt 2.
+QA_PARALLEL = 1
 os.environ["CVP_VQA__PARALLEL_CALLS"] = str(QA_PARALLEL)
 if ENGINE_MODEL in ("finetuned", "ensemble"):
     os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
@@ -2129,6 +2129,11 @@ SHARD_TOTAL = 1        # số máy ảo chạy SONG SONG cùng pack (3×A100 + 1
 MERGE_PACKS = []       # round-82 lượt nộp 2 (chỉ với REZIP_ONLY=True): tên các pack
                        # Drive khác để TRỘN RRF với pack này, vd ["sotuyen2_diverse"]
                        # (pack lượt 1 là gốc — luôn đứng đầu phép trộn)
+RESCUE_QA = False      # round-93 LƯỢT NỘP 2 = VỚT, không chạy lại: True (cùng RESUME_PACK
+                       # =True) → XÓA các CSV QA mà mọi dòng đều "không rõ" (câu đã 0 điểm
+                       # vì bão/hết quota Pro) rồi trả lời lại ĐÚNG những câu đó; KIS/TRAKE
+                       # và QA đã có đáp án giữ nguyên → không bao giờ tệ hơn lượt 1. Bench
+                       # 03/09 bác bỏ "đội hình đa dạng + trộn" (MERGE2 −0.015 so với ABK).
 _qdir = PROJECT / "queries" / QUERY_PACK
 if RUN_PACK and not (_qdir.is_dir() and any(_qdir.glob("*.txt"))):
     # Round-34: đêm thi Run all chạy TRƯỚC giờ BTC phát đề — cell này crash
@@ -2284,6 +2289,11 @@ elif RUN_PACK:
                         print("   ⚠ pusher:", _e)
 
             _th.Thread(target=_push_loop, daemon=True).start()
+        if RESCUE_QA and RESUME_PACK:
+            from cvp.pipeline.attempts import rescue_fallback_qa
+            _resc = rescue_fallback_qa(_out)
+            print(f"   🛟 vớt QA: xóa {len(_resc)} CSV toàn 'không rõ' để trả lời lại: {_resc}"
+                  if _resc else "   🛟 vớt QA: không CSV QA nào toàn 'không rõ' — không có gì để vớt")
         try:
             rep = run_auto(_qsrc, _out, settings, submit=False, resume=RESUME_PACK,
                            engine_factory=lambda _s: engine)
