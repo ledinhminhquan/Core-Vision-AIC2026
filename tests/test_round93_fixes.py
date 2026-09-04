@@ -65,7 +65,7 @@ def test_r93_nb03_battle_knobs():
     cells = ["".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code"]
     engine = next(s for s in cells if "engine = SearchEngine(settings)" in s)
     pack = next(s for s in cells if "RUN_PACK" in s and "SHARD_TOTAL" in s)
-    assert "QA_PARALLEL = 1" in engine and "25 request/" in engine
+    assert "QA_PARALLEL = 2" in engine and "Tier 2" in engine   # round-95
     assert "RESCUE_QA = False" in pack                          # off by default: attempt 1 untouched
     assert "if RESCUE_QA and RESUME_PACK:" in pack and "rescue_fallback_qa(_out)" in pack
     # the rescue runs AFTER the cross-VM pull and BEFORE run_auto

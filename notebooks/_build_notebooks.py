@@ -1959,11 +1959,11 @@ print("🎛 Gói knob ABK (round-85) đã vào trận: boost 0.15 + diversify_ta
       "4 knob TRAKE + vote canonical/neighbor + KIS đa cảnh")
 # Round-82: QA là 2/3 thời gian pack (5 nhóm × 10 strip gọi Gemini TUẦN TỰ).
 # Hỏi các nhóm SONG SONG — kết quả bit-identical (áp theo đúng thứ tự nhóm).
-# Round-93: dashboard AI Studio 04/09 — gemini-3.1-pro-preview chỉ có 25 request/
-# PHÚT và 250/ngày trên khóa của K. 4 máy shard × 2 luồng = 8 cuộc gọi Pro đồng
-# thời (mỗi cuộc 10-60 s) chạm trần 25 RPM → 429 dù còn quota → QA rớt về Flash.
-# 1 luồng/máy × 4 máy = 4 đồng thời, an toàn. Chạy 1 máy thì đặt 2.
-QA_PARALLEL = 1
+# Round-95: khóa của K lên paid Tier 2 (04/09 12:24) — gemini-3.1-pro-preview giờ
+# 1.000 request/PHÚT, 50.000/ngày (Tier 1 cũ: 25/250 → round-93 từng hạ về 1 luồng).
+# 5 shard × 2 luồng = 10 cuộc gọi Pro đồng thời, xa trần. Kết quả bit-identical
+# với tuần tự (test round-82); QA là 2/3 thời gian pack nên 2 luồng ≈ nhanh 2×.
+QA_PARALLEL = 2
 os.environ["CVP_VQA__PARALLEL_CALLS"] = str(QA_PARALLEL)
 if ENGINE_MODEL in ("finetuned", "ensemble"):
     os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
