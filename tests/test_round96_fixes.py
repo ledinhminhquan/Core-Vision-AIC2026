@@ -523,8 +523,14 @@ def test_r96_hf_router_messages_and_guards(monkeypatch):
             msg = type("Msg", (), {"content": f"  ans from {model} / {len(messages[0]['content'])} parts "})()
             return type("Resp", (), {"choices": [type("Ch", (), {"message": msg})()]})()
 
-    import huggingface_hub as HH
-    monkeypatch.setattr(HH, "InferenceClient", FakeClient)
+    import sys
+    import types
+    try:
+        import huggingface_hub as HH
+    except ImportError:  # pragma: no cover — CI without the hub client
+        HH = types.ModuleType("huggingface_hub")
+        monkeypatch.setitem(sys.modules, "huggingface_hub", HH)
+    monkeypatch.setattr(HH, "InferenceClient", FakeClient, raising=False)
     HR._CLIENTS.clear()
     out = HR.generate("hf:org/m:deepinfra", ["q", img], timeout_s=20)
     assert out.text == "ans from org/m:deepinfra / 2 parts" and out.model == "org/m:deepinfra"

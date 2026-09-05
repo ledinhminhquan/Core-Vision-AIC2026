@@ -212,14 +212,22 @@ class World:
             models = FakeModels()
 
         mp.setattr(V, "make_gemini_client", lambda settings: FakeClient())
-        import huggingface_hub as HH
+        # CI is "pure CPU, no network" and has no huggingface_hub — the cell only
+        # needs model_info(); provide a stub module when the real one is absent.
+        import sys
+        import types
+        try:
+            import huggingface_hub as HH
+        except ImportError:  # pragma: no cover — CI without the hub client
+            HH = types.ModuleType("huggingface_hub")
+            mp.setitem(sys.modules, "huggingface_hub", HH)
 
         def fake_model_info(model_id, *a, **k):
             if model_id in world.hf_missing_ids:
                 raise RuntimeError("404 Client Error. Repository Not Found for url")
             return {"id": model_id}
 
-        mp.setattr(HH, "model_info", fake_model_info)
+        mp.setattr(HH, "model_info", fake_model_info, raising=False)
 
     def _run_script(self, *args):
         a = [str(x) for x in args]
