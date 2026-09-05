@@ -19,6 +19,8 @@ import re
 from dataclasses import dataclass, field
 
 from cvp.config import Settings
+from cvp.models.gemini_health import HEALTH, AllModelsOpen, classify
+from cvp.models.gemini_keys import expand_chain
 from cvp.utils.io import atomic_write_json, read_json
 
 log = logging.getLogger(__name__)
@@ -212,12 +214,14 @@ class QueryProcessor:
         # Model ids churn (previews get retired mid-season) — try the configured
         # model first, then each fallback, so a stale id degrades to the next
         # Gemini model instead of dropping all the way to Google Translate.
-        models = [self.cfg.gemini_model] + [
-            m for m in self.cfg.gemini_model_fallbacks if m != self.cfg.gemini_model
-        ]
+        models = expand_chain(self.cfg.gemini_model, self.cfg.gemini_model_fallbacks)
         resp = None
         last_err: Exception | None = None
+        skipped: list[str] = []
         for model_id in models:
+            if HEALTH.should_skip(model_id):       # round-96: cầu dao bão
+                skipped.append(model_id)
+                continue
             try:
                 _ec = economical_config(model_id)
 
@@ -234,11 +238,15 @@ class QueryProcessor:
                     return client.models.generate_content(model=m, contents=prompt)
 
                 resp = _call_with_timeout(_one, self.cfg.timeout_s)
+                HEALTH.record(model_id, True)
                 break
             except Exception as e:  # noqa: BLE001 — fall through to next model id
                 last_err = e
+                HEALTH.record(model_id, False, classify(e))
                 log.warning("Gemini model %r failed (%s) — trying next fallback", model_id, e)
         if resp is None:
+            if skipped and last_err is None:
+                raise AllModelsOpen(f"cầu dao bão: mọi model Gemini đang mở cầu dao {skipped}")
             raise last_err if last_err else RuntimeError("no Gemini model succeeded")
         text = (resp.text or "").strip()
         text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()

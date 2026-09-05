@@ -491,8 +491,9 @@ print(f"GPU: {GPU_NAME} | VRAM {VRAM_GB:.0f} GB | bf16={USE_BF16}")
 try:
     from google.colab import userdata
     # round-90: GEMINI_API_KEY_2/_3 = khóa dự phòng khi khóa chính hết quota ngày
+    # round-96: GEMINI_VERTEX_KEY = khóa Vertex express (lane 2 cùng model); HF_TOKEN = lane HF
     for _sec in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3",
-                 "HF_TOKEN"):
+                 "HF_TOKEN", "GEMINI_VERTEX_KEY"):
         try:
             _v = userdata.get(_sec)
             if _v:
@@ -1808,6 +1809,17 @@ scores it against a local ground truth (official formulas) and dry-runs the
 automatic track. The Streamlit UI can be served via a tunnel at the end.
 
 Prerequisite: notebook 01 (and optionally 02 for the fine-tuned tower).
+
+**Ra trận (round-96, học từ sơ tuyển 3 — 04/09/2026, Google bão 8 giờ, 14/36 câu nộp được):**
+cell 5 có `STORM_BREAKER` (cầu dao bão Gemini: model rớt 3 lần liên tiếp → bỏ qua 120 s, không
+chờ timeout) và `LOCAL_VLM_ID` (plan B cục bộ cho QA + VLM rerank — CHỈ điền id đã bench ở nb09);
+cell 9b có `CLOSE_TIME` (giờ đóng cổng → tự tính thống đốc nước rút; để trống là tự chịu),
+`RESCUE_QA_MODE`, và mỗi shard ghi vào thư mục Drive RIÊNG `artifacts/submissions/<pack>__shard<k>/`
+(máy gom đọc mọi thư mục `<pack>*`) — hết cảnh 5 máy đua tạo một thư mục sinh ba bản.
+Thứ tự chạy trong pack: KIS/AVS → TRAKE → QA (bảng public chỉ chấm KIS).
+Secret tùy chọn cho lane 2: `GEMINI_VERTEX_KEY` (Vertex express — cùng model, đường khác) và
+`HF_TOKEN` + `HF_ROUTER_MODEL` (Hugging Face Inference Providers — nhà cung cấp độc lập).
+Drive chỉ sinh các tên: `artifacts/submissions/<pack>/`, `<pack>__shard<k>/`, `<pack>_merged/`.
 '''
 
 NB3_ARTIFACTS_LOCAL = r'''
@@ -1965,6 +1977,40 @@ print("🎛 Gói knob ABK (round-85) đã vào trận: boost 0.15 + diversify_ta
 # với tuần tự (test round-82); QA là 2/3 thời gian pack nên 2 luồng ≈ nhanh 2×.
 QA_PARALLEL = 2
 os.environ["CVP_VQA__PARALLEL_CALLS"] = str(QA_PARALLEL)
+# ── Round-96 (sơ tuyển 3, 04/09: Google 503/504 trên 80-90% cuộc gọi suốt 8 giờ; mỗi câu KIS
+# 4-7 phút cho 3 phiếu VLM rerank RỖNG; 22/36 câu không kịp nộp) ──
+# Cầu dao bão: model Gemini rớt 3 lần liên tiếp (503/504/timeout) → mọi cuộc gọi bỏ qua nó
+# 120 s (không chờ 45-90 s timeout mỗi lần), rồi thăm dò một cuộc gọi. API khỏe = không đổi
+# một byte (test round-96). Khi CẢ chuỗi mở cầu dao: VLM rerank bỏ phiếu ngay, QA rơi về plan B.
+STORM_BREAKER = True
+os.environ["CVP_BREAKER__ENABLED"] = "true" if STORM_BREAKER else "false"
+# Plan B cục bộ khi Gemini chết: một VLM open-weights nạp LƯỜI lên GPU (chỉ khi cần), đọc cả
+# strip QA và chấm lại top-48 cho VLM rerank. "" = tắt (đường cũ: Vintern-1B một khung).
+# CHỈ điền id đã kiểm chứng trên HF VÀ đã đo ở nb09 (cánh ABK+LOCALQA / ABK+LOCALR).
+LOCAL_VLM_ID = ""
+if LOCAL_VLM_ID:
+    os.environ["CVP_VQA__LOCAL_BACKEND"] = "hf_auto"
+    os.environ["CVP_VQA__LOCAL_HF_ID"] = LOCAL_VLM_ID
+    os.environ["CVP_SEARCH__VLM_RERANK_LOCAL_FALLBACK"] = "true"
+# Lane thứ hai (round-96, kiểm chứng 05/09/2026): (a) Vertex express mode — CÙNG model Gemini
+# qua aiplatform.googleapis.com với secret GEMINI_VERTEX_KEY (console.cloud.google.com/expressmode,
+# cùng giá, đường phục vụ khác AI Studio) → tự chèn "vertex:<model>" ngay sau model chính khi có
+# khóa, không cần sửa gì. (b) Hugging Face Inference Providers — nhà cung cấp ĐỘC LẬP
+# (router.huggingface.co, secret HF_TOKEN, trả tiền theo provider): điền id đã bench ở nb09
+# (cánh ABK+HFQA / ABK+HFR), vd "Qwen/Qwen3-VL-235B-A22B-Instruct"; nối CUỐI chuỗi cứu viện.
+HF_ROUTER_MODEL = ""
+import json as _json96
+_fb96 = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-flash-latest"]
+if HF_ROUTER_MODEL and os.environ.get("HF_TOKEN"):
+    _fb96.append(f"hf:{HF_ROUTER_MODEL}")
+os.environ["CVP_QUERY__GEMINI_MODEL_FALLBACKS"] = _json96.dumps(_fb96)
+print(f"🛡 Lane 2: Vertex {'CÓ khóa' if os.environ.get('GEMINI_VERTEX_KEY') else 'không'} · HF router: "
+      f"{('hf:' + HF_ROUTER_MODEL) if (HF_ROUTER_MODEL and os.environ.get('HF_TOKEN')) else 'tắt'}")
+# Thứ tự câu trong pack: KIS/AVS → TRAKE → QA. Bảng public chỉ chấm KIS; QA chậm nhất và là
+# phần chịu nước rút trước. Không đổi kết quả từng câu (test round-96).
+os.environ["CVP_SUBMISSION__QUERY_ORDER"] = "kis_first"
+print(f"🛡 Round-96: cầu dao bão {'BẬT' if STORM_BREAKER else 'tắt'} · thứ tự KIS→TRAKE→QA · "
+      f"plan B cục bộ: {LOCAL_VLM_ID or 'tắt (Vintern-1B)'}")
 if ENGINE_MODEL in ("finetuned", "ensemble"):
     os.environ["CVP_FINETUNED__CHECKPOINT"] = str(
         Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"]) / "checkpoints" / "vi_siglip2_best")
@@ -2123,8 +2169,8 @@ PACK_DEADLINE_MIN = 0  # round-77: >0 = quá số phút này thì các câu còn
                        # chạy chế độ NƯỚC RÚT (QA votes 1, tắt VLM rerank);
                        # đặt ~60-70% thời gian còn lại tới giờ đóng cổng nộp
 SHARD_INDEX = 0        # round-82: máy ảo này chạy phần nào của pack (0..SHARD_TOTAL-1)
-SHARD_TOTAL = 1        # số máy ảo chạy SONG SONG cùng pack (3×A100 + 1×G4 = 4); 1 = như
-                       # cũ. Mỗi máy: cùng QUERY_PACK, KHÁC SHARD_INDEX. Xong hết →
+SHARD_TOTAL = 1        # số máy ảo chạy SONG SONG cùng pack (Pro+: 5 shard + 1 gom = 6 phiên);
+                       # 1 = như cũ. Mỗi máy: cùng QUERY_PACK, KHÁC SHARD_INDEX. Xong hết →
                        # trên MỘT máy: REZIP_ONLY=True chạy lại cell này để gom + zip.
 MERGE_PACKS = []       # round-82 lượt nộp 2 (chỉ với REZIP_ONLY=True): tên các pack
                        # Drive khác để TRỘN RRF với pack này, vd ["sotuyen2_diverse"]
@@ -2134,6 +2180,13 @@ RESCUE_QA = False      # round-93 LƯỢT NỘP 2 = VỚT, không chạy lại: 
                        # vì bão/hết quota Pro) rồi trả lời lại ĐÚNG những câu đó; KIS/TRAKE
                        # và QA đã có đáp án giữ nguyên → không bao giờ tệ hơn lượt 1. Bench
                        # 03/09 bác bỏ "đội hình đa dạng + trộn" (MERGE2 −0.015 so với ABK).
+RESCUE_QA_MODE = "head"  # round-96: "head" = vớt cả câu QA mà 10 dòng ĐẦU toàn "không rõ"/từ chối
+                         # (sơ tuyển 3 p2-18: 68% dòng "Không có thông tin" nhưng đuôi có đáp án
+                         # nên luật cũ không vớt); "all" = luật cũ (MỌI dòng đều không rõ).
+CLOSE_TIME = ""          # round-96: giờ ĐÓNG CỔNG nộp, giờ VN, "HH:MM" (vd "22:30"). Có giá trị →
+                         # tự tính PACK_DEADLINE_MIN = 45% thời gian còn lại (đã trừ 25' gom + nộp
+                         # + vớt) khi PACK_DEADLINE_MIN = 0. Sơ tuyển 3 để 0 vì chờ hỏi giờ → 22/36 câu
+                         # không kịp. Để trống cả hai = KHÔNG có thống đốc (cell sẽ la lên).
 _qdir = PROJECT / "queries" / QUERY_PACK
 if RUN_PACK and not (_qdir.is_dir() and any(_qdir.glob("*.txt"))):
     # Round-34: đêm thi Run all chạy TRƯỚC giờ BTC phát đề — cell này crash
@@ -2154,24 +2207,40 @@ elif RUN_PACK:
         # tùy chọn TRỘN RRF với các pack khác (lượt nộp 2 máy-học-từ-máy).
         _out.mkdir(parents=True, exist_ok=True)
         _expected = {f.stem for f in _qdir.glob("*.txt")}   # stem của ĐỀ hiện tại
-        if _drv.is_dir():
-            import time as _t2
-            _ensure_drive()
-            for _att in range(3):                       # nudge metadata Drive (r62)
-                try:
-                    list(_drv.iterdir())
-                    break
-                except OSError:
-                    _t2.sleep(10)
-            _n_g = 0
-            for _c in _drv.glob("query-*.csv"):
+        # Round-96: gom từ MỌI thư mục <pack>__shard<k>/ (mỗi shard một thư mục riêng)
+        # + <pack>/ (đời cũ) — liệt kê thư mục MẸ nhiều lần để DriveFS chịu làm mới.
+        import time as _t2
+        _ensure_drive()
+        _srcs = []
+        for _att in range(3):
+            try:
+                _srcs = [d for d in _drv.parent.iterdir() if d.is_dir() and (
+                    d.name == _pack_name or d.name.startswith(f"{_pack_name}__shard"))]
+                break
+            except OSError:
+                _t2.sleep(10)
+        _n_g, _per_src = 0, {}
+        for _sd in sorted(_srcs, key=lambda d: d.name):
+            try:
+                list(_sd.iterdir())                      # nudge metadata Drive (r62)
+            except OSError:
+                pass
+            _k = 0
+            for _c in _sd.glob("query-*.csv"):
                 if _c.stem not in _expected:
                     continue                             # CSV đề cũ trùng tên pack: bỏ
                 _l = _out / _c.name
                 if not _l.exists() or _l.stat().st_size != _c.stat().st_size:
                     _sh.copy2(_c, _l)
                     _n_g += 1
-            print(f"gom từ Drive {_drv.name}: {_n_g} CSV mới/đổi → local")
+                _k += 1
+            _per_src[_sd.name] = _per_src.get(_sd.name, 0) + _k
+        print(f"gom từ Drive: {_n_g} CSV mới/đổi → local; theo thư mục: {_per_src}")
+        _sh_dirs = [d for d in _srcs if "__shard" in d.name]
+        if SHARD_TOTAL > 1 and len(_sh_dirs) < SHARD_TOTAL:
+            print(f"⚠ mới thấy {len(_sh_dirs)}/{SHARD_TOTAL} thư mục shard trên Drive "
+                  f"{sorted(d.name for d in _sh_dirs)} — shard chưa chạy tới cell 9b, hoặc "
+                  "DriveFS lười: đối chiếu số file trên Drive web rồi chạy lại cell này.")
         # audit r82 (blocker): cổng phủ đề — zip thiếu câu phải LA LÊN, không im.
         _have = {f.stem for f in _out.glob("query-*.csv")} & _expected
         _missing = sorted(_expected - _have)
@@ -2223,6 +2292,16 @@ elif RUN_PACK:
         # trận) — để mặc định sẽ build engine THỨ HAI và nhân đôi RAM/VRAM.
         # gán VÔ ĐIỀU KIỆN — settings sống dai trong kernel, đặt 60 rồi hạ
         # về 0 mà chỉ gán-khi-truthy thì governor cũ vẫn âm thầm còn vũ trang
+        if CLOSE_TIME and not PACK_DEADLINE_MIN:
+            from cvp.pipeline.deadline import governor_minutes, minutes_until
+            PACK_DEADLINE_MIN = governor_minutes(CLOSE_TIME)
+            print(f"⏰ Đóng cổng {CLOSE_TIME} (giờ VN) — còn {minutes_until(CLOSE_TIME):.0f} phút → "
+                  f"nước rút sau {PACK_DEADLINE_MIN:.0f} phút kể từ bây giờ (QA 1 phiếu, tắt VLM rerank "
+                  "cho các câu còn lại)")
+        if not REZIP_ONLY and not PACK_DEADLINE_MIN:
+            print("⚠⚠⚠ KHÔNG có thống đốc thời gian (CLOSE_TIME và PACK_DEADLINE_MIN đều trống) — "
+                  "bão Gemini có thể kéo mỗi câu lên 5-30 phút (sơ tuyển 3: 22/36 câu không kịp). "
+                  "Điền CLOSE_TIME rồi chạy lại cell này!")
         settings.submission.pack_deadline_min = float(PACK_DEADLINE_MIN)
         _qsrc = _qdir
         _pusher_stop = None
@@ -2249,30 +2328,33 @@ elif RUN_PACK:
             print(f"🧩 SHARD {SHARD_INDEX + 1}/{SHARD_TOTAL}: {len(_mine)}/{len(_all)} câu → "
                   f"{[f.stem for f in _mine]}")
             print("   (mọi máy phải in cùng tổng số câu — lệch là listing Drive lười, chạy lại cell)")
-            # audit r82: gate tạo thư mục Drive chống sinh đôi (r52) — lệch pha
-            # ngẫu nhiên rồi kiểm tra lại trước khi mkdir.
-            import random as _rnd
+            # Round-96 (sơ tuyển 3: 5 máy cùng mkdir MỘT tên → Drive sinh BA thư mục
+            # `sotuyen3`, gom chỉ thấy 22/36 CSV dù shard nào cũng báo "đã đẩy"): mỗi
+            # shard ghi vào thư mục RIÊNG <pack>__shard<k>/ do đúng MỘT máy tạo → không
+            # còn đua tạo thư mục. Thư mục <pack>/ chỉ máy gom tạo (khi REZIP). Máy gom
+            # đọc mọi thư mục <pack>* nên không cần gộp tay. Tên Drive đã khai báo.
+            _drv_shard = _drv.parent / f"{_pack_name}__shard{SHARD_INDEX}"
             _ensure_drive()
-            if not _drv.is_dir():
-                _t2.sleep(_rnd.uniform(0, 12))
-                try:
-                    list(_drv.parent.iterdir())
-                except OSError:
-                    pass
-                if not _drv.is_dir():
-                    _drv.mkdir(parents=True, exist_ok=True)
-            _twins = [d for d in _drv.parent.iterdir() if d.name == _drv.name]
+            try:
+                list(_drv.parent.iterdir())
+            except OSError:
+                pass
+            _drv_shard.mkdir(parents=True, exist_ok=True)
+            _twins = [d for d in _drv.parent.iterdir() if d.name == _drv_shard.name]
             if len(_twins) > 1:
-                print(f"⚠⚠ Drive có {len(_twins)} thư mục SINH ĐÔI tên {_drv.name} — gộp tay "
+                print(f"⚠⚠ Drive có {len(_twins)} thư mục SINH ĐÔI tên {_drv_shard.name} — gộp tay "
                       "trên web Drive (Ctrl+A → Move) trước khi REZIP.")
-            # resume xuyên VM: kéo CSV của CHÍNH shard này từ Drive về local
+            # resume xuyên VM: kéo CSV của CHÍNH shard này từ Drive về local (thư mục
+            # shard riêng trước, thư mục pack cũ sau — phiên cũ còn ghi vào đó)
             _n_pull = 0
             for _f in _mine:
-                _c = _drv / f"{_f.stem}.csv"
-                if _c.is_file() and _c.stat().st_size > 0 and not (_out / _c.name).exists():
-                    _out.mkdir(parents=True, exist_ok=True)
-                    _sh.copy2(_c, _out / _c.name)
-                    _n_pull += 1
+                for _src_dir in (_drv_shard, _drv):
+                    _c = _src_dir / f"{_f.stem}.csv"
+                    if _c.is_file() and _c.stat().st_size > 0 and not (_out / _c.name).exists():
+                        _out.mkdir(parents=True, exist_ok=True)
+                        _sh.copy2(_c, _out / _c.name)
+                        _n_pull += 1
+                        break
             if _n_pull:
                 print(f"   ↩ kéo {_n_pull} CSV đã xong từ Drive (resume xuyên máy ảo)")
             # đẩy CSV lên Drive MỖI 2 PHÚT trong lúc chạy — VM chết không mất câu đã xong
@@ -2282,7 +2364,7 @@ elif RUN_PACK:
                 while not _pusher_stop.wait(120):
                     try:
                         for _c in _out.glob("query-*.csv"):
-                            _d2 = _drv / _c.name
+                            _d2 = _drv_shard / _c.name
                             if not _d2.exists() or _d2.stat().st_size != _c.stat().st_size:
                                 _sh.copy2(_c, _d2)
                     except OSError as _e:
@@ -2291,9 +2373,9 @@ elif RUN_PACK:
             _th.Thread(target=_push_loop, daemon=True).start()
         if RESCUE_QA and RESUME_PACK:
             from cvp.pipeline.attempts import rescue_fallback_qa
-            _resc = rescue_fallback_qa(_out)
-            print(f"   🛟 vớt QA: xóa {len(_resc)} CSV toàn 'không rõ' để trả lời lại: {_resc}"
-                  if _resc else "   🛟 vớt QA: không CSV QA nào toàn 'không rõ' — không có gì để vớt")
+            _resc = rescue_fallback_qa(_out, mode=RESCUE_QA_MODE)
+            print(f"   🛟 vớt QA ({RESCUE_QA_MODE}): xóa {len(_resc)} CSV 'không rõ' để trả lời lại: {_resc}"
+                  if _resc else f"   🛟 vớt QA ({RESCUE_QA_MODE}): không CSV QA nào 'không rõ' — không có gì để vớt")
         try:
             rep = run_auto(_qsrc, _out, settings, submit=False, resume=RESUME_PACK,
                            engine_factory=lambda _s: engine)
@@ -2307,11 +2389,11 @@ elif RUN_PACK:
         print("  ", _i)
     if SHARD_TOTAL > 1 and not REZIP_ONLY:
         # shard chỉ đẩy CSV (zip riêng lẻ của shard là đồ dở — đừng nộp)
-        _drv.mkdir(parents=True, exist_ok=True)
+        _drv_shard.mkdir(parents=True, exist_ok=True)
         for _c in _out.glob("query-*.csv"):
-            _sh.copy2(_c, _drv / _c.name)
+            _sh.copy2(_c, _drv_shard / _c.name)
         print(f"\n🧩 SHARD {SHARD_INDEX + 1}/{SHARD_TOTAL} xong — {len(rep.written)} CSV đã "
-              f"đẩy Drive: {_drv}")
+              f"đẩy Drive: {_drv_shard}")
         print("→ Khi TẤT CẢ shard báo xong: trên MỘT máy đặt REZIP_ONLY=True, chạy lại "
               "cell này để gom + validate + zip. KHÔNG nộp zip của shard lẻ.")
     elif rep.zip_path:
@@ -3011,9 +3093,9 @@ if RUN_QWEN_LANE and GT_PATH.exists():
 '''
 
 
-NB9_TITLE = r'''# 🧪 Core Vision Perfect V1 — 09 · CHIẾN DỊCH MỘT LẦN (round-88)
+NB9_TITLE = r'''# 🧪 Core Vision Perfect V1 — 09 · CHIẾN DỊCH MỘT LẦN (round-88 → round-96)
 
-**Mục đích:** đo *mọi ý tưởng còn lại* trong **một phiên, một Run all** — 13 "cánh"
+**Mục đích:** đo *mọi ý tưởng còn lại* trong **một phiên, một Run all** — 22 "cánh"
 thí nghiệm chạy nối tiếp, mỗi cánh = đúng dàn vũ khí trận (gói ABK) + **một thay đổi
 duy nhất**, nên công/tội quy được cho từng ý tưởng. Kết quả từng cánh lưu riêng lên
 Drive ngay khi xong; chạy lại notebook thì cánh đã có kết quả được **bỏ qua**.
@@ -3033,6 +3115,14 @@ Drive ngay khi xong; chạy lại notebook thì cánh đã có kết quả đư�
 | 11 | `MERGE2_NOHEDGE` | đối chứng: MERGE2 không hedge QA | hedge QA đóng góp bao nhiêu? |
 | 12 | `ABK+G38R` | VLM rerank bằng **Gemini 3.8 Flash** (GA 02/09/2026) thay 3.5-flash-lite | model mới có xếp lại top-48 tốt hơn? |
 | 13 | `ABK+G38QA` | QA trả lời bằng **Gemini 3.8 Flash** thay 3.1-pro-preview | rẻ 3-5×, ít bão hơn — có giữ được điểm QA? |
+| 14 | `ABK+BREAKER` | cầu dao bão Gemini BẬT (round-96) | API khỏe thì phải = ABK (bằng chứng "không đổi một byte") |
+| 15 | `ABK+OCRCTX` | QA đọc thêm chữ OCR của các khung trong strip (cùng ASR) | tên trường/địa danh/con số trong chữ chạy có cứu QA? |
+| 16 | `ABK+F6` | strip QA 6 khung thay 3 | chữ trải nhiều khung có đọc trọn hơn? |
+| 17 | `ABK+LOCALR` | VLM rerank bằng **VLM cục bộ** (`LOCAL_VLM_ID`) thay Gemini | plan B khi Gemini bão đáng tin đến đâu? |
+| 18 | `ABK+LOCALQA` | QA trả lời bằng **VLM cục bộ** thay Gemini Pro | cùng câu hỏi cho QA |
+| 19 | `ABK+LOCALR2` / 20 `ABK+LOCALQA2` | như 17/18 với VLM cục bộ thứ hai (`LOCAL_VLM_ID_2`, Qwen3.5-9B) | model nào đáng làm plan B? |
+| 21 | `ABK+HFQA` | QA qua **Hugging Face Inference Providers** (`HF_ROUTER_QA_MODEL`, cần secret `HF_TOKEN`) | nhà cung cấp độc lập có giữ điểm QA? |
+| 22 | `ABK+HFR` | VLM rerank qua HF Inference Providers (`HF_ROUTER_RERANK_MODEL`) | lane rerank độc lập xếp top-48 ra sao? |
 
 **Thứ tự** đã sắp để các cánh chỉ-đổi-retrieval đứng sát baseline trong cùng cửa sổ
 quota Gemini; cánh ngốn Gemini (V5) và nặng GPU (DIVERSE) chạy sau. 4 cánh trộn chạy
@@ -3052,25 +3142,30 @@ bị đánh dấu "≠ phiên" và không được xét thắng. `ABK+TUNED` cò
 thua **mặc định** ở held-out (thua = overfit 23 câu; trọng số trận đã khớp cả 23 câu nên
 chỉ in để tham khảo).
 
-**Thời gian:** 8 cánh bench × ~60-85′ + dò ~30′ ≈ **9-11 giờ** một A100 (chạy lần đầu).
+**Thời gian:** lần đầu 8 cánh bench × ~60-85′ + dò ~30′ ≈ **9-11 giờ** một A100. Phiên round-96 (các cánh cũ đã có trên Drive): ABK đo lại + BREAKER + OCRCTX + F6 + G38QA + G38R + HFQA + HFR + 4 cánh cục bộ ≈ 12 cánh × 30-45′ ≈ **6-9 giờ** khi Google yên; cánh cục bộ nạp thêm 16-18 GiB model lần đầu.
 Chạy qua đêm là vừa. **Chạy lại ở phiên sau** (vd thêm cánh mới): cánh đã xong bị bỏ qua,
 nhưng nếu còn cánh bench chưa đo thì **ABK được đo lại** trong phiên đó (baseline phải cùng
 phiên; bản ABK cũ thành `ABK-prev*.json` = thêm một lần đo nhiễu). Khuyến nghị **một phiên**; nếu buộc chia, phiên 2 dùng
 `ARMS = ["DIVERSE", "ABK+V5"]` rồi chạy lại với `ARMS = "all"` để trộn — các cánh
 phiên 2 sẽ mang dấu "≠ phiên" (chỉ so tương đối).
 
-**Quota (round-91, đo trên dashboard AI Studio 04/09):** `gemini-3.1-pro-preview` chỉ có
-**250 request/ngày** trên khóa của K (Flash: 10.000/ngày). Một cánh bench ≈ 90 cuộc gọi Pro
-(3 câu QA) → **tối đa 2 cánh dùng Pro mỗi ngày**; cánh `ABK+G38QA` trả lời bằng Flash nên
-không tốn Pro và chạy trước. Cánh nào gặp 429 "exceeded your current quota" bị gắn cờ
-"hết quota" và không được xét thắng (QA của nó đã do model cứu viện trả lời).
+**Quota:** khóa của K lên **Tier 2** từ 04/09 12:24 (`gemini-3.1-pro-preview` 1.000 RPM /
+50.000 RPD; Flash 3.x 2.000 RPM / 100K RPD; Flash-Lite 10K RPM / 350K RPD) — một chiến dịch
+≈ 300-400 cuộc gọi Pro, không còn là ràng buộc. Cánh nào gặp 429 "exceeded your current quota"
+vẫn bị gắn cờ "hết quota" và không được xét thắng. **Bão 503/504 phía Google** (04/09: 80-90 %
+cuộc gọi suốt 8 giờ) mới là rủi ro: cánh "đo model X" chỉ được lưu khi X tự trả lời ≥ 75 %;
+hai cánh cục bộ (`LOCAL*`) chỉ chạy khi điền `LOCAL_VLM_ID` (id HF đã kiểm chứng) ở cell C1 và
+bị bỏ (không lưu) nếu model không nạp được / QA vẫn gọi Gemini Pro.
 
 **Zero-edit:** upload + bật 2 secret (`GITHUB_TOKEN`, `GEMINI_API_KEY`) + Run all.
 Tùy chọn nhưng **rất nên** (round-90): thêm secret `GEMINI_API_KEY_2` (và `_3`) là khóa của
 một dự án Google Cloud **có billing** khác — phiên 03/09 đốt hết quota ngày của
 `gemini-3.1-pro-preview` sau 2 cánh (253 lỗi 429) và QA = 0 suốt phần còn lại; có khóa dự
 phòng thì mọi cuộc gọi tự chuyển sang khóa kế khi khóa đang dùng hết quota.
-Toggle duy nhất: `ARMS` ở cell C1. Thiếu khóa Gemini → dừng ngay, không chạy 9 giờ sai.
+Toggle: `ARMS`, `LOCAL_VLM_ID`, `LOCAL_VLM_ID_2`, `HF_ROUTER_QA_MODEL`, `HF_ROUTER_RERANK_MODEL` ở
+cell C1 (đã điền id kiểm chứng 05/09). Secret tùy chọn: `HF_TOKEN` (hai cánh HF; không có thì bỏ),
+`GEMINI_VERTEX_KEY` (lane Vertex tự chèn sau model chính ở MỌI cánh — chỉ bật khi đã quyết dùng
+cho trận, vì nó đổi chuỗi cứu viện của baseline). Thiếu khóa Gemini → dừng ngay, không chạy 9 giờ sai.
 
 **Drive (khai báo trước, không xóa gì):** ghi `artifacts/lab/campaign/` gồm
 `<cánh>_run/` (CSV; khi đo lại, bản cũ xoay sang `<cánh>_run-prev*/`), `<cánh>.json`,
@@ -3094,6 +3189,16 @@ LAB_CAMPAIGN = r'''
 # không có CSV) KHÔNG được lưu — thà mất một cánh còn hơn một điểm nói dối.
 RUN_CAMPAIGN = True
 ARMS = "all"   # hoặc danh sách con, vd ["DIVERSE", "ABK+V5"] cho phiên 2
+# Round-96: id HF của VLM cục bộ cho hai cánh ABK+LOCALR / ABK+LOCALQA (plan B khi Gemini bão).
+# "" = bỏ hai cánh đó. CHỈ điền id đã kiểm chứng tồn tại trên huggingface.co (cell tự kiểm
+# trước khi tốn 70 phút); bf16 phải vừa VRAM còn trống (~58 GiB trên A100-80GB).
+LOCAL_VLM_ID = "Qwen/Qwen3-VL-8B-Instruct"   # kiểm chứng HF 05/09: 8.8B, Apache-2.0, bf16 16.3 GiB
+LOCAL_VLM_ID_2 = "Qwen/Qwen3.5-9B"            # kiểm chứng HF 05/09: VLM gốc, OCRBench 89.2, bf16 18 GiB
+                                              # (cần transformers ≥ 5.x có qwen3_5; không có → cánh bỏ)
+# Round-96: lane Hugging Face Inference Providers (secret HF_TOKEN; router.huggingface.co, giá của
+# provider). Id đã kiểm chứng trên router 05/09/2026; "" hoặc thiếu HF_TOKEN = bỏ hai cánh HF.
+HF_ROUTER_QA_MODEL = "Qwen/Qwen3-VL-235B-A22B-Instruct"   # novita $0.30/$1.50, deepinfra
+HF_ROUTER_RERANK_MODEL = "zai-org/GLM-5.3-Flash"           # 6 provider, $0.075/$0.25 (KM tới 09/09) rồi $0.15/$0.50
 import gc, json, logging, os, random, re, shutil, time, uuid, torch
 from pathlib import Path
 
@@ -3102,7 +3207,15 @@ _camp = PROJECT / "artifacts" / "lab" / "campaign"          # tên Drive khai b�
 # sổ quota Gemini; cánh ngốn Gemini (V5) và nặng GPU (DIVERSE) chạy sau.
 _ARM_ORDER = ("TUNE", "ABK", "ABK+TUNED", "ABK+W", "ABK+RRF", "DIVERSE", "ABK+V5",
               "MERGE2", "MERGE3", "MERGE_SIB", "MERGE2_NOHEDGE",
-              "ABK+G38QA", "ABK+G38R")        # round-89: Gemini 3.8 Flash (GA 02/09/2026)
+              "ABK+BREAKER", "ABK+OCRCTX", "ABK+F6",       # round-96: bài học sơ tuyển 3
+              "ABK+G38QA", "ABK+G38R",        # round-89: Gemini 3.8 Flash (GA 02/09/2026)
+              "ABK+HFQA", "ABK+HFR",          # round-96: lane Hugging Face (nhà cung cấp độc lập)
+              "ABK+LOCALR", "ABK+LOCALQA",    # round-96: VLM cục bộ (nạp thêm ~17 GiB → cuối)
+              "ABK+LOCALR2", "ABK+LOCALQA2")  # round-96: VLM cục bộ thứ hai (LOCAL_VLM_ID_2)
+_LOCAL_ARM_ID = {"ABK+LOCALR": LOCAL_VLM_ID, "ABK+LOCALQA": LOCAL_VLM_ID,
+                 "ABK+LOCALR2": LOCAL_VLM_ID_2, "ABK+LOCALQA2": LOCAL_VLM_ID_2}
+_LOCAL_ARMS = tuple(_LOCAL_ARM_ID)
+_HF_ARMS = ("ABK+HFQA", "ABK+HFR")
 # Round-91: khóa của K chỉ có 250 request/NGÀY cho gemini-3.1-pro-preview (dashboard
 # AI Studio 04/09); một cánh bench ≈ 90 cuộc gọi Pro (3 câu QA) → tối đa 2 cánh
 # dùng Pro mỗi ngày. G38QA trả lời QA bằng Flash (10.000/ngày) nên đứng trước G38R.
@@ -3120,9 +3233,20 @@ _ARM_NOTE = {
     "MERGE2_NOHEDGE": "đối chứng: MERGE2 không hedge QA (tách phần thưởng hedge)",
     "ABK+G38R":  "VLM rerank bằng gemini-3.8-flash thay 3.5-flash-lite (round-89)",
     "ABK+G38QA": "QA trả lời bằng gemini-3.8-flash thay 3.1-pro-preview (round-89)",
+    "ABK+BREAKER": "cầu dao bão Gemini BẬT — API khỏe thì phải = ABK (round-96)",
+    "ABK+OCRCTX": "QA đọc thêm chữ OCR của các khung trong strip, cùng ASR (round-96)",
+    "ABK+F6":    "strip QA 6 khung thay 3 (round-96)",
+    "ABK+LOCALR": "VLM rerank bằng VLM cục bộ LOCAL_VLM_ID thay Gemini (round-96, plan B)",
+    "ABK+LOCALQA": "QA trả lời bằng VLM cục bộ LOCAL_VLM_ID thay Gemini Pro (round-96, plan B)",
+    "ABK+LOCALR2": "VLM rerank bằng VLM cục bộ thứ hai LOCAL_VLM_ID_2 (round-96)",
+    "ABK+LOCALQA2": "QA trả lời bằng VLM cục bộ thứ hai LOCAL_VLM_ID_2 (round-96)",
+    "ABK+HFQA":  "QA trả lời qua HF Inference Providers (HF_ROUTER_QA_MODEL) thay Gemini Pro (round-96)",
+    "ABK+HFR":   "VLM rerank qua HF Inference Providers (HF_ROUTER_RERANK_MODEL) thay 3.5-flash-lite (round-96)",
 }
 _BENCH_ARMS = ("ABK", "ABK+TUNED", "ABK+W", "ABK+RRF", "DIVERSE", "ABK+V5",
-               "ABK+G38R", "ABK+G38QA")
+               "ABK+G38R", "ABK+G38QA",
+               "ABK+BREAKER", "ABK+OCRCTX", "ABK+F6", "ABK+HFQA", "ABK+HFR",
+               "ABK+LOCALR", "ABK+LOCALQA", "ABK+LOCALR2", "ABK+LOCALQA2")
 _MERGES = {                      # cánh: (các phần, hedge QA)
     "MERGE2": (["ABK", "DIVERSE"], True),
     "MERGE3": (["ABK", "DIVERSE", "ABK+V5"], True),
@@ -3156,6 +3280,19 @@ _ARM_ENV = {
     "ABK+V5": {"CVP_SEARCH__VLM_RERANK_VOTES": "5"},
     "ABK+G38R": {"CVP_SEARCH__VLM_RERANK_MODEL": "gemini-3.8-flash"},
     "ABK+G38QA": {"CVP_VQA__ANSWER_MODEL": "gemini-3.8-flash"},
+    "ABK+BREAKER": {"CVP_BREAKER__ENABLED": "true"},
+    "ABK+OCRCTX": {"CVP_VQA__OCR_CONTEXT": "true"},
+    "ABK+F6": {"CVP_VQA__FRAMES_PER_ANSWER": "6"},
+    "ABK+LOCALR": {"CVP_SEARCH__VLM_RERANK_PROVIDER": "hf_auto",
+                   "CVP_VQA__LOCAL_BACKEND": "hf_auto", "CVP_VQA__LOCAL_HF_ID": LOCAL_VLM_ID},
+    "ABK+LOCALQA": {"CVP_VQA__PROVIDER": "local",
+                    "CVP_VQA__LOCAL_BACKEND": "hf_auto", "CVP_VQA__LOCAL_HF_ID": LOCAL_VLM_ID},
+    "ABK+LOCALR2": {"CVP_SEARCH__VLM_RERANK_PROVIDER": "hf_auto",
+                    "CVP_VQA__LOCAL_BACKEND": "hf_auto", "CVP_VQA__LOCAL_HF_ID": LOCAL_VLM_ID_2},
+    "ABK+LOCALQA2": {"CVP_VQA__PROVIDER": "local",
+                     "CVP_VQA__LOCAL_BACKEND": "hf_auto", "CVP_VQA__LOCAL_HF_ID": LOCAL_VLM_ID_2},
+    "ABK+HFQA": {"CVP_VQA__ANSWER_MODEL": f"hf:{HF_ROUTER_QA_MODEL}"},
+    "ABK+HFR": {"CVP_SEARCH__VLM_RERANK_MODEL": f"hf:{HF_ROUTER_RERANK_MODEL}"},
 }
 # Mọi khóa env chiến dịch có thể đụng — dọn sạch trước MỖI cánh (env sống
 # dai trong kernel; audit r74). Gói D/X cũng dọn phòng khi kernel dùng chung.
@@ -3168,7 +3305,9 @@ _ALL_KEYS = (set(_PACK_ABK) | set(_LINEUP_DIVERSE)
                 "CVP_VQA__ANSWER_VARIANT_ROWS", "CVP_VQA__EXACT_TRANSCRIPTION",
                 "CVP_SEARCH__VLM_RERANK_VOTES", "CVP_SEARCH__FUSION_METHOD",
                 "CVP_SEARCH__QUERY_ADAPTIVE_WEIGHTS",
-                "CVP_SEARCH__VLM_RERANK_MODEL", "CVP_VQA__ANSWER_MODEL"}
+                "CVP_SEARCH__VLM_RERANK_MODEL", "CVP_VQA__ANSWER_MODEL",
+                "CVP_SEARCH__VLM_RERANK_LOCAL_FALLBACK", "CVP_SUBMISSION__QUERY_ORDER",
+                "CVP_VQA__OCR_CONTEXT_CHARS"}       # round-96
              | {f"CVP_SEARCH__WEIGHTS__{s}" for s in
                 ("VISUAL", "OCR", "ASR", "CAPTION", "METADATA", "OBJECT")})
 _BASE_W = {"visual": 1.0, "ocr": 0.35, "asr": 0.30, "caption": 0.25,
@@ -3234,7 +3373,10 @@ class _StormCounter(logging.Handler):
              "Cross-encoder rerank failed", "Cross-encoder returned",
              "failed to build", "DISABLED until", "SKIPPING this lane")
     SOFT = ("no usable scores", "VLM rerank failed", "VLM vote", "trying local model",
-            "Local VQA failed", "Loading local VQA", "Low-confidence retry failed")
+            "Local VQA failed", "Loading local VQA", "Low-confidence retry failed",
+            "cầu dao bão")                      # round-96: cầu dao mở/đóng = môi trường
+    # Round-96: VLM cục bộ nạp (INFO của cvp.models.local_vlm) — cánh LOCAL* phải thấy dòng này
+    LOCAL_LOAD = "Loading local hf_auto VLM"
     # Audit r89: chuỗi dự phòng rớt model (3.8 → 3.7) chỉ là một WARNING —
     # đếm theo model để cánh "đo model X" không âm thầm đo model Y. Chỉ khớp
     # dạng THƯỜNG (không có "(economical)" = retry cùng model, chưa rớt).
@@ -3258,6 +3400,8 @@ class _StormCounter(logging.Handler):
                 _d = self.http.setdefault(_hm.group(1), {})
                 _d[_hm.group(2)] = _d.get(_hm.group(2), 0) + 1
             return
+        if record.name.startswith("cvp") and self.LOCAL_LOAD in _m:
+            self.local_loads += 1                # round-96 (INFO)
         if not record.name.startswith("cvp") or record.levelno < logging.WARNING:
             return
         for _mt in self.STORM.finditer(_m):      # group(1) = mã số, else từ khóa
@@ -3284,6 +3428,7 @@ class _StormCounter(logging.Handler):
         self.fallback = {}
         self.quota = 0
         self.http = {}
+        self.local_loads = 0
 
 
 if RUN_CAMPAIGN and not GT_PATH.exists():
@@ -3330,6 +3475,16 @@ if RUN_CAMPAIGN and GT_PATH.exists():
     _local = Path(os.environ["CVP_PATHS__ARTIFACTS_ROOT"])
     _arms = list(_ARM_ORDER) if ARMS == "all" else [a for a in _ARM_ORDER if a in ARMS]
     assert _arms, f"ARMS lạ: {ARMS!r} — chọn trong {_ARM_ORDER}"
+    _skip_local = [a for a in _arms if a in _LOCAL_ARMS and not _LOCAL_ARM_ID[a]]
+    if _skip_local:
+        # round-96: không đoán id — không có id đã kiểm chứng thì cánh cục bộ chờ phiên sau
+        print(f"⏭ LOCAL_VLM_ID(_2) trống — bỏ {_skip_local} (điền id HF đã kiểm chứng ở cell C1 rồi "
+              "chạy lại: chỉ các cánh đó được đo thêm)")
+        _arms = [a for a in _arms if a not in _skip_local]
+    _hf_ok = bool(os.environ.get("HF_TOKEN")) and bool(HF_ROUTER_QA_MODEL) and bool(HF_ROUTER_RERANK_MODEL)
+    if not _hf_ok and any(a in _arms for a in _HF_ARMS):
+        print(f"⏭ thiếu secret HF_TOKEN hoặc HF_ROUTER_*_MODEL trống — bỏ {[a for a in _arms if a in _HF_ARMS]}")
+        _arms = [a for a in _arms if a not in _HF_ARMS]
     _storm = _StormCounter()
     logging.getLogger().addHandler(_storm)
     _results = {}
@@ -3463,7 +3618,9 @@ if RUN_CAMPAIGN and GT_PATH.exists():
                 print(f"   ⏭ ứng viên ≡ trận (lệch {_diff:.3f}) — bỏ, không tốn 70 phút")
                 return _results[arm]
         _w = _apply_env(arm, _BATTLE_W, _cand)
-        settings = load_settings()
+        settings = load_settings()               # cũng cấu hình cầu dao bão theo cánh (r96)
+        from cvp.models.gemini_health import HEALTH as _HEALTH
+        _HEALTH.reset()                          # sổ cầu dao sạch cho mỗi cánh
         _want = (["finetuned", "metaclip2", "qwen_embed"] if arm == "DIVERSE"
                  else ["finetuned", "metaclip2"])
         # Thay đổi duy nhất phải ĂN vào settings, nền phải đúng trận (audit r88)
@@ -3472,8 +3629,36 @@ if RUN_CAMPAIGN and GT_PATH.exists():
                  "ABK+V5": settings.search.vlm_rerank_votes == 5,
                  "DIVERSE": list(settings.embedding.ensemble_members) == _want,
                  "ABK+G38R": settings.search.vlm_rerank_model == "gemini-3.8-flash",
-                 "ABK+G38QA": settings.vqa.answer_model == "gemini-3.8-flash"}
+                 "ABK+G38QA": settings.vqa.answer_model == "gemini-3.8-flash",
+                 "ABK+BREAKER": settings.breaker.enabled is True and _HEALTH.enabled is True,
+                 "ABK+OCRCTX": settings.vqa.ocr_context is True,
+                 "ABK+F6": settings.vqa.frames_per_answer == 6,
+                 "ABK+HFQA": settings.vqa.answer_model == f"hf:{HF_ROUTER_QA_MODEL}",
+                 "ABK+HFR": settings.search.vlm_rerank_model == f"hf:{HF_ROUTER_RERANK_MODEL}"}
+        if arm in _LOCAL_ARMS:
+            _took[arm] = (settings.vqa.local_backend == "hf_auto"
+                          and settings.vqa.local_hf_id == _LOCAL_ARM_ID[arm] != ""
+                          and (settings.search.vlm_rerank_provider == "hf_auto" if arm.startswith("ABK+LOCALR")
+                               else settings.vqa.provider == "local"))
         assert _took.get(arm, True), f"[{arm}] knob KHÔNG ăn vào settings — sai tên env"
+        if arm not in ("ABK+BREAKER",):          # nền: cầu dao TẮT ở mọi cánh khác (= trận cũ)
+            assert settings.breaker.enabled is False and _HEALTH.enabled is False, \
+                f"[{arm}] cầu dao bão đang BẬT ngoài cánh ABK+BREAKER — env rò"
+        if arm in _LOCAL_ARMS:
+            # Round-96 tiền kiểm: id phải TỒN TẠI trên HF trước khi tốn 70 phút (bão mạng → thử lại)
+            from huggingface_hub import model_info as _hf_info
+            _lid = _LOCAL_ARM_ID[arm]
+            for _try in range(3):
+                try:
+                    _hf_info(_lid)
+                    break
+                except Exception as _e:   # noqa: BLE001 — phân loại rồi quyết
+                    if "404" in str(_e) or "Repository Not Found" in str(_e) or _try == 2:
+                        raise RuntimeError(f"[{arm}] id {_lid!r} không tra được trên "
+                                           f"huggingface.co ({type(_e).__name__}: {str(_e)[:120]}) — "
+                                           "không bench 70 phút với id sai") from _e
+                    time.sleep(15)
+            print(f"   ✓ {_lid} có trên HF")
         assert (settings.search.reranker == "qwen_reranker" and settings.search.vlm_rerank
                 and settings.search.vlm_rerank_topk == 48 and settings.vqa.parallel_calls == 2
                 and settings.search.kis_multi_event and settings.search.low_confidence_retry
@@ -3582,6 +3767,16 @@ if RUN_CAMPAIGN and GT_PATH.exists():
         if _vlm_off > len(_qfiles) // 4:
             raise RuntimeError(f"[{arm}] VLM rerank rớt trên {_vlm_off}/{len(_qfiles)} câu (bão "
                                "Gemini kéo dài) — không phải đội hình trận, không lưu")
+        if arm in _LOCAL_ARMS:
+            # Round-96: cánh cục bộ phải THẬT SỰ nạp model cục bộ, và cánh LOCALQA không được
+            # để Gemini Pro trả lời (điểm phải thuộc về model đã khai).
+            if _storm.local_loads < 1:
+                raise RuntimeError(f"[{arm}] VLM cục bộ {_LOCAL_ARM_ID[arm]} KHÔNG được nạp trong lượt "
+                                   "chạy — điểm không thuộc về model đã khai, không lưu")
+            _pro_calls = sum(_storm.http.get("gemini-3.1-pro-preview", {}).values())
+            if arm.startswith("ABK+LOCALQA") and _pro_calls:
+                raise RuntimeError(f"[{arm}] Gemini Pro vẫn được gọi {_pro_calls} lần — QA không "
+                                   "hoàn toàn do model cục bộ trả lời, không lưu")
         _fb = _storm.fallback.get(_mid, 0) if _mid else 0
         _share = None
         if _mid:
@@ -3607,6 +3802,7 @@ if RUN_CAMPAIGN and GT_PATH.exists():
                    "declared_share": None if _share is None else round(_share, 3),
                    "http_by_model": {m: dict(c) for m, c in _storm.http.items()},
                    "quota_429": _storm.quota,
+                   "local_loads": _storm.local_loads, "breaker": _HEALTH.snapshot(),
                    "log_errors": _storm.errors,
                    "vram_free_start_gib": round(_free / 2**30, 1),
                    "vram_peak_gib": round(torch.cuda.max_memory_allocated() / 2**30, 1)}

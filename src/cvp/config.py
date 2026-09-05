@@ -207,7 +207,7 @@ class SearchCfg(BaseModel):
     # Optional listwise VLM re-rank of the head of the ranking (UIT CVPRW'25: +10% H@1).
     vlm_rerank: bool = False
     vlm_rerank_topk: int = 24
-    vlm_rerank_provider: str = "gemini"   # gemini | vintern | none
+    vlm_rerank_provider: str = "gemini"   # gemini | vintern | hf_auto | none
     # Round-45: the listwise scorer gets its own CHEAP model ($0.30/$2.50,
     # thinking defaults to minimal) — this call family was ~80% of the live
     # bill on gemini-3.5-flash defaults. Empty = follow vqa.gemini_model.
@@ -216,6 +216,11 @@ class SearchCfg(BaseModel):
     # vectors. Evidence: two same-config live runs scored 9.4 vs 9.0 purely on
     # single-call sampling noise — averaging trades API calls for stability.
     vlm_rerank_votes: int = Field(1, ge=1, le=5)
+    # Round-96 (sơ tuyển 3: 3/3 phiếu Gemini rỗng suốt 8 giờ bão): khi cầu dao
+    # bão mở trên MỌI model Gemini hoặc mọi phiếu về rỗng, chấm lại bằng VLM
+    # cục bộ (vqa.local_backend=hf_auto + vqa.local_hf_id) thay vì giữ nguyên
+    # thứ hạng. Tắt mặc định; nb03 bật khi LOCAL_VLM_ID đã kiểm chứng.
+    vlm_rerank_local_fallback: bool = False
     # AVS diversification: MMR trade-off between relevance and novelty.
     avs_mmr_lambda: float = 0.7
     avs_per_video_cap: int = 3
@@ -352,7 +357,9 @@ class CaptionCfg(BaseModel):
 
 
 class VqaCfg(BaseModel):
-    provider: str = "gemini"          # gemini | vintern | none
+    # gemini | vintern | local | none — "local" = KHÔNG gọi Gemini, trả lời bằng
+    # local_backend (round-96, cánh bench ABK+LOCALQA); "vintern" = đường cũ.
+    provider: str = "gemini"
     gemini_model: str = "gemini-3.7-flash"
     # Round-41 "nghiền ngẫm": the QA-track answer path (strip-VQA) runs on the
     # strongest callable Pro (gemini-3.5-pro is still a closed Vertex preview
@@ -367,6 +374,12 @@ class VqaCfg(BaseModel):
     # nạp lười CHỈ khi Gemini sập. Đổi backend không đụng đường Gemini.
     local_backend: Literal["vintern", "hf_auto"] = "vintern"
     local_hf_id: str = ""            # vd "Qwen/Qwen3.5-9B-Instruct" sau khi kiểm chứng id
+    # Round-96: đưa chữ OCR của các khung hình trong strip (artifacts/ocr,
+    # n_to_text, ±1 keyframe) vào ngữ cảnh QA cùng ASR — tên trường/địa danh/con
+    # số thường nằm trong chữ chạy trên màn hình mà VLM nhìn ảnh 768px hay bỏ sót
+    # (sơ tuyển 3 p2-18: 68 % phiếu "Không có thông tin"). Bench: ABK+OCRCTX.
+    ocr_context: bool = False
+    ocr_context_chars: int = 600
     top_frames: int = 5               # frames sent to the VQA model per answer group
     # Frames per answer_group strip (ONE Gemini call sees the whole strip).
     # 1 = old single-frame behaviour; 3 covers text that spans several frames.
@@ -422,6 +435,25 @@ class SubmissionCfg(BaseModel):
     # rút cho các câu còn lại — QA votes 1, tắt neighbor strips, tắt VLM rerank
     # (giữ retrieval + cross-rerank local) — và la lớn trong log.
     pack_deadline_min: float = Field(0.0, ge=0.0)
+    # Round-96 (sơ tuyển 3: 22/36 câu không kịp nộp; bảng public chỉ chấm KIS):
+    # thứ tự chạy câu trong pack. "kis_first" = KIS/AVS → TRAKE → QA (QA chậm
+    # nhất, không lên bảng public, chịu nước rút trước); "name" = theo tên file.
+    query_order: Literal["name", "kis_first"] = "name"
+
+
+class BreakerCfg(BaseModel):
+    """Round-96: cầu dao bão Gemini (cvp.models.gemini_health).
+
+    Một model rớt ``min_consecutive`` lần liên tiếp và ≥ ``fail_ratio`` của
+    ``window`` lần gần nhất → mọi call site bỏ qua model đó ``cooldown_s`` giây
+    (không chờ timeout), rồi thăm dò một cuộc gọi. API khỏe → không đổi gì.
+    """
+
+    enabled: bool = False
+    window: int = Field(8, ge=3, le=64)
+    fail_ratio: float = Field(0.75, ge=0.5, le=1.0)
+    min_consecutive: int = Field(3, ge=1, le=20)
+    cooldown_s: float = Field(120.0, ge=10.0)
 
 
 class LoggingCfg(BaseModel):
@@ -436,6 +468,7 @@ class Settings(BaseModel):
     index: IndexCfg = Field(default_factory=IndexCfg)
     search: SearchCfg = Field(default_factory=SearchCfg)
     query: QueryCfg = Field(default_factory=QueryCfg)
+    breaker: BreakerCfg = Field(default_factory=BreakerCfg)
     temporal: TemporalCfg = Field(default_factory=TemporalCfg)
     extraction: ExtractionCfg = Field(default_factory=ExtractionCfg)
     ocr: OcrCfg = Field(default_factory=OcrCfg)
@@ -499,4 +532,10 @@ def load_settings(path: str | os.PathLike | None = None) -> Settings:
     if f is not None:
         raw = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
     raw = _apply_env_overrides(raw)
-    return Settings.model_validate(raw)
+    settings = Settings.model_validate(raw)
+    # Round-96: the process-wide Gemini circuit breaker follows the settings
+    # just loaded (nb09 flips it per arm; nb03 sets it once). stdlib-only import.
+    from cvp.models.gemini_health import HEALTH
+
+    HEALTH.configure(settings)
+    return settings

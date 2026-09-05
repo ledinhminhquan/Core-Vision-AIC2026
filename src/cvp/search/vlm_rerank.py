@@ -8,6 +8,10 @@ hallucination can cost at most N positions, never the whole ranking.
 Providers (settings.search.vlm_rerank_provider):
   * ``gemini``  — one multi-image call (fast, needs GEMINI_API_KEY),
   * ``vintern`` — local 5CD-AI/Vintern-1B-v3_5, one call per frame (offline),
+  * ``hf_auto`` — round-96: the shared local VLM (vqa.local_hf_id), pointwise
+    0–10 per frame; also the automatic plan B of ``gemini`` when
+    ``search.vlm_rerank_local_fallback`` is on and the breaker/storm leaves no
+    Gemini score,
   * ``none``    — passthrough.
 
 Every failure path returns the input ranking unchanged.
@@ -122,6 +126,34 @@ def _vintern_scores(query: str, paths: list[str], settings: Settings) -> list[fl
     return scores
 
 
+_HF_AUTO_PROMPT = ("Câu truy vấn: {query}\nKhung hình này khớp câu truy vấn đến mức nào? "
+                   "Chỉ trả lời MỘT số nguyên từ 0 (không liên quan) đến 10 (khớp hoàn toàn).")
+
+
+def _hf_auto_scores(query: str, paths: list[str], settings: Settings) -> list[float] | None:
+    """Round-96: pointwise 0–10 by the shared local VLM (``cvp.models.local_vlm``,
+    id ``vqa.local_hf_id``) — plan B khi Gemini bão; provider ``hf_auto`` chạy
+    nó làm chính (cánh bench ABK+LOCALR)."""
+    from PIL import Image
+
+    from cvp.models import local_vlm
+
+    model_id = local_vlm.local_vlm_id(settings)
+    scores: list[float] = []
+    for p in paths:
+        try:
+            img = Image.open(p).convert("RGB")
+            img.thumbnail((448, 448))
+            out = local_vlm.generate(model_id, [img], _HF_AUTO_PROMPT.format(query=query),
+                                     max_new_tokens=4)
+            m = re.search(r"\d+(?:\.\d+)?", str(out))
+            scores.append(min(max(float(m.group()), 0.0), 10.0) if m else 0.0)
+        except Exception as e:  # noqa: BLE001 — one bad frame must not sink the batch
+            log.warning("local VLM score failed for %s: %s", p, e)
+            scores.append(0.0)
+    return scores if any(scores) else None
+
+
 def vlm_rerank(
     results: list["SearchResult"],
     query: str,
@@ -137,20 +169,42 @@ def vlm_rerank(
     paths = [r.ref.path for r in head]
     try:
         if provider == "gemini":
+            from cvp.models.gemini_health import HEALTH, AllModelsOpen
+            from cvp.search.vqa import gemini_model_chain
+
             # Round-40: N independent scoring passes, element-wise mean — one
             # pass is a dice roll (9.4 vs 9.0 live), the mean is a judgement.
             votes = max(1, int(getattr(settings.search, "vlm_rerank_votes", 1)))
             tallies: list[list[float]] = []
-            for v in range(votes):
-                try:
-                    s = _gemini_scores(query, paths, settings)
-                except Exception as e:  # noqa: BLE001 — a lost vote, not a lost query
-                    log.warning("VLM vote %d/%d failed (%s)", v + 1, votes, e)
-                    s = None
-                if s:
-                    tallies.append(s)
+            _primary = (getattr(settings.search, "vlm_rerank_model", "")
+                        or settings.vqa.gemini_model)
+            if HEALTH.all_open(gemini_model_chain(settings, _primary)):
+                # Round-96: sơ tuyển 3 — 3 phiếu × 5 model × 45 s chờ cho điểm RỖNG.
+                log.warning("cầu dao bão: mọi model Gemini đang mở cầu dao — bỏ %d phiếu "
+                            "VLM rerank", votes)
+            else:
+                for v in range(votes):
+                    try:
+                        s = _gemini_scores(query, paths, settings)
+                    except AllModelsOpen as e:
+                        log.warning("VLM vote %d/%d: %s — dừng các phiếu còn lại", v + 1, votes, e)
+                        break
+                    except Exception as e:  # noqa: BLE001 — a lost vote, not a lost query
+                        log.warning("VLM vote %d/%d failed (%s)", v + 1, votes, e)
+                        s = None
+                    if s:
+                        tallies.append(s)
             scores = ([sum(col) / len(tallies) for col in zip(*tallies)]
                       if tallies else None)
+            if not scores and getattr(settings.search, "vlm_rerank_local_fallback", False):
+                from cvp.models import local_vlm
+
+                if local_vlm.is_configured(settings):
+                    log.warning("VLM rerank: Gemini không có điểm — chấm bằng VLM cục bộ %s",
+                                local_vlm.local_vlm_id(settings))
+                    scores = _hf_auto_scores(query, paths, settings)
+        elif provider == "hf_auto":
+            scores = _hf_auto_scores(query, paths, settings)
         elif provider == "vintern":
             scores = _vintern_scores(query, paths, settings)
         else:

@@ -28,6 +28,51 @@ KEY_ENV_NAMES = ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY_2",
 _LOCK = threading.Lock()
 _INDEX = 0          # process-wide: once a key is exhausted nobody goes back to it
 
+# Round-96: a SECOND PIPE for the same Gemini models — Vertex "express mode"
+# (verified 05/09/2026: genai.Client(vertexai=True, api_key=<express key>) →
+# aiplatform.googleapis.com global endpoint, same ids, same prices, separate
+# serving path from the AI Studio 503 storms; partially correlated hedge).
+# Chain entries are spelled "vertex:<model id>" and only exist when the Colab
+# secret GEMINI_VERTEX_KEY is set. "hf:<model>" entries route to the Hugging
+# Face Inference Providers router (cvp.models.hf_router) — an independent vendor.
+VERTEX_ENV = "GEMINI_VERTEX_KEY"
+VERTEX_PREFIX = "vertex:"
+
+
+def vertex_key() -> str:
+    return (os.environ.get(VERTEX_ENV) or "").strip()
+
+
+def vertex_available() -> bool:
+    return bool(vertex_key())
+
+
+def expand_chain(primary: str, fallbacks) -> list[str]:
+    """``[primary, vertex:primary?, *fallbacks]`` with lanes whose secret is
+    missing dropped and duplicates removed (order kept).
+
+    The vertex twin of the PRIMARY sits right behind it: same model, other
+    pipe — the cheapest hedge when AI Studio alone is stormy. ``vertex:`` /
+    ``hf:`` ids anywhere in ``fallbacks`` are kept only when configured.
+    """
+    from cvp.models import hf_router
+
+    chain: list[str] = [primary]
+    if vertex_available() and primary and not primary.startswith(VERTEX_PREFIX) \
+            and not hf_router.is_hf_id(primary):
+        chain.append(VERTEX_PREFIX + primary)
+    chain.extend(str(m) for m in (fallbacks or []))
+    out: list[str] = []
+    for m in chain:
+        if not m or m in out:
+            continue
+        if m.startswith(VERTEX_PREFIX) and not vertex_available():
+            continue
+        if hf_router.is_hf_id(m) and not hf_router.available():
+            continue
+        out.append(m)
+    return out
+
 
 def api_keys() -> list[str]:
     """Distinct non-empty keys in pool order."""
@@ -75,15 +120,36 @@ def reset_for_tests() -> None:
     _INDEX = 0
 
 
-def _default_factory(key: str, http_options: dict | None):
+def _build_genai(http_options: dict | None, **client_kwargs):
+    """``genai.Client`` with graceful degradation of ``http_options``: an SDK
+    that rejects ``retry_options`` (round-96 field names chưa xác minh trên mọi
+    phiên bản) gets the same options without it; one that rejects
+    ``http_options`` altogether gets none. Never let a knob kill the client."""
     from google import genai
 
-    try:
-        if http_options:
-            return genai.Client(api_key=key, http_options=http_options)
-        return genai.Client(api_key=key)
-    except TypeError:  # older google-genai without http_options
-        return genai.Client(api_key=key)
+    attempts: list[dict | None] = [http_options]
+    if http_options and "retry_options" in http_options:
+        attempts.append({k: v for k, v in http_options.items() if k != "retry_options"})
+    attempts.append(None)
+    last: Exception | None = None
+    for opts in attempts:
+        try:
+            if opts:
+                return genai.Client(http_options=opts, **client_kwargs)
+            return genai.Client(**client_kwargs)
+        except Exception as e:  # noqa: BLE001 — degrade the options, then re-raise
+            last = e
+            log.warning("genai.Client rejected http_options=%s (%s) — retrying with fewer options",
+                        sorted((opts or {}).keys()), str(e)[:120])
+    raise last if last else RuntimeError("genai.Client could not be built")
+
+
+def _default_factory(key: str, http_options: dict | None):
+    return _build_genai(http_options, api_key=key)
+
+
+def _default_vertex_factory(key: str, http_options: dict | None):
+    return _build_genai(http_options, vertexai=True, api_key=key)
 
 
 class _Models:
@@ -104,12 +170,29 @@ class RotatingGeminiClient:
     """
 
     def __init__(self, http_options: dict | None = None,
-                 client_factory: Callable[[str, dict | None], Any] | None = None):
+                 client_factory: Callable[[str, dict | None], Any] | None = None,
+                 vertex_factory: Callable[[str, dict | None], Any] | None = None):
         self._http = http_options
         self._factory = client_factory or _default_factory
+        self._vertex_factory = vertex_factory or _default_vertex_factory
         self._client: Any = None
         self._built_for: str | None = None
+        self._vertex_client: Any = None
         self.models = _Models(self)
+
+    def _timeout_s(self) -> float:
+        try:
+            return float((self._http or {}).get("timeout", 45000)) / 1000.0
+        except (TypeError, ValueError):
+            return 45.0
+
+    def _vertex(self):
+        key = vertex_key()
+        if not key:
+            raise RuntimeError(f"vertex: lane needs the {VERTEX_ENV} secret (chưa cấu hình)")
+        if self._vertex_client is None:
+            self._vertex_client = self._vertex_factory(key, self._http)
+        return self._vertex_client
 
     def _inner(self):
         key = current_key()
@@ -121,6 +204,15 @@ class RotatingGeminiClient:
         return self._client
 
     def _call(self, method: str, **kwargs: Any):
+        # Round-96: prefixed ids are OTHER PIPES, never the AI Studio key pool.
+        model = str(kwargs.get("model") or "")
+        if model.startswith("hf:"):
+            from cvp.models import hf_router
+
+            return hf_router.generate(model, kwargs.get("contents"), timeout_s=self._timeout_s())
+        if model.startswith(VERTEX_PREFIX):
+            kwargs = dict(kwargs, model=model[len(VERTEX_PREFIX):])
+            return getattr(self._vertex().models, method)(**kwargs)
         while True:
             key_used = current_key()
             try:
@@ -143,5 +235,16 @@ def build_client(timeout_s: float | None = None) -> RotatingGeminiClient:
     takes milliseconds)."""
     if not api_keys():
         raise RuntimeError("GEMINI_API_KEY not set")
-    http = {"timeout": int(float(timeout_s) * 1000)} if timeout_s else None
+    http: dict | None = {"timeout": int(float(timeout_s) * 1000)} if timeout_s else None
+    # Round-96: the google-genai SDK silently retries 429/5xx up to FOUR times with
+    # 1-2-4-8 s backoff (Gemini troubleshooting guide, 04/09/2026) — under a storm
+    # one failed call burns >15 s before the breaker even sees it. With the breaker
+    # on, cap the SDK at two attempts; the chain + breaker do the rest. Field names
+    # follow google-genai HttpRetryOptions (chưa xác minh trên mọi phiên bản SDK →
+    # the RotatingGeminiClient factory falls back to no retry options on TypeError).
+    from cvp.models.gemini_health import HEALTH
+
+    if HEALTH.enabled:
+        http = dict(http or {})
+        http["retry_options"] = {"attempts": 2, "initial_delay": 1.0, "max_delay": 4.0}
     return RotatingGeminiClient(http_options=http)

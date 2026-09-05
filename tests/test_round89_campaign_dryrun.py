@@ -30,7 +30,12 @@ TEXTS = {
     "query-p1-6-qa": "Người dẫn chương trình nói rằng buổi lễ bắt đầu.\nBuổi lễ diễn ra ở đâu?",
 }
 ARMS = ("TUNE", "ABK", "ABK+TUNED", "ABK+W", "ABK+RRF", "DIVERSE", "ABK+V5",
-        "MERGE2", "MERGE3", "MERGE_SIB", "MERGE2_NOHEDGE", "ABK+G38R", "ABK+G38QA")
+        "MERGE2", "MERGE3", "MERGE_SIB", "MERGE2_NOHEDGE",
+        "ABK+BREAKER", "ABK+OCRCTX", "ABK+F6",            # round-96
+        "ABK+G38R", "ABK+G38QA",
+        "ABK+HFQA", "ABK+HFR")                            # round-96: HF_TOKEN set in the World
+LOCAL_ARMS = ("ABK+LOCALR", "ABK+LOCALQA")                # round-96: only with LOCAL_VLM_ID
+LOCAL_ARMS_2 = ("ABK+LOCALR2", "ABK+LOCALQA2")            # round-96: only with LOCAL_VLM_ID_2
 
 
 def _campaign_src() -> str:
@@ -76,6 +81,8 @@ class World:
                 monkeypatch.delenv(k)
         monkeypatch.setenv("CVP_PATHS__ARTIFACTS_ROOT", str(self.local))
         monkeypatch.setenv("GEMINI_API_KEY", "dry-run")
+        monkeypatch.setenv("HF_TOKEN", "dry-run")       # round-96: HF arms run by default
+        monkeypatch.delenv("GEMINI_VERTEX_KEY", raising=False)
         # scenario knobs
         self.dead_models: set[str] = set()
         self.fallback_storm: dict[str, int] = {}
@@ -86,6 +93,12 @@ class World:
         self.flaky_preflight: dict[str, int] = {}   # model -> initial 503s before it answers
         self.http_profile: dict[str, tuple] = {}    # model -> (n_200, n_503) httpx lines per run
         self.lane_short_forever = False
+        # round-96 scenario knobs
+        self.local_id = ""                          # LOCAL_VLM_ID value substituted into the cell
+        self.local_id_2 = ""                        # LOCAL_VLM_ID_2 (second local model)
+        self.local_model_loads = True               # fake run logs "Loading local hf_auto VLM"
+        self.local_pro_calls = 0                    # httpx Pro 200s emitted during LOCAL arms
+        self.hf_missing_ids: set[str] = set()       # model_info raises 404 for these
         self._install(monkeypatch)
 
     # ── stubs ──────────────────────────────────────────────────────────
@@ -134,6 +147,15 @@ class World:
                              "You exceeded your current quota, please check your plan) — trying next")
             hlog = logging.getLogger("httpx")
             hlog.setLevel(logging.INFO)
+            if os.environ.get("CVP_VQA__LOCAL_HF_ID"):          # round-96: a LOCAL arm is running
+                llog = logging.getLogger("cvp.models.local_vlm")
+                llog.setLevel(logging.INFO)
+                if world.local_model_loads:
+                    llog.info("Loading local hf_auto VLM %s (plan B khi Gemini bão)",
+                              os.environ["CVP_VQA__LOCAL_HF_ID"])
+                for _ in range(world.local_pro_calls):
+                    hlog.info('HTTP Request: POST https://generativelanguage.googleapis.com/'
+                              'v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"')
             for m, (n_ok, n_bad) in world.http_profile.items():
                 for code, n in (("200 OK", n_ok), ("503 Service Unavailable", n_bad)):
                     for _ in range(n):
@@ -190,6 +212,14 @@ class World:
             models = FakeModels()
 
         mp.setattr(V, "make_gemini_client", lambda settings: FakeClient())
+        import huggingface_hub as HH
+
+        def fake_model_info(model_id, *a, **k):
+            if model_id in world.hf_missing_ids:
+                raise RuntimeError("404 Client Error. Repository Not Found for url")
+            return {"id": model_id}
+
+        mp.setattr(HH, "model_info", fake_model_info)
 
     def _run_script(self, *args):
         a = [str(x) for x in args]
@@ -223,6 +253,11 @@ class World:
         g.update({"PROJECT": self.project, "REPO_DIR": REPO, "TRIAL_DIR": self.trial,
                   "GT_PATH": self.gt, "_run": self._run_script})
         src = _campaign_src().replace('ARMS = "all"', f"ARMS = {arms!r}", 1)
+        src = src.replace('LOCAL_VLM_ID = "Qwen/Qwen3-VL-8B-Instruct"',
+                          f"LOCAL_VLM_ID = {self.local_id!r}", 1)
+        src = src.replace('LOCAL_VLM_ID_2 = "Qwen/Qwen3.5-9B"',
+                          f"LOCAL_VLM_ID_2 = {self.local_id_2!r}", 1)
+        assert f"LOCAL_VLM_ID = {self.local_id!r}" in src and f"LOCAL_VLM_ID_2 = {self.local_id_2!r}" in src
         exec(compile(src, "nb09-campaign-cell", "exec"), g)   # noqa: S102 — the cell itself
         return g
 
@@ -395,3 +430,88 @@ def test_dryrun_declared_model_share_gate(tmp_path, monkeypatch):
     w3.http_profile = {"gemini-3.8-flash": (50, 50)}
     w3.run()
     assert not (w3.camp / "ABK+G38R.json").exists() and not (w3.camp / "ABK+G38QA.json").exists()
+
+
+# ── round-96 scenarios ─────────────────────────────────────────────────────
+
+def test_dryrun_r96_new_arms_run_and_local_arms_wait_for_an_id(tmp_path, monkeypatch):
+    w = World(tmp_path, monkeypatch)
+    w.run()
+    for arm in ("ABK+BREAKER", "ABK+OCRCTX", "ABK+F6"):
+        assert (w.camp / f"{arm}.json").exists(), arm
+    for arm in LOCAL_ARMS + LOCAL_ARMS_2:
+        assert not (w.camp / f"{arm}.json").exists(), arm      # skipped, NOT saved as done
+    b = w.payload("ABK+BREAKER")
+    assert b["env"]["CVP_BREAKER__ENABLED"] == "true" and isinstance(b["breaker"], dict)
+    assert w.payload("ABK+OCRCTX")["env"]["CVP_VQA__OCR_CONTEXT"] == "true"
+    assert w.payload("ABK+F6")["env"]["CVP_VQA__FRAMES_PER_ANSWER"] == "6"
+    assert "CVP_BREAKER__ENABLED" not in w.payload("ABK")["env"]   # breaker OFF elsewhere
+    assert w.payload("ABK")["local_loads"] == 0
+    summ = json.loads((w.camp / "campaign_summary.json").read_text(encoding="utf-8"))
+    assert "ABK+BREAKER" in summ["arms"] and "ABK+BREAKER" not in summ["wins"]   # = ABK, no win
+
+
+def test_dryrun_r96_local_arms_measure_with_a_verified_id(tmp_path, monkeypatch):
+    w = World(tmp_path, monkeypatch)
+    w.local_id = "org/verified-vlm"
+    w.run()
+    for arm in LOCAL_ARMS:
+        p = w.payload(arm)
+        assert p["local_loads"] >= 1 and p["env"]["CVP_VQA__LOCAL_HF_ID"] == "org/verified-vlm"
+    assert w.payload("ABK+LOCALR")["env"]["CVP_SEARCH__VLM_RERANK_PROVIDER"] == "hf_auto"
+    assert w.payload("ABK+LOCALQA")["env"]["CVP_VQA__PROVIDER"] == "local"
+    assert "CVP_VQA__LOCAL_HF_ID" not in w.payload("ABK+G38QA")["env"]    # env cleaned between arms
+
+
+def test_dryrun_r96_local_arm_not_saved_when_model_never_loads_or_pro_answers(tmp_path, monkeypatch):
+    w = World(tmp_path, monkeypatch)
+    w.local_id = "org/verified-vlm"
+    w.local_model_loads = False
+    w.run()
+    for arm in LOCAL_ARMS:
+        assert not (w.camp / f"{arm}.json").exists(), arm
+    assert (w.camp / "ABK+F6.json").exists()                     # campaign went on
+
+    w2 = World(tmp_path / "b", monkeypatch)
+    w2.local_id = "org/verified-vlm"
+    w2.local_pro_calls = 5                                       # Gemini Pro still answered QA
+    w2.run()
+    assert (w2.camp / "ABK+LOCALR.json").exists()                # rerank arm may call Pro for QA
+    assert not (w2.camp / "ABK+LOCALQA.json").exists()           # QA arm must not
+
+
+def test_dryrun_r96_unknown_hf_id_fails_the_preflight_only(tmp_path, monkeypatch):
+    w = World(tmp_path, monkeypatch)
+    w.local_id = "org/does-not-exist"
+    w.hf_missing_ids = {"org/does-not-exist"}
+    w.run()
+    for arm in LOCAL_ARMS:
+        assert not (w.camp / f"{arm}.json").exists(), arm
+    assert (w.camp / "ABK+G38QA.json").exists()
+
+
+def test_dryrun_r96_hf_arms_need_the_token_and_pin_their_model(tmp_path, monkeypatch):
+    w = World(tmp_path, monkeypatch)
+    w.run()
+    assert w.payload("ABK+HFQA")["env"]["CVP_VQA__ANSWER_MODEL"] == "hf:Qwen/Qwen3-VL-235B-A22B-Instruct"
+    assert w.payload("ABK+HFR")["env"]["CVP_SEARCH__VLM_RERANK_MODEL"] == "hf:zai-org/GLM-5.3-Flash"
+    assert w.payload("ABK+HFQA")["declared_model"] == "hf:Qwen/Qwen3-VL-235B-A22B-Instruct"
+    assert w.payload("ABK")["env"]["CVP_VQA__ANSWER_MODEL"] == "gemini-3.1-pro-preview"
+
+    w2 = World(tmp_path / "b", monkeypatch)
+    monkeypatch.delenv("HF_TOKEN")
+    w2.run()
+    for arm in ("ABK+HFQA", "ABK+HFR"):
+        assert not (w2.camp / f"{arm}.json").exists(), arm      # skipped, not saved as done
+    assert (w2.camp / "ABK+F6.json").exists()
+
+
+def test_dryrun_r96_second_local_id_gets_its_own_arms(tmp_path, monkeypatch):
+    w = World(tmp_path, monkeypatch)
+    w.local_id = ""
+    w.local_id_2 = "org/second-vlm"
+    w.run()
+    for arm in LOCAL_ARMS:
+        assert not (w.camp / f"{arm}.json").exists(), arm
+    for arm in LOCAL_ARMS_2:
+        assert w.payload(arm)["env"]["CVP_VQA__LOCAL_HF_ID"] == "org/second-vlm", arm

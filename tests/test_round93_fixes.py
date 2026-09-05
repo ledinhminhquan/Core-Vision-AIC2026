@@ -67,9 +67,9 @@ def test_r93_nb03_battle_knobs():
     pack = next(s for s in cells if "RUN_PACK" in s and "SHARD_TOTAL" in s)
     assert "QA_PARALLEL = 2" in engine and "Tier 2" in engine   # round-95
     assert "RESCUE_QA = False" in pack                          # off by default: attempt 1 untouched
-    assert "if RESCUE_QA and RESUME_PACK:" in pack and "rescue_fallback_qa(_out)" in pack
+    assert "if RESCUE_QA and RESUME_PACK:" in pack and "rescue_fallback_qa(_out, mode=RESCUE_QA_MODE)" in pack
     # the rescue runs AFTER the cross-VM pull and BEFORE run_auto
-    assert pack.index("kéo {_n_pull}") < pack.index("rescue_fallback_qa(_out)") < pack.index(
+    assert pack.index("kéo {_n_pull}") < pack.index("rescue_fallback_qa(_out, mode=RESCUE_QA_MODE)") < pack.index(
         "rep = run_auto(_qsrc, _out, settings, submit=False, resume=RESUME_PACK")
     # battle line-up unchanged: ABK knobs + 2-lane ensemble + Pro QA
     assert '"CVP_SEARCH__KIS_MULTI_EVENT": "true"' in engine and 'LINEUP = "battle"' in engine

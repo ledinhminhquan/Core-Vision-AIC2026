@@ -548,6 +548,16 @@ def compute_qa_answers_with_stats(
                                       float(getattr(_ref, "pts_time", 0.0)))
                 except Exception:  # noqa: BLE001 — context is best-effort
                     ctx = ""
+                if settings is not None and getattr(settings.vqa, "ocr_context", False):
+                    try:      # round-96: chữ trên màn hình của các khung trong nhóm
+                        from cvp.search.vqa import OCR_MARK, ocr_context
+                        _ref = results[best].ref
+                        _ns = [int(getattr(results[i].ref, "n", 0) or 0) for i in group]
+                        _oc = ocr_context(settings, str(_ref.video_id), [n for n in _ns if n])
+                        if _oc:
+                            ctx = f"{ctx}{OCR_MARK}{_oc}" if ctx else f"{OCR_MARK.strip()} {_oc}"
+                    except Exception:  # noqa: BLE001 — context is best-effort
+                        pass
             # Multi-frame strip first (one call sees the whole group — fixes
             # the 2025 "math in video" QA where text spans several frames);
             # single-frame `suggest` remains the compatibility/stub fallback.

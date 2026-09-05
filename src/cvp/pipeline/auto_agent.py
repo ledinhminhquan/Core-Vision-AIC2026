@@ -153,6 +153,19 @@ def _keep_resumed_csv(prev: Path, qf: Path) -> bool:
     return True
 
 
+_TASK_RANK = {"kis": 0, "avs": 0, "trake": 1, "qa": 2}
+
+
+def order_query_files(qfiles: list[Path], mode: str = "name") -> list[Path]:
+    """Round-96: ``kis_first`` runs KIS/AVS → TRAKE → QA (stable by name inside
+    each task). Sơ tuyển 3: QA là câu chậm nhất (Pro + 5 model dự phòng × 90 s),
+    không lên bảng public, và là phần đáng để nước rút cắt trước; KIS là điểm
+    public. ``name`` = the historical plain sort."""
+    if mode != "kis_first":
+        return list(qfiles)
+    return sorted(qfiles, key=lambda p: (_TASK_RANK.get(infer_task(p.name), 3), p.name))
+
+
 def run_auto(
     query_dir: str | Path,
     out_dir: str | Path,
@@ -197,7 +210,8 @@ def run_auto(
     # run_query_folder's round-6 guard). Checked BEFORE the heavy engine build.
     if not query_dir.is_dir():
         raise FileNotFoundError(f"query dir not found: {query_dir}")
-    qfiles = sorted(query_dir.glob("*.txt"))
+    qfiles = order_query_files(sorted(query_dir.glob("*.txt")),
+                               getattr(settings.submission, "query_order", "name"))
     if not qfiles:
         log.error("No *.txt query files directly in %s — wrong folder, or did the "
                   "pack unzip into a SUBFOLDER?", query_dir)

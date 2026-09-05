@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from cvp.config import Settings
 from cvp.constants import MAX_QA_ANSWER_CHARS
+from cvp.models.gemini_health import HEALTH, AllModelsOpen, classify
 from cvp.utils.images import load_rgb
 
 log = logging.getLogger(__name__)
@@ -49,6 +50,9 @@ def _exact_suffix(cfg) -> str:
     return _EXACT_SUFFIX if getattr(cfg, "exact_transcription", False) else ""
 
 
+OCR_MARK = "\n[OCR] "   # round-96: separator between ASR and OCR context
+
+
 def _with_context(prompt: str, context: str) -> str:
     """Prepend the ASR transcript around the candidate moment.
 
@@ -57,6 +61,18 @@ def _with_context(prompt: str, context: str) -> str:
     """
     if not context:
         return prompt
+    if OCR_MARK in context or context.startswith(OCR_MARK.strip()):
+        # Round-96: the caller appended on-screen text as "\n[OCR] …" — label the
+        # two sources separately (the plain-ASR prompt above stays byte-identical).
+        asr, _, ocr = context.partition(OCR_MARK.strip())
+        parts = []
+        if asr.strip():
+            parts.append("Lời thoại trong đoạn video quanh khoảnh khắc này (nhận dạng từ "
+                         f'âm thanh, có thể sai chính tả): "{asr.strip()}"')
+        if ocr.strip():
+            parts.append("Chữ hiển thị trên màn hình quanh khoảnh khắc này (nhận dạng OCR, "
+                         f'có thể sai chính tả): "{ocr.strip()}"')
+        return "\n".join(parts) + "\n" + prompt
     return (f"Lời thoại trong đoạn video quanh khoảnh khắc này (nhận dạng từ "
             f'âm thanh, có thể sai chính tả): "{context}"\n{prompt}')
 
@@ -84,6 +100,34 @@ class VqaAnswer:
     provider: str
 
 
+def ocr_context(settings: Settings, video_id: str, ns: list[int], pad: int = 1,
+                max_chars: int | None = None) -> str:
+    """Round-96: on-screen text (artifacts/ocr/<video>.json ``n_to_text``) of the
+    strip's keyframe ordinals ±``pad``, deduplicated, capped — tên trường, địa
+    danh, con số thường nằm trong chữ chạy mà VLM nhìn ảnh 768px hay bỏ sót."""
+    from cvp.utils.io import read_json
+
+    if not ns:
+        return ""
+    p = settings.paths.art("ocr") / f"{video_id}.json"
+    if not p.exists():
+        return ""
+    n_to_text = (read_json(p, default={}) or {}).get("n_to_text") or {}
+    if not n_to_text:
+        return ""
+    want: set[int] = set()
+    for n in ns:
+        for d in range(-int(pad), int(pad) + 1):
+            want.add(int(n) + d)
+    seen: list[str] = []
+    for n in sorted(want):
+        t = " ".join(str(n_to_text.get(str(n), "")).split())
+        if t and t not in seen:
+            seen.append(t)
+    cap = int(max_chars or getattr(settings.vqa, "ocr_context_chars", 600))
+    return " | ".join(seen)[:cap]
+
+
 def gemini_model_chain(settings: Settings, primary: str) -> list[str]:
     """Primary model + the query section's fallback ids (deduped, in order).
 
@@ -92,8 +136,10 @@ def gemini_model_chain(settings: Settings, primary: str) -> list[str]:
     degrades to the next Gemini model instead of failing the feature
     (review finding C9: docs promised this for VQA/rerank too).
     """
+    from cvp.models.gemini_keys import expand_chain
+
     fallbacks = list(getattr(settings.query, "gemini_model_fallbacks", []))
-    return [primary] + [m for m in fallbacks if m != primary]
+    return expand_chain(primary, fallbacks)      # round-96: + vertex twin, hf lane
 
 
 def make_gemini_client(settings: Settings):
@@ -113,6 +159,7 @@ def make_gemini_client(settings: Settings):
                  float(getattr(settings.vqa, "answer_timeout_s", 0.0)))
     # Round-90: the client is a KEY POOL (GEMINI_API_KEY + GEMINI_API_KEY_2..5)
     # — a quota-exhausted 429 rotates every caller to the next key.
+    HEALTH.configure(settings)      # round-96: cầu dao bão theo settings.breaker
     return build_client(budget)
 
 
@@ -141,7 +188,11 @@ def generate_with_fallback(client, models: list[str], contents,
                                             economical_config)
 
     last: Exception | None = None
+    skipped: list[str] = []
     for model_id in models:
+        if HEALTH.should_skip(model_id):     # round-96: cầu dao mở → không chờ timeout
+            skipped.append(model_id)
+            continue
         cfgs: list = [None]
         if economical:
             ec = economical_config(model_id)
@@ -156,9 +207,11 @@ def generate_with_fallback(client, models: list[str], contents,
                     return client.models.generate_content(model=mid, contents=contents)
 
                 resp = _call_with_timeout(_do, timeout_s) if timeout_s else _do()
+                HEALTH.record(model_id, True)
                 return (resp.text or "").strip()
             except Exception as e:  # noqa: BLE001 — next config, then next model
                 last = e
+                HEALTH.record(model_id, False, classify(e))
                 log.warning("Gemini model %r%s failed (%s) — trying next",
                             model_id, " (economical)" if cfg is not None else "", e)
                 if cfg is not None and not config_rejected(e):
@@ -166,6 +219,10 @@ def generate_with_fallback(client, models: list[str], contents,
                            # never a full-price config-less retry of the same one
             if cfg is None:
                 break  # plain attempt done — move to the next model id
+    if skipped and last is None:
+        raise AllModelsOpen(f"cầu dao bão: mọi model Gemini đang mở cầu dao {skipped} — bỏ cuộc gọi")
+    if skipped:
+        log.warning("cầu dao bão: đã bỏ qua %s", skipped)
     raise last if last else RuntimeError("no Gemini model succeeded")
 
 
@@ -212,48 +269,37 @@ class VqaAssistant:
 
     def _ask_local_hf_auto(self, image_path: str, question: str,
                            context: str = "") -> str:
-        """Round-79: fallback local thế-hệ-2026 qua chat template chuẩn HF.
+        """Round-79/96: fallback local qua chat template chuẩn HF — một khung."""
+        return self._ask_local_hf_auto_strip([image_path], question, context)
 
-        Nghiên cứu 29/08: Qwen3.5-9B/27B (201 ngôn ngữ, Apache-2.0) vượt xa
-        Vintern-1B khi Gemini sập — nạp lười CHỈ lúc cần, id lấy từ
-        ``vqa.local_hf_id`` (bắt buộc khai — không đoán id chưa kiểm chứng).
+    def _ask_local_hf_auto_strip(self, image_paths: list[str], question: str,
+                                 context: str = "") -> str:
+        """Round-96: VLM cục bộ đọc CẢ strip (3–6 khung) với đúng prompt Gemini.
+
+        Model id từ ``vqa.local_hf_id`` (bắt buộc khai — không đoán id chưa kiểm
+        chứng); model là singleton dùng chung với VLM rerank cục bộ
+        (``cvp.models.local_vlm``), nạp lười CHỈ lúc cần.
         """
+        from cvp.models import local_vlm
+
         model_id = str(getattr(self.cfg, "local_hf_id", "") or "").strip()
         if not model_id:
             raise RuntimeError(
-                "vqa.local_backend='hf_auto' nhưng vqa.local_hf_id trống — "
-                "khai id model (vd bản Qwen3.5 đã kiểm chứng) rồi chạy lại.")
-        import torch
-
-        if self._local is not None and self._local[0] != "hf_auto":
-            self._local = None      # audit r79: đổi backend giữa phiên → nạp lại
-        if self._local is None:
-            from transformers import AutoModelForImageTextToText, AutoProcessor
-
-            log.info("Loading local hf_auto VQA model %s", model_id)
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            dtype = torch.bfloat16 if device == "cuda" else torch.float32
-            model = AutoModelForImageTextToText.from_pretrained(
-                model_id, torch_dtype=dtype).to(device).eval()
-            processor = AutoProcessor.from_pretrained(model_id)
-            self._local = ("hf_auto", model, processor, device)
-        _tag, model, processor, device = self._local
-        img = load_rgb(image_path)
-        if img is None:
-            raise RuntimeError(f"Unreadable image: {image_path}")
-        prompt = _with_context(
-            _VQA_PROMPT.format(question=question) + _exact_suffix(self.cfg), context)
-        messages = [{"role": "user", "content": [
-            {"type": "image", "image": img},
-            {"type": "text", "text": prompt}]}]
-        inputs = processor.apply_chat_template(
-            messages, add_generation_prompt=True, tokenize=True,
-            return_dict=True, return_tensors="pt").to(device)
-        with torch.inference_mode():
-            out = model.generate(**inputs, max_new_tokens=64, do_sample=False)
-        new_tokens = out[0][inputs["input_ids"].shape[1]:]
-        answer = processor.decode(new_tokens, skip_special_tokens=True)
-        return str(answer).strip()
+                "vqa.local_backend='hf_auto' nhưng vqa.local_hf_id trống — khai id model "
+                "đã kiểm chứng (nb03: LOCAL_VLM_ID) rồi chạy lại; không đoán id.")
+        imgs = []
+        for p in image_paths:
+            img = load_rgb(p)
+            if img is not None:
+                img.thumbnail((768, 768))
+                imgs.append(img)
+        if not imgs:
+            raise RuntimeError("no readable frame for the local VLM")
+        prompt = (_VQA_PROMPT.format(question=question) if len(imgs) == 1
+                  else _VQA_STRIP_PROMPT.format(n=len(imgs), question=question))
+        prompt = _with_context(prompt + _exact_suffix(self.cfg), context)
+        self._local = ("hf_auto", model_id)      # tag: a backend switch reloads vintern
+        return str(local_vlm.generate(model_id, imgs, prompt, max_new_tokens=64)).strip()
 
     def _ask_local_vintern(self, image_path: str, question: str,
                            context: str = "") -> str:
@@ -314,7 +360,10 @@ class VqaAssistant:
         # behind Pro; 3.8 rides behind it.
         rescue = self.cfg.gemini_model
         if rescue and rescue != primary:
-            chain = [primary, rescue] + [m for m in chain[1:] if m != rescue]
+            _head = [primary]                    # round-96: vertex twin of Pro stays 2nd
+            if len(chain) > 1 and chain[1] == f"vertex:{primary}":
+                _head.append(chain[1])
+            chain = _head + [rescue] + [m for m in chain[len(_head):] if m != rescue]
         return generate_with_fallback(
             self._gemini_client, chain,
             [_with_context(_VQA_STRIP_PROMPT.format(n=len(imgs), question=question)
@@ -376,8 +425,13 @@ class VqaAssistant:
                 best = Counter(g.strip().casefold() for g in got).most_common(1)[0][0]
                 return next(g for g in got if g.strip().casefold() == best)
             log.warning("Gemini strip-VQA produced no answer — trying local model")
-        if self.cfg.provider in ("gemini", "vintern"):
+        if self.cfg.provider in ("gemini", "vintern", "local"):
             try:
+                if getattr(self.cfg, "local_backend", "vintern") == "hf_auto":
+                    # Round-96: VLM cục bộ đọc CẢ strip (không chỉ khung giữa)
+                    with self._LOCK:
+                        return self._ask_local_hf_auto_strip(
+                            paths, question, context)[:MAX_QA_ANSWER_CHARS]
                 middle = paths[len(paths) // 2]
                 return self._ask_local(middle, question, context)[:MAX_QA_ANSWER_CHARS]
             except Exception as e:  # noqa: BLE001
@@ -395,7 +449,7 @@ class VqaAssistant:
                     answer, provider = self._ask_gemini(path, question, context), "gemini"
                 except Exception as e:  # noqa: BLE001 — degrade to local model
                     log.warning("Gemini VQA failed (%s) — trying local model", e)
-            if not answer and self.cfg.provider in ("gemini", "vintern"):
+            if not answer and self.cfg.provider in ("gemini", "vintern", "local"):
                 try:
                     answer = self._ask_local(path, question, context)
                     provider = getattr(self.cfg, "local_backend", "vintern")

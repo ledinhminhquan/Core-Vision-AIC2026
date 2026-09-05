@@ -114,9 +114,16 @@ search:
   qwen_reranker_id: Qwen/Qwen3-VL-Reranker-8B   # round-41: 80.7 vs 73.8 MMEB-v2, ~18GB BF16
   vlm_rerank: false      # listwise VLM re-rank of the top rows (needs API/GPU)
   vlm_rerank_topk: 24
-  vlm_rerank_provider: gemini   # gemini | vintern | none
+  vlm_rerank_provider: gemini   # gemini | vintern | hf_auto | none
   # round-45: listwise scorer on the cheap tier (thinking minimal, media low)
   vlm_rerank_model: gemini-3.5-flash-lite
+  # round-96: khi cầu dao bão mở trên mọi model Gemini (hoặc mọi phiếu rỗng),
+  # chấm lại bằng VLM cục bộ (vqa.local_backend=hf_auto + vqa.local_hf_id).
+  # Mọi ô "model id" Gemini (vlm_rerank_model, vqa.answer_model, query.
+  # gemini_model_fallbacks) còn nhận "vertex:<id>" (Vertex express, secret
+  # GEMINI_VERTEX_KEY) và "hf:<org/model[:provider]>" (HF Inference Providers,
+  # secret HF_TOKEN) — lane thiếu secret tự bị bỏ khỏi chuỗi.
+  vlm_rerank_local_fallback: false
   avs_mmr_lambda: 0.7    # AVS: relevance-vs-novelty trade-off (1.0 = pure relevance)
   avs_per_video_cap: 3
   avs_min_gap_s: 10.0
@@ -196,6 +203,9 @@ vqa:
   # Gemini sập (nạp lười, không tốn VRAM lúc thường); mặc định giữ vintern
   local_backend: vintern
   local_hf_id: ""
+  # round-96: chữ OCR của các khung trong strip (±1 keyframe) vào ngữ cảnh QA cùng ASR
+  ocr_context: false
+  ocr_context_chars: 600
   top_frames: 5
   frames_per_answer: 3      # temporal strip per answer group (1 = single frame)
   answers_per_query: 5      # distinct candidate groups answered in batch mode
@@ -232,6 +242,19 @@ submission:
   # các câu còn lại (QA votes 1, tắt neighbor strips + VLM rerank) — bài học
   # đêm 28/08: bão 504 kéo pack 60'→142' và cổng nộp đóng khi còn 3 câu
   pack_deadline_min: 0.0
+  # round-96: thứ tự câu trong pack — "kis_first" = KIS/AVS → TRAKE → QA (bảng
+  # public chỉ chấm KIS; QA chậm nhất chịu nước rút trước); "name" = theo tên file
+  query_order: name
+
+# round-96: cầu dao bão Gemini (cvp/models/gemini_health.py) — model rớt
+# min_consecutive lần liên tiếp (503/504/timeout) → mọi call site bỏ qua nó
+# cooldown_s giây rồi thăm dò một cuộc gọi. API khỏe = không đổi gì. nb03 bật.
+breaker:
+  enabled: false
+  window: 8
+  fail_ratio: 0.75
+  min_consecutive: 3
+  cooldown_s: 120.0
 
 logging:
   level: INFO

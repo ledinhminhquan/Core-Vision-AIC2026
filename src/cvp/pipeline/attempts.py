@@ -213,18 +213,30 @@ def qa_fallback_only(rows: Rows) -> bool:
     return not answers or all(is_non_answer(a) for a in answers)
 
 
-def rescue_fallback_qa(run_dir: str | Path) -> list[str]:
+def qa_head_fallback(rows: Rows, head: int = 10) -> bool:
+    """Round-96: the FIRST ``head`` answered rows are all non-answers. Only the
+    rows near the top can score; a QA CSV whose head says "Không có thông tin"
+    (sơ tuyển 3, p2-18: 68 % of rows) is worth re-answering even when a real
+    answer hides deep in the tail."""
+    answers = [r[2].strip() for r in rows if len(r) > 2 and r[2].strip()][: max(1, int(head))]
+    return not answers or all(is_non_answer(a) for a in answers)
+
+
+def rescue_fallback_qa(run_dir: str | Path, mode: str = "all", head: int = 10) -> list[str]:
     """Round-93 — attempt 2 as a RESCUE, not a re-run: delete the QA CSVs of
     ``run_dir`` whose rows are all fallback answers so a resumed ``run_auto``
     re-answers exactly those queries. KIS/TRAKE rows and QA queries that
     already have an answer are untouched, so the rescued pack can never score
     below the original (a 'không rõ' row scores 0 either way). Returns the
-    stems removed."""
+    stems removed. ``mode="head"`` (round-96) rescues when the first ``head``
+    answered rows are all non-answers, not only when EVERY row is."""
+    if mode not in ("all", "head"):
+        raise ValueError(f"rescue mode lạ: {mode!r} (all | head)")
     p = Path(run_dir)
     removed: list[str] = []
     for f in sorted(p.glob("query-*-qa.csv")):
         rows = [r for r in csv.reader(io.StringIO(f.read_text(encoding="utf-8-sig"))) if r]
-        if qa_fallback_only(rows):
+        if qa_head_fallback(rows, head) if mode == "head" else qa_fallback_only(rows):
             f.unlink()
             removed.append(f.stem)
     return removed
