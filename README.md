@@ -38,7 +38,7 @@ media-info · objects (Open Images→parquet)  ─┘     ─► [cross-encoder]
 
 ```bash
 pip install -e ".[search,app,dev]"
-pytest             # 585+ tests pure CPU; full 609 with torch installed ([ml] extra)
+pytest             # 970 test functions in 104 files, pure CPU (torch-cpu installs the full set)
 
 # with the AIC dataset in ./data (see docs/DRIVE_SETUP.md):
 pip install -e ".[ml]"                        # query text encoder needs torch+open_clip
@@ -100,4 +100,10 @@ biết …"), MULTI-paragraph KIS/AVS and multi-line QA — see
 3. **Everything long-running is resumable** — embedding, OCR/ASR/captions,
    training (exact mid-epoch resume). Disconnects cost minutes, not hours.
 
-MIT license. Built for the AIC 2026 season.
+MIT license, covering code written by the team. **Read [`NOTICE.md`](NOTICE.md)**
+before reusing anything: it lists the third-party components and their licences,
+and states what this repository deliberately does **not** contain (the organisers'
+video corpus, keyframes, query packs and ground truth, the built artefacts, and the
+adapted text-tower checkpoint).
+
+Built for the AIC 2026 season.
