@@ -23,10 +23,10 @@ ngữ cảnh, thuật toán, quy trình — tiếng Việt) ·
 **🙋 hướng dẫn tay-cầm-tay → [HUONG_DAN.md](HUONG_DAN.md)**
 
 ```
-OFFLINE (build once, resumable)                 ONLINE (per query, <1s)
+OFFLINE (build once, resumable)                 ONLINE (per query; <1s design target, never measured)
 videos ─► shot detect ─► keyframes              VI query ─► Gemini translate/
-keyframes ─► SigLIP-2 so400m (multilingual) ─┐              enhance/expand
-keyframes ─► PE-Core-bigG (EN, #1 2026)     ─┼─► FAISS ─► top-K per lane
+keyframes ─► SigLIP-2 so400m (VI-finetuned) ─┐              enhance/expand
+keyframes ─► MetaCLIP 2 worldwide-huge      ─┼─► FAISS ─► top-K per lane
 keyframes ─► [Qwen3-VL-Embed / jina / …]    ─┤     ─► SuperGlobal (all variants)
 keyframes ─► OCR · captions (Vintern-1B)    ─┼─► BM25 (persisted, O(K)) fusion
 videos    ─► PhoWhisper ASR                 ─┤     ─► object · neighbor · temporal boosts
@@ -86,8 +86,15 @@ biết …"), MULTI-paragraph KIS/AVS and multi-line QA — see
 | `app/streamlit_app.py` | competition UI (5 task tabs, baskets, 5-min clock, group-by-video, CSV export) |
 | `notebooks/` | Colab: 01 build · 02 train (H100 autopilot) · 03 test/package |
 | `docs/` | PROJECT_CONTEXT · ARCHITECTURE · EVALUATION · DATASET_INGESTION · COLAB_GUIDE · PROJECT_PLAN · DRIVE_SETUP · DATA_FORMAT · TRAINING · PLAYBOOK · PAPER_NOTES |
-| `report/` | LaTeX kit for the mandatory prelim solution report |
+| `report/` | LaTeX kit for the mandatory prelim solution report (class/style files not redistributed — see `NOTICE.md`) |
+| `notebooks/09_campaign.ipynb` | the Round-3 campaign harness; `_LINEUP_BATTLE` is the line-up actually submitted |
 | `HUONG_DAN.md` | hướng dẫn A-Z tiếng Việt (Drive → Colab → thi đấu) |
+
+The competition line-up is `_LINEUP_BATTLE` (`finetuned` 0.6 + `metaclip2` 0.4)
+in `notebooks/09_campaign.ipynb`. `configs/settings.yaml` holds the
+pre-competition defaults, overridden at run time through `CVP_SECTION__KEY`
+environment variables, so the YAML is not the submitted configuration.
+End-to-end query latency was never measured; the papers report complexity only.
 
 ## The three commandments
 

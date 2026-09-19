@@ -1,3 +1,11 @@
+> **Historical planning notes (July 2026), superseded by the submitted papers.**
+> The venue list and any first/novelty claims below are working notes and are
+> NOT asserted by the submitted papers. The papers actually submitted are a
+> SOICT 2026 full paper and a VBS 2027 (MMM 2027) demo paper.
+>
+> *Ghi chú kế hoạch cũ (07/2026), đã được thay thế bởi các bài báo đã nộp. Danh sách hội
+> nghị và các tuyên bố “lần đầu” bên dưới KHÔNG được khẳng định trong bài báo.*
+
 # 📝 PAPER_NOTES — Định vị bài báo (SOICT 2026 / Multimedia Tools & Applications)
 
 > BTC AIC 2026 hỗ trợ công bố tại **SOICT 2026** và **Multimedia Tools and Applications**
@@ -21,7 +29,7 @@
    1-biến-thể và dense max-fusion nhiều-biến-thể làm tụt hit của biến thể mở rộng;
    fix gần như miễn phí. *Đo:* R@1/R@5 có/không multi-variant trên bộ đề practice.
 3. **BM25 candidate-restricted persisted index** cho fusion đa tín hiệu tương tác
-   (O(K·|q|) thay vì O(corpus)) — hệ tương tác <1s/query kể cả truy vấn đầu tiên.
+   (O(K·|q|) thay vì O(corpus)) — mục tiêu <1s/query kể cả truy vấn đầu tiên; độ trễ thực tế CHƯA ĐO (p50/p95 chưa chạy).
 4. **DANTE-DP ensemble cho TRAKE** — sim ma trận = tổng có trọng số nhiều encoder
    (min-max theo sự kiện, degrade khi thiếu lane); so beam-DP vs DANTE vs MERVIN-heuristic.
 5. **MMR mức embedding cho AVS xuyên video** — tin tức tái sử dụng b-roll; đo unique-segment

@@ -259,7 +259,9 @@ run pointer sẽ cảnh báo CONFIG MISMATCH thay vì âm thầm trộn hai run 
 
 ## 6. Khi nào bật lane tùy chọn (qwen_embed / jina / metaclip2)?
 
-Mặc định thi đấu là ensemble **[siglip2, openclip] 0.55/0.45** — đã chứng minh. Ba lane
+Mặc định trước thi đấu trong `configs/settings.yaml` là ensemble
+**[siglip2, openclip] 0.55/0.45**. Lưu ý: line-up THẬT SỰ dự thi vòng 3 là
+**[finetuned, metaclip2] 0.6/0.4** (`_LINEUP_BATTLE`, `notebooks/09_campaign.ipynb`). Ba lane
 tùy chọn đều NẶNG (mỗi lane = re-embed toàn bộ corpus + thêm một index + thêm RAM/VRAM
 lúc query), chỉ thêm khi **còn thời gian VÀ đo được lợi ích**:
 

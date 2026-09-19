@@ -17,7 +17,7 @@
 
 ## 0. Trước ngày thi (checklist)
 
-- [ ] Artifacts sync về laptop, app chạy `< 1s/query` (test bằng nb 03 trước).
+- [ ] Artifacts sync về laptop, app đạt mục tiêu `< 1s/query` (test bằng nb 03 trước).
 - [ ] `CVP_EMBEDDING__MODEL=ensemble` với `[finetuned, openclip]` (đã train) —
       nếu máy yếu: `finetuned` đơn.
 - [ ] GEMINI_API_KEY nạp sẵn + **đã test offline fallback** (rút mạng thử 1 query).
