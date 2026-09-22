@@ -53,7 +53,8 @@ configuration and was not used in competition.
 ## 3. Provenance of this release
 
 The published history is the development history: **119 commits, 14 July to
-5 September 2026**, plus one release commit. It was filtered before publication
+5 September 2026**, plus a few post-competition release and documentation
+commits (no functional change). It was filtered before publication
 to remove third-party material the team had no right to redistribute (the items
 marked above), and commit e-mail addresses were rewritten to the maintainer's
 GitHub no-reply address. No functional source file was altered by the filter.
