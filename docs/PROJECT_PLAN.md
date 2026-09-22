@@ -1,3 +1,10 @@
+> **Historical working notes, superseded by the submitted papers.** Figures here may be
+> mid-development (the test suite has since grown to 970 `test_` functions in 104 files) and
+> any reading of other teams' results is unsourced and NOT asserted by the papers.
+>
+> *Ghi chú làm việc cũ, đã bị thay thế bởi các bài báo đã nộp. Số liệu có thể là giữa chặng, và mọi
+> nhận định về kết quả của đội khác đều chưa truy được nguồn và KHÔNG được khẳng định trong bài.*
+
 # 🗺️ PROJECT_PLAN — Kế hoạch tác chiến AIC 2026 (Core-Vision Perfect V1)
 
 > Viết ngày **14/07/2026**, thay thế mọi plan cũ. Lịch dưới đây là lịch **THẬT** đã xác minh

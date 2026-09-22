@@ -6,9 +6,9 @@
 > *Ghi chú kế hoạch cũ (07/2026), đã được thay thế bởi các bài báo đã nộp. Danh sách hội
 > nghị và các tuyên bố “lần đầu” bên dưới KHÔNG được khẳng định trong bài báo.*
 
-# 📝 PAPER_NOTES — Định vị bài báo (SOICT 2026 / Multimedia Tools & Applications)
+# 📝 PAPER_NOTES — Định vị bài báo (ghi chú kế hoạch cũ)
 
-> BTC AIC 2026 hỗ trợ công bố tại **SOICT 2026** và **Multimedia Tools and Applications**
+> BTC AIC 2026 giới thiệu track ở **SOICT 2026** (và VBS 2027 qua MMM 2027)
 > cho các đội top. UI/hệ thống có thể công bố bất kể thứ hạng (BTC xác nhận tại tập huấn 1).
 > File này gom sẵn: đóng góp có thể nhấn, ablation cần chạy, bảng số liệu cần thu, related work.
 
@@ -41,7 +41,7 @@
 
 7. **Tầng rerank cross-encoder pairwise** (`search.reranker`): BLIP-2 ITM
    (blueprint Unified-IMMR 76.4/88) HOẶC **Qwen3-VL-Reranker-8B** (model 01/2026)
-   — theo khảo sát của ta là **lần dùng đầu tiên trong thi đấu AIC/VBS**; blend
+   — không khảo sát được đầy đủ nên **không tuyên bố gì về tính tiên phong**; blend
    `(1−w)·fused + w·cross` sau min-max, đo bằng A9.
 8. **Multi-frame VQA strips** (`vqa.frames_per_answer`): mỗi nhóm ứng viên gửi
    DẢI frame (top ± láng giềng) trong 1 call — fix lớp câu QA "diễn tiến/giải

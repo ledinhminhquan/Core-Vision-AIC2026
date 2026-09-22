@@ -1,3 +1,10 @@
+> **Historical working notes, superseded by the submitted papers.** Figures here may be
+> mid-development (the test suite has since grown to 970 `test_` functions in 104 files) and
+> any reading of other teams' results is unsourced and NOT asserted by the papers.
+>
+> *Ghi chú làm việc cũ, đã bị thay thế bởi các bài báo đã nộp. Số liệu có thể là giữa chặng, và mọi
+> nhận định về kết quả của đội khác đều chưa truy được nguồn và KHÔNG được khẳng định trong bài.*
+
 # SOTA methods & models — research report (2026-07-06)
 
 *Evidence base for the architecture. Exact model IDs verified on HF as of mid-2026.*

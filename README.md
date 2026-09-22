@@ -2,21 +2,21 @@
 
 > **Vietnamese text-to-keyframe interactive + automatic video retrieval** for
 > the **HCMC AI Challenge (AIC) 2026** — full coverage of KIS · KIS-V · QA ·
-> TRAKE · AVS (flagged) · KIS-C **+ the new 2026 assistant-vs-assistant
-> automatic track**, with an H100 training pipeline for a Vietnamese-tuned
-> encoder. Successor of Core-Vision_Ultimate_Final (5 adversarial review
+> TRAKE · AVS (flagged) · KIS-C, plus a **headless end-to-end runner** for
+> unattended operation, and a single-GPU training pipeline (A100-SXM4-80GB)
+> for a Vietnamese-tuned encoder. Successor of Core-Vision_Ultimate_Final (5 adversarial review
 > rounds), inheriting its proven core and closing every remaining finding.
 
-Built end-to-end and evidence-driven: the architecture follows what the
-2025 top qualifiers actually ran (MERVIN 79/88 on PE-Core, Vortex 79.6/88,
-Unified-IMMR 76.4/88, DANTE "Outstanding TRAKE", 4×-champion UIT's ablations),
-then goes further — multi-variant SuperGlobal, candidate-restricted persisted
+Built end-to-end and evidence-driven: the architecture follows the shape the
+published 2025 HCMC AI Challenge systems used — a multilingual CLIP-family
+encoder, lexical channels from OCR and ASR, a reranking stage and a dynamic
+programme for ordered events. It then goes further: multi-variant SuperGlobal, candidate-restricted persisted
 BM25, ensemble DANTE-DP for TRAKE, MMR-diversified AVS, **pairwise
 cross-encoder rerank (BLIP-2 ITM / Qwen3-VL-Reranker)**, listwise VLM
 re-ranking, **multi-frame VQA strips**, per-row QA answers, **temporal-context
 boost**, **confidence-gated query-reformulation retry**, official-formula
 offline scoring, Codabench packaging, a DRES client and a **machine-callable
-HTTP service** for the automatic track.
+HTTP service** for unattended runs.
 
 **📖 Start here → [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md)** (toàn bộ
 ngữ cảnh, thuật toán, quy trình — tiếng Việt) ·
@@ -48,9 +48,9 @@ python scripts/02_embed_and_index.py
 streamlit run app/streamlit_app.py
 ```
 
-For real accuracy, build the SigLIP-2 + PE-Core indexes on Colab —
+For real accuracy, build the SigLIP-2 + MetaCLIP 2 indexes on Colab —
 **notebooks/01_build_artifacts_colab.ipynb** — then (optionally) train the
-Vietnamese tower on an H100 — **notebooks/02_train_vi_encoder_H100.ipynb**
+Vietnamese tower on an A100-SXM4-80GB — **notebooks/02_train_vi_encoder_H100.ipynb**
 (crash-safe autopilot: re-run after any disconnect and it resumes exactly,
 mid-epoch). Verify + package submissions with **notebooks/03_test_system.ipynb**.
 
@@ -65,7 +65,7 @@ python scripts/50_bench_latency.py                                      # p50/p9
 python scripts/51_warm_cache.py --query-dir <pack>                      # pre-warm Gemini cache before a round
 cvp eval --submission-dir <dir> --gt gt.json                            # official scoring from any terminal
 python scripts/41_diff_submissions.py --a <runA> --b <runB>             # what did a config change move?
-python scripts/25_auto_agent.py --query-dir <pack>                      # 2026 automatic track, end-to-end
+python scripts/25_auto_agent.py --query-dir <pack>                      # headless end-to-end run
 cvp serve                                                               # HTTP/JSON retrieval service
 ```
 
@@ -84,7 +84,7 @@ biết …"), MULTI-paragraph KIS/AVS and multi-line QA — see
 | `src/cvp/` | the library — data, models, index, search, submission, service, training, eval |
 | `scripts/` | numbered pipeline steps + tuning + ablations + latency + auto-agent + map-keyframes rebuild |
 | `app/streamlit_app.py` | competition UI (5 task tabs, baskets, 5-min clock, group-by-video, CSV export) |
-| `notebooks/` | Colab: 01 build · 02 train (H100 autopilot) · 03 test/package |
+| `notebooks/` | Colab: 01 build · 02 train (single-GPU autopilot) · 03 test/package |
 | `docs/` | PROJECT_CONTEXT · ARCHITECTURE · EVALUATION · DATASET_INGESTION · COLAB_GUIDE · PROJECT_PLAN · DRIVE_SETUP · DATA_FORMAT · TRAINING · PLAYBOOK · PAPER_NOTES |
 | `report/` | LaTeX kit for the mandatory prelim solution report (class/style files not redistributed — see `NOTICE.md`) |
 | `notebooks/09_campaign.ipynb` | the Round-3 campaign harness; `_LINEUP_BATTLE` is the line-up actually submitted |
