@@ -3,7 +3,8 @@
 This repository is the source code of **Core-Vision Perfect V1**, the Vietnamese
 video moment retrieval system that team *AIO_Heuristics* built for the
 **Ho Chi Minh City AI Challenge (AIC) 2026**. It is released so that the results
-reported in our papers can be inspected.
+reported in our VBS 2027 paper and in our AIC 2026 technical report
+(https://doi.org/10.5281/zenodo.23674848) can be inspected.
 
 The `LICENSE` file (MIT) covers **code written by the team**. It does not, and
 cannot, cover the third-party material listed below, nor any data.
@@ -19,7 +20,7 @@ redistributed:
 |---|---|
 | The AIC 2026 video corpus, keyframes, and `map-keyframes` CSVs | Organiser-licensed competition data. |
 | The organisers' query packs and any ground truth | Organiser-authored material, issued to participants only. |
-| The AIC 2025 finals query pack | Organiser-authored. An earlier internal revision of this tree carried a byte-exact copy as a regression fixture; it has been removed from the released history. Use `queries/example/` instead. |
+| The AIC 2025 query pack | Organiser-authored. An earlier internal revision of this tree carried a byte-exact copy as a regression fixture; it has been removed from the released history. Use `queries/example/` instead. |
 | Built artefacts — FAISS indexes, BM25 tables, OCR / ASR / caption sidecars, object tables | Derived from the organisers' data. Rebuild them with `scripts/30_ingest.py`. |
 | The LoRA-adapted Vietnamese text tower checkpoint | Not released. |
 | The `report/` LaTeX class and style files (`ai_conquer2026.cls`, `tvietlistings.sty`, `vipythonhighlight.sty`) | Third-party templates the team did not author. `report/main.tex` is kept for reference but will not compile without them. |

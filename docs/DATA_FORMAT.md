@@ -70,7 +70,7 @@ video). Task aliases now also include `kis-v`/`video-kis` (scored as KIS).
 
 ### Organiser query-file layouts (both parsed since 2026-07-08)
 
-Verified on the real AIC-2025 finals packs — `cvp.pipeline.run_queries`
+Verified on the real AIC-2025 query packs — `cvp.pipeline.run_queries`
 normalises BOTH automatically (`parse_trake_events` / `split_qa_line`):
 
 ```

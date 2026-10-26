@@ -1,7 +1,8 @@
 > **Historical planning notes (July 2026), superseded by the submitted papers.**
 > The venue list and any first/novelty claims below are working notes and are
 > NOT asserted by the submitted papers. The papers actually submitted are a
-> SOICT 2026 full paper and a VBS 2027 (MMM 2027) demo paper.
+> SOICT 2026 full paper, now available as a technical report
+> (https://doi.org/10.5281/zenodo.23674848), and a VBS 2027 (MMM 2027) demo paper.
 >
 > *Ghi chú kế hoạch cũ (07/2026), đã được thay thế bởi các bài báo đã nộp. Danh sách hội
 > nghị và các tuyên bố “lần đầu” bên dưới KHÔNG được khẳng định trong bài báo.*

@@ -23,7 +23,7 @@ ngữ cảnh, thuật toán, quy trình — tiếng Việt) ·
 **🙋 hướng dẫn tay-cầm-tay → [HUONG_DAN.md](HUONG_DAN.md)**
 
 ```
-OFFLINE (build once, resumable)                 ONLINE (per query; <1s design target, never measured)
+OFFLINE (build once, resumable)                 ONLINE (per query; <1s design target; measured: see below)
 videos ─► shot detect ─► keyframes              VI query ─► Gemini translate/
 keyframes ─► SigLIP-2 so400m (VI-finetuned) ─┐              enhance/expand
 keyframes ─► MetaCLIP 2 worldwide-huge      ─┼─► FAISS ─► top-K per lane
@@ -70,7 +70,7 @@ cvp serve                                                               # HTTP/J
 ```
 
 Query packs are parsed in ALL observed organiser layouts (verified on the real
-AIC-2025 finals packs — 89/89 files clean): TRAKE files with a context line +
+AIC-2025 query packs — 89/89 files clean): TRAKE files with a context line +
 `E1:`…`Ek:` events (duplicate-label typos included), single-line QA with the
 question embedded ("… Hỏi …?" / marker-less "… là gì?" / imperative "Hảy cho
 biết …"), MULTI-paragraph KIS/AVS and multi-line QA — see
@@ -94,7 +94,10 @@ The competition line-up is `_LINEUP_BATTLE` (`finetuned` 0.6 + `metaclip2` 0.4)
 in `notebooks/09_campaign.ipynb`. `configs/settings.yaml` holds the
 pre-competition defaults, overridden at run time through `CVP_SECTION__KEY`
 environment variables, so the YAML is not the submitted configuration.
-End-to-end query latency was never measured; the papers report complexity only.
+Query latency was not measured during the competition. The VBS 2027 paper reports a
+post-competition measurement on one A100-SXM4-80GB over 177,321 keyframes: 31.4 s median
+per Vietnamese query with all hosted assistance, 12.0 s with every language model behind
+an open circuit breaker.
 
 ## The three commandments
 
