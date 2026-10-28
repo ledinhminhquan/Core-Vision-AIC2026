@@ -2,9 +2,9 @@
 
 This repository is the source code of **Core-Vision Perfect V1**, the Vietnamese
 video moment retrieval system that team *AIO_Heuristics* built for the
-**Ho Chi Minh City AI Challenge (AIC) 2026**. It is released so that the results
-reported in our VBS 2027 paper and in our AIC 2026 technical report
-(https://doi.org/10.5281/zenodo.23674848) can be inspected.
+**Ho Chi Minh City AI Challenge (AIC) 2026**. It is released so that the system
+described in our VBS 2027 paper and the results reported in our AIC 2026
+technical report (https://doi.org/10.5281/zenodo.23674848) can be inspected.
 
 The `LICENSE` file (MIT) covers **code written by the team**. It does not, and
 cannot, cover the third-party material listed below, nor any data.
@@ -53,12 +53,16 @@ configuration and was not used in competition.
 
 ## 3. Provenance of this release
 
-The published history is the development history: **119 commits, 14 July to
-5 September 2026**, plus a few post-competition release and documentation
-commits (no functional change). It was filtered before publication
-to remove third-party material the team had no right to redistribute (the items
-marked above), and commit e-mail addresses were rewritten to the maintainer's
-GitHub no-reply address. No functional source file was altered by the filter.
+The published history is the development history: **119 commits, 14 July to 5
+September 2026**, plus a few post-competition release and documentation commits
+(no functional change). One later internal commit (24 September 2026) is not
+published; the VBS 2027 latency figures were measured on it, with the engine
+configuration of the first eight cells of `notebooks/03_test_system.ipynb` and
+that commit's added options left at their defaults. The timing notebook is not
+published either. The history was filtered before publication to remove
+third-party material the team had no right to redistribute (the items marked
+above), and commit e-mail addresses were rewritten to the maintainer's GitHub
+no-reply address. No functional source file was altered by the filter.
 
 The repository was maintained by a single committer on behalf of the team.
 

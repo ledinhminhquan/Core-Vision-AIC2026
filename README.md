@@ -97,7 +97,9 @@ environment variables, so the YAML is not the submitted configuration.
 Query latency was not measured during the competition. The VBS 2027 paper reports a
 post-competition measurement on one A100-SXM4-80GB over 177,321 keyframes: 31.4 s median
 per Vietnamese query with all hosted assistance, 12.0 s with every language model behind
-an open circuit breaker.
+an open circuit breaker. It was taken on a later internal revision (24 September 2026) with
+that revision's added options at their defaults; that revision and the timing notebook are
+not part of this release (see `NOTICE.md`).
 
 ## The three commandments
 
